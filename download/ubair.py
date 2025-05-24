@@ -113,7 +113,7 @@ def load_config():
     """Load API key and website URL from file."""
     # TODO - what is "weather-website"?
     config_dir = os.path.join(os.path.expanduser('~'), '.config',
-                                    'weather-website')
+                                    'ubair-website')
 
     api_key_file = os.path.join(config_dir, 'api_key')
     if not os.path.exists(api_key_file):
