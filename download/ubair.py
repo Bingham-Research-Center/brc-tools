@@ -142,7 +142,9 @@ if __name__ == "__main__":
     fname_data, fname_meta = get_map_json(now_dt)
 
     # Send the files to the UBAIR website
-    server_url, API_KEY = load_config()
+    API_KEY, server_url = load_config()
+    print(f"Using API key {API_KEY[:5]}... and server URL starting"
+          f" {server_url[:10]}")
     send_json_to_server(server_url, os.path.join("../data/obs", fname_data),
                         "map-obs", API_KEY)
     send_json_to_server(server_url, os.path.join("../data/obs", fname_meta),
