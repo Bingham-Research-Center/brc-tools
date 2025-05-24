@@ -117,7 +117,8 @@ def load_config():
 
     api_key_file = os.path.join(config_dir, 'api_key')
     if not os.path.exists(api_key_file):
-        raise FileNotFoundError("API key file not found. Check docs for setup.")
+        raise FileNotFoundError(f"API key file not found at {api_key_file}. "
+                                f"Check docs for setup.")
 
     with open(api_key_file, 'r') as f:
         api_key = f.read().strip()
