@@ -8,7 +8,7 @@ import pandas as pd
 import requests
 import synoptic
 
-from utils.lookups import map_stids, map_vrbls
+from ..utils.lookups import map_stids, map_vrbls
 
 def download_map_obs(valid_time: datetime.datetime, history_hours=25,
                         tempdir="../data/obs",):
