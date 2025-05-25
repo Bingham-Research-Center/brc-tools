@@ -121,18 +121,20 @@ def send_json_to_server(server_address, fpath, file_data, API_KEY):
 
 def load_config():
     """Load API key and website URL from file."""
-    # TODO - what is "weather-website"?
+
+    api_key = os.environ.get('DATA_UPLOAD_API_KEY')
     config_dir = os.path.join(os.path.expanduser('~'), '.config',
                                     'ubair-website')
+    if len(api_key) != 64:
+        raise ValueError(f"API key should be 64 characters, got {len(API_KEY)}")
+    # api_key_file = os.path.join(config_dir, 'api_key')
+    # if not os.path.exists(api_key_file):
+    #     raise FileNotFoundError(f"API key file not found at {api_key_file}. "
+    #                             f"Check docs for setup.")
 
-    api_key_file = os.path.join(config_dir, 'api_key')
-    if not os.path.exists(api_key_file):
-        raise FileNotFoundError(f"API key file not found at {api_key_file}. "
-                                f"Check docs for setup.")
-
-    with open(api_key_file, 'r') as f:
-        api_key = f.read().strip()
-        print(f"API key length: {len(api_key)} characters.")
+    # with open(api_key_file, 'r') as f:
+    #     api_key = f.read().strip()
+    #     print(f"API key length: {len(api_key)} characters.")
 
     # Read website URL
     url_file = os.path.join(config_dir, 'website_url')
