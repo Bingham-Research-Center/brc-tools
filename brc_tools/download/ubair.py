@@ -56,7 +56,7 @@ def save_json(df, fpath, orient='records'):
     return
 
 def get_map_json(valid_time: datetime.datetime, history_hours=48,
-                    tempdir="../data/obs",):
+                    tempdir="../data",):
     """Get obs from Synoptic Weather for the UBAIR map in json format.
 
     Args:
@@ -148,17 +148,19 @@ def load_config():
 
 if __name__ == "__main__":
     # Run typical usage of rounding the time now (UTC) to most recent minute.
+    tempdir = "../data"
+
     now_dt = datetime.datetime.now(tz=pytz.timezone("UTC"))
     now_dt = now_dt.replace(minute=int(np.floor(now_dt.minute / 5) * 5),
                         second=0, microsecond=0)
     print(f"Getting map obs for {now_dt} UTC")
-    fname_data, fname_meta = get_map_json(now_dt)
+    fname_data, fname_meta = get_map_json(now_dt, tempdir=tempdir)
 
     # Send the files to the UBAIR website
     API_KEY, server_url = load_config()
     print(f"Using API key {API_KEY[:5]}... and server URL starting"
           f" {server_url[:10]}")
-    send_json_to_server(server_url, os.path.join("../data/obs", fname_data),
+    send_json_to_server(server_url, os.path.join(tempdir, fname_data),
                         "map-obs", API_KEY)
-    send_json_to_server(server_url, os.path.join("../data/obs", fname_meta),
+    send_json_to_server(server_url, os.path.join(tempdir, fname_meta),
                         "map-meta", API_KEY)
