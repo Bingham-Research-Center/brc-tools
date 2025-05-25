@@ -1,6 +1,10 @@
 ### `brc-tools` - Bingham Research Center (python) Tools
 
-Functions that are general to many packages used by the Bingham Research Center. The wishlist includes:
+Functions that are general to many packages used by the Bingham Research Center. 
+
+Note that the package is under `brc_tools` (note the underscore) and not `brc-tools` (note the hyphen). 
+
+The wishlist includes:
 
 - [x] Basic setup
 - [ ] Visualisations 
@@ -19,4 +23,4 @@ John Lawson and Michael Davies, Bingham Research Center, 2025
 
 This is a list of files that are prime for putting into functions from notebooks.
 
-- [AQM 8-hr ozone in parallel](gemini_parallel-aqm.py)
+- [AQM 8-hr ozone in parallel](in_progress/notebooks/gemini_parallel-aqm.py)

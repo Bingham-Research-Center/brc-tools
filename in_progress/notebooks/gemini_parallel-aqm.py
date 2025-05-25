@@ -18,7 +18,7 @@ import time # To time the execution
 try:
     project_root = pathlib.Path(__file__).parent
 except NameError:
-    project_root = pathlib.Path('.').resolve()
+    project_root = pathlib.Path('../..').resolve()
 
 # Base output directory, subdirs will be created per init time
 FIG_OUTPUT_DIR = project_root / "figures"
@@ -87,7 +87,7 @@ def plot_ozone_forecast(ds, title, base_herbie_params, output_fpath,
         map_proj = ccrs.Mercator(central_longitude=-95); data_proj = ccrs.PlateCarree()
         ax = plt.axes(projection=map_proj)
         if focus_on_utah: ax.set_extent([-112.15, -108.6, 40.0, 41.65], crs=data_proj)
-        else: ax.set_extent([-130, -65, 25, 50], crs=data_proj)
+        else: ax.set_extent([-125, -85, 32, 45], crs=data_proj)
         ax.add_feature(cfeature.LAND.with_scale('10m'), edgecolor='black', facecolor='#F0F0F0', zorder=0)
         ax.add_feature(cfeature.OCEAN.with_scale('10m'), edgecolor='black', facecolor='#D6EAF8', zorder=0)
         ax.add_feature(cfeature.LAKES.with_scale('10m'), edgecolor='black', facecolor='#D6EAF8', zorder=1)
@@ -182,7 +182,7 @@ def process_forecast(H, fxx, base_herbie_params, FIG_OUTPUT_DIR):
         # title = (f"AQM 8-hr Avg Ozone ({H.product_description.upper()})\n"
         #          f"Init: {init_datetime:%Y-%m-%d %H:%M}Z, Fhr End: F{fxx:03d}\n"
         #          f"Valid: {start_valid_time:%Y-%m-%d %H:%M}Z - {end_valid_time:%Y-%m-%d %H:%M}Z")
-        _, _ = plot_ozone_forecast(ds, title, base_herbie_params, output_fpath, focus_on_utah=True)
+        _, _ = plot_ozone_forecast(ds, title, base_herbie_params, output_fpath, focus_on_utah=False)
         if output_fpath.exists(): result_status = str(output_fpath)
         else: print(f"Plot file {output_fpath.name} not created (PID: {current_pid})."); result_status = f"Failed Plotting f{fxx:02d}"
     except ValueError as ve: print(f"--> ValueError (PID {current_pid}) accessing '{forecast_search_str}': {ve}"); result_status = f"Failed Access f{fxx:02d}"
@@ -368,9 +368,8 @@ if __name__ == "__main__":
     # 1. Define MULTIPLE initialization dates/times to process
     #    These will be downloaded in parallel.
     init_dates_to_run = [
-        "2025-01-31 12:00", # Original date from gemini_parallel-aqm.py
-        "2025-01-31 06:00", # Example: Add another date
-        # Add more date strings here...
+        "2025-04-21 12:00",
+        "2025-04-21 06:00",
     ]
 
     # 2. Common model parameters (date will be overridden)
@@ -389,7 +388,8 @@ if __name__ == "__main__":
 
     # 4. Define the COMMON sequence of forecast hours (fxx) for plotting
     #    This sequence will be applied to EACH successfully downloaded file.
-    forecast_hours_sequence = range(8, 33, 1)
+    # forecast_hours_sequence = range(8, 33, 1)
+    forecast_hours_sequence = range(9, 19, 3)
 
     # 5. Define the BASE output directory for plots (subdirs created per init time)
     plot_output_base_dir = FIG_OUTPUT_DIR # Using the global dir defined earlier
@@ -402,7 +402,8 @@ if __name__ == "__main__":
     run_multi_forecast_parallel(
         list_of_base_params=list_of_base_params,
         fxx_values_common=forecast_hours_sequence,
-        output_base_dir=plot_output_base_dir
+        output_base_dir=plot_output_base_dir,
+
     )
 
     print("\nScript finished.")
