@@ -150,6 +150,7 @@ if __name__ == "__main__":
     # Run typical usage of rounding the time now (UTC) to most recent minute.
     # TMP_DIR in env variables
     tempdir = os.environ.get('TMP_DIR')
+    print(f"Using temporary data directory: {tempdir}")
 
     now_dt = datetime.datetime.now(tz=pytz.timezone("UTC"))
     now_dt = now_dt.replace(minute=int(np.floor(now_dt.minute / 5) * 5),
