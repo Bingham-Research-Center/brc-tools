@@ -1,6 +1,8 @@
 """Functions for fetching/sending data for UBAIR website graphics"""
 import os
 import datetime
+import socket
+
 import pytz
 
 import numpy as np
@@ -89,19 +91,27 @@ def get_map_json(valid_time: datetime.datetime, history_hours=48,
 
 def send_json_to_server(server_address, fpath, file_data, API_KEY):
     endpoint = f"{server_address}/api/data/upload/{file_data}"
+    hostname = socket.getfqdn()
+
+    headers = {
+        'X-API-Key': API_KEY,
+        'X-Client-Hostname': hostname
+    }
+
+    # Test basic connectivity first
+    health_response = requests.get(f"{server_address}/api/data/health")
+    print(f"Health check: {health_response.status_code}")
 
     # Prepare upload file
     with open(fpath, 'rb') as f:
         files = {'file': (os.path.basename(fpath), f, 'application/json')}
 
-        # Add authentication
-        headers = {'X-API-Key': API_KEY}
-
         # Send the file
         response = requests.post(
             endpoint,
             files=files,
-            headers=headers
+            headers=headers,
+            timeout=30,
         )
 
     if response.status_code == 200:
@@ -122,6 +132,7 @@ def load_config():
 
     with open(api_key_file, 'r') as f:
         api_key = f.read().strip()
+        print(f"API key length: {len(api_key)} characters.")
 
     # Read website URL
     url_file = os.path.join(config_dir, 'website_url')
