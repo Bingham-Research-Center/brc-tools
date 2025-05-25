@@ -73,7 +73,7 @@ def get_map_json(valid_time: datetime.datetime, history_hours=48,
 
         return fname_data, fname_meta
 
-    df_data, df_meta = download_map_obs(valid_time, history_hours, tempdir)
+    df_data, df_meta = download_map_obs(valid_time, history_hours)
 
     # If direectory doesn't exist, create it.
     if not os.path.exists(tempdir):
