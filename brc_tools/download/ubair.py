@@ -13,14 +13,12 @@ import synoptic
 from brc_tools.utils.lookups import map_stids, map_vrbls
 
 def download_map_obs(valid_time: datetime.datetime, history_hours=25,
-                        tempdir="../data/obs",):
+                        ):
     """Download observations from Synoptic Weather for the UBAIR map.
 
     Args:
         valid_time (datetime): The time (UTC) to download observations for.
         history_hours (int): Number of hours of obs to download.
-        tempdir (str): Directory to save the downloaded files.
-            Default is "../data/obs". Not using it here yet.
     """
     begin_time = valid_time - datetime.timedelta(hours=history_hours)
 
@@ -63,7 +61,7 @@ def get_map_json(valid_time: datetime.datetime, history_hours=48,
         valid_time (datetime): The time (UTC) to download observations for.
         history_hours (int): Number of hours of obs to download.
         tempdir (str): Directory to save the downloaded files (json).
-            Default is "../data/obs".
+            Default is "../data".
     """
     def create_map_fnames(t):
         """Create file names for the map obs based on the valid time."""
@@ -79,6 +77,7 @@ def get_map_json(valid_time: datetime.datetime, history_hours=48,
 
     # If direectory doesn't exist, create it.
     if not os.path.exists(tempdir):
+        print(f"Creating temporary directory: {tempdir}")
         os.makedirs(tempdir)
 
     # Create file paths based on the valid_time
