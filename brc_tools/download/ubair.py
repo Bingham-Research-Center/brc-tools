@@ -94,8 +94,8 @@ def send_json_to_server(server_address, fpath, file_data, API_KEY):
     hostname = socket.getfqdn()
 
     headers = {
-        'X-API-Key': API_KEY,
-        'X-Client-Hostname': hostname
+        'x-api-key': API_KEY,
+        'x-client-hostname': hostname
     }
 
     # Test basic connectivity first
