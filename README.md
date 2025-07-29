@@ -16,6 +16,7 @@ The wishlist includes:
 - [ ] Filtering methods for time series
 - [ ] Machine learning tools for optimising a model 
 - [ ] Develop a coding guideline (e.g., consistency in British or American English for a bloody start)
+- [ ] **Are we going to do testing?!**
 
 There should be an easy entry point for acquiring data. "If it is saved to disc, load it; else, download it and save it for next time. Either way, show me documentation of its structure". This makes it quick to ask, how is ozone correlated with wind direction at Vernal, and there is a fixed method of, say, subsetting or post-processing data before saving so it is obvious what is being loaded. Documentation about data structure and function use must be written quickly; consider tests and also little dataframes with the data format and for testing itself. 
 

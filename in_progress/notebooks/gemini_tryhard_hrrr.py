@@ -1,5 +1,3 @@
-# Script 3: HRRR West Coast Cross-Section (Potential Temperature - Revised Again)
-
 import sys
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,22 +17,39 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 # --- Configuration ---
 date_args = {
-    "year": 2025, "month": 1, "day": 31, "hour": 6, "minute": 0, "second": 0
+    # "year": 2025, "month": 1, "day": 31, "hour": 6, "minute": 0, "second": 0,
+    "year": 2025, "month": 4, "day": 21, "hour": 15, "minute": 0, "second": 0
 }
 analysis_date = datetime(**date_args)
 
+plot_w_e = False
+plot_n_s = True
+
+if plot_w_e:
+    # Provo, UT
+    start_point = (40.1518, -111.62228)
+    # Nr Massadona, CO
+    end_point = (40.2257, -108.67639)
+else:
+    # Dubois, ID
+    start_point = (43.6156, -109.5503)
+    # Canyonlands NP, UT
+    end_point = (38.31743, -109.9473)
+
 model_name = 'hrrr'
 product_name = 'prs' # Standard HRRR product on pressure levels
-forecast_hour = 6    # Short forecast hour for HRRR
+forecast_hour = 1    # Short forecast hour for HRRR
 
-# SLC
-start_point = (40.7606, -111.8881) # Salt Lake City, UT
-# SE of Dinosaur NM, CO, co. line
-end_point = (40.222665, -108.477740)
+# user_y_bottom = 875
+# user_y_top = 650
+user_y_bottom = 925
+user_y_top = 200
 
-# Define plot top pressure (set manually or use data min)
-# plot_min_pressure = 200 # Example: Plot up to 200 hPa
 plot_min_pressure = None # Set to None to use data minimum (at least 100 hPa)
+
+theta_levels = np.arange(280, 341, 1)
+# theta_levels = np.arange(270, 321, 1)
+
 
 # Variables to fetch (Temperature, Height, Winds on pressure levels, Surface Pressure)
 # --- FIX: Corrected search pattern for pressure levels ---
@@ -64,7 +79,7 @@ H = Herbie(
     model=model_name,
     product=product_name,
     fxx=forecast_hour,
-    save_dir='/Users/johnlawson/data/temp_python/xsection', # Adjust as needed
+    save_dir='/Users/johnlawson/data/',
     verbose=False # Set to True for more Herbie download details
 )
 
@@ -255,13 +270,11 @@ ax = plt.axes()
 x_coords = cross['longitude']
 y_coords = cross[level_coord_name]
 y_bottom_pressure = y_coords.max().item()
-y_top_pressure = plot_min_pressure if plot_min_pressure else max(100.0, y_coords.min().item())
+y_top_pressure = y_coords.min().item()
 
 # Plot Potential Temperature
 if cross.get('potential_temperature') is not None:
     print("Plotting Potential Temperature...")
-    # theta_levels = np.arange(270, 360, 2)
-    theta_levels = np.arange(270, 321, 1)
     cmap_style = 'viridis'
     theta_contourf = ax.contourf(
         x_coords, y_coords, cross['potential_temperature'],
@@ -277,21 +290,12 @@ else: print("Potential temperature data not available for plotting.")
 
 # --- Plot Terrain ---
 terrain_pressure_plot = cross.get('terrain_pressure', None) # DataArray, units=hPa
-
-# Get numerical limits for plotting and comparison using .metpy.magnitude
-# Use try-except in case coordinate doesn't have units/accessor yet
-try:
-    y_bottom_pressure_mag = cross[level_coord_name].max().metpy.magnitude
-    y_top_pressure_val = plot_min_pressure if plot_min_pressure else max(100.0, cross[level_coord_name].min().metpy.magnitude)
-except AttributeError: # Fallback if .metpy accessor failed earlier
-    print("Warning: Using .item() for pressure limits, units might be inconsistent.")
-    y_bottom_pressure_mag = cross[level_coord_name].max().item()
-    y_top_pressure_val = plot_min_pressure if plot_min_pressure else max(100.0, cross[level_coord_name].min().item())
+y_bottom_pressure_mag = cross[level_coord_name].max().metpy.magnitude
+y_top_pressure_val = plot_min_pressure if plot_min_pressure else max(100.0, cross[level_coord_name].min().metpy.magnitude)
 
 
-if terrain_pressure_plot is not None and not terrain_pressure_plot.isnull().all():
+if (terrain_pressure_plot is not None) and (not terrain_pressure_plot.isnull().all()):
     print("Plotting terrain...")
-    # --- FIX: Use .metpy.magnitude to get unitless NumPy array ---
     try:
         terrain_magnitudes = terrain_pressure_plot.metpy.magnitude # Get unitless NumPy array
     except AttributeError:
@@ -321,9 +325,9 @@ if 'tangential_wind' in cross and 'normal_wind' in cross:
     print("Plotting wind barbs...")
     try:
         # --- Define Subsampling Slices ---
-        # Subsample heavily for HRRR resolution to avoid clutter
-        barb_slice_x = slice(None, None, 12) # Every 15th point horizontally
-        barb_slice_y = slice(None, None, 2)  # Every 5th level vertically
+        # Subsample  for HRRR resolution to avoid clutter
+        barb_slice_x = slice(None, None, 12)
+        barb_slice_y = slice(None, None, 2)
 
         # --- Apply Slices to Coordinates and Data ---
         # Get the full coordinate arrays first
@@ -385,14 +389,15 @@ else:
 # --- Axis Configuration (Use magnitudes for limits) ---
 print("Configuring axes...")
 ax.set_yscale('log')
-user_y_bottom = 875
-user_y_top = 650
+
+
 ax.set_ylim(user_y_bottom, user_y_top)
 # ax.set_ylim(y_bottom_pressure_mag, y_top_pressure_val) # Use unitless magnitudes
 
 # ... (rest of y-tick setup, labels, title) ...
 # Make sure labels don't explicitly assume units if using magnitudes
-ax.set_xlabel(f"Longitude (°E)")
+# Eventually km rather than lats or lons for distance/x-axis label
+ax.set_xlabel(f"Distance")
 ax.set_ylabel(f"Pressure (hPa)") # Keep label generic if units stripped for plotting
 ax.set_title(
     f'{model_name.upper()} Potential Temperature (K) Cross-Section\n'
@@ -409,12 +414,8 @@ y_ticks = np.arange(user_y_bottom, user_y_top + 1, 50)
 ax.set_yticks(y_ticks)
 ax.set_yticklabels([f'{int(tick)}' for tick in y_ticks])
 
-
 plt.tight_layout()
-plt.show()
-# Save figure
 plt.savefig(output_filename, dpi=250, bbox_inches='tight')
 print(f"Plot saved to {output_filename}")
+plt.show()
 plt.close(fig) # Close figure to free memory
-
-print("Script finished.")

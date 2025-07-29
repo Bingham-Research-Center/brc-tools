@@ -42,7 +42,7 @@ user_y_top = 725     # Top pressure limit for plot (hPa)
 
 # Define output directory
 date_str_compact = analysis_date.strftime('%Y%m%d%H')
-output_dir = f"./xsection/{model_name}/{date_str_compact}"
+output_dir = f"figures/xsection/{model_name}/{date_str_compact}"
 os.makedirs(output_dir, exist_ok=True)
 
 # Set filename based on temperature type
