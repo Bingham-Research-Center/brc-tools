@@ -133,3 +133,35 @@ obs_map_stids = [
     # Other AQ
 
 ]
+
+def load_variable_mapping(path='variable-mapping.txt'):
+    """
+    Reads a plain-text lookup file where each line is 'raw=Pretty Name,'
+    and returns a dict mapping raw → pretty. Use with `raw_to_pretty` and
+    `pretty_to_raw` functions.
+
+    Example:
+        mapping = load_variable_mapping('variable_mapping.txt')
+        print(raw_to_pretty('ozone_concentration', mapping))
+        # → "Ozone Concentration"
+    """
+    mapping = {}
+    with open(path) as f:
+        for line in f:
+            line = line.strip().rstrip(',')
+            if not line or line.startswith('#'):
+                continue
+            key, val = line.split('=', 1)
+            mapping[key] = val
+    return mapping
+
+def raw_to_pretty(key, mapping=None, path='variable_mapping.txt'):
+    if mapping is None:
+        mapping = load_variable_mapping(path)
+    return mapping.get(key, key)
+
+def pretty_to_raw(pretty, mapping=None, path='variable_mapping.txt'):
+    if mapping is None:
+        mapping = load_variable_mapping(path)
+    inv = {v: k for k, v in mapping.items()}
+    return inv.get(pretty, pretty)
