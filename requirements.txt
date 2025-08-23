@@ -1,0 +1,31 @@
+# BRC Tools Requirements
+# Core dependencies for Bingham Research Center tools
+
+# Data manipulation
+numpy>=1.24.0
+pandas>=2.0.0
+polars>=0.20.0
+scipy>=1.10.0
+
+# Meteorological data access
+synoptic>=0.0.2
+herbie-data>=2024.0.0
+
+# Visualization
+matplotlib>=3.7.0
+cartopy>=0.22.0
+
+# Web/API
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Utilities
+python-dotenv>=1.0.0
+pytz>=2023.3
+
+# Development (optional)
+ipykernel>=6.25.0
+jupyter>=1.0.0
+pytest>=7.4.0
+ruff>=0.1.0
+mypy>=1.5.0

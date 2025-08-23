@@ -1,5 +1,8 @@
 ### `brc-tools` - Bingham Research Center (python) Tools
 
+> 📚 **[Claude Code Developer Workflow Guide](CLAUDE-CODE-WORKFLOW.md)** - Start here if using Claude Code!  
+> 🗺️ **[Project Knowledge Index](CLAUDE-INDEX.md)** - Quick navigation to all documentation
+
 Functions that are general to many packages used by the Bingham Research Center. 
 
 Note that the package is under `brc_tools` (note the underscore) and not `brc-tools` (note the hyphen). 
@@ -7,7 +10,7 @@ Note that the package is under `brc_tools` (note the underscore) and not `brc-to
 The wishlist includes:
 
 - [x] Basic setup
-- [ ] Visualisations 
+- [ ] Visualizations 
 - [ ] Data download 
   - NWP
   - Observations
