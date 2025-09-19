@@ -29,6 +29,8 @@ _VRBLS = {
               'synoptic': 'ozone_concentration',},
     "temp": { 'label': 'Temperature (C)',
               'synoptic': 'air_temp'},
+    "pm25": {'label': 'PM2.5 concentration (μg/m³)',
+             'synoptic': 'PM_25_concentration'},
 }
 
 ### WEBSITE LISTS ###
