@@ -64,22 +64,30 @@ def send_json_to_server(server_address, fpath, file_data, API_KEY):
         print(f"Failed to upload {os.path.basename(fpath)}: {response.text}")
 
 def load_config():
-    """Load API key and website URL from file.
+    """Load API key and website URL from configuration.
 
-    TODO: explain how this works!
+    API key comes from DATA_UPLOAD_API_KEY environment variable.
+    Website URL comes from ~/.config/ubair-website/website_url file.
+
+    Returns:
+        tuple: (api_key, website_url)
+
+    Raises:
+        ValueError: If API key is missing or wrong length
+        FileNotFoundError: If website URL file doesn't exist
     """
-
     api_key = os.environ.get('DATA_UPLOAD_API_KEY')
-    config_dir = os.path.join(os.path.expanduser('~'), '.config',
-                              'ubair-website')
+    if not api_key:
+        raise ValueError("DATA_UPLOAD_API_KEY environment variable not set")
+
     if len(api_key) != 64:
         raise ValueError(f"API key should be 64 characters, got {len(api_key)}")
 
-
-    # Read website URL
+    config_dir = os.path.join(os.path.expanduser('~'), '.config', 'ubair-website')
     url_file = os.path.join(config_dir, 'website_url')
+
     if not os.path.exists(url_file):
-        raise FileNotFoundError("Website URL file not found. Check docs for setup.")
+        raise FileNotFoundError(f"Website URL file not found at {url_file}. Check docs for setup.")
 
     with open(url_file, 'r') as f:
         website_url = f.read().strip()
