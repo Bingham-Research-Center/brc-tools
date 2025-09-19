@@ -80,6 +80,10 @@ api.txt
 config.ini
 secrets.json
 
+# Individual Claude Code preferences (team collaboration)
+.claude/
+**/.claude/
+
 # Test coverage
 .coverage
 .pytest_cache/
