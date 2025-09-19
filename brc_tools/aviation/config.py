@@ -9,23 +9,24 @@ from pathlib import Path
 
 def load_aviation_config():
     """Load aviation API keys and server config.
-    
+
     Returns:
-        tuple: (flightaware_key, flightradar24_key, server_url, brc_api_key)
-        
+        tuple: (flightaware_key, flightradar24_key, server_url, data_upload_key)
+
     Similar to push_data.load_config() but for aviation APIs.
+    Uses DATA_UPLOAD_API_KEY for consistency with weather data uploads.
     """
     # Try .env file first (development)
     env_path = Path.cwd() / '.env'
     if env_path.exists():
         from dotenv import load_dotenv
         load_dotenv(env_path)
-    
+
     # Get API keys from environment
     flightaware_key = os.environ.get('FLIGHTAWARE_API_KEY')
     flightradar24_key = os.environ.get('FLIGHTRADAR24_API_KEY')
     server_url = os.environ.get('BRC_SERVER_URL')
-    brc_api_key = os.environ.get('BRC_API_KEY')
+    data_upload_key = os.environ.get('DATA_UPLOAD_API_KEY')
     
     # Fall back to ~/.config for production (like weather data does)
     if not flightaware_key:
@@ -48,4 +49,4 @@ def load_aviation_config():
     if not server_url:
         print("Warning: No server URL found")
     
-    return flightaware_key, flightradar24_key, server_url, brc_api_key
+    return flightaware_key, flightradar24_key, server_url, data_upload_key
