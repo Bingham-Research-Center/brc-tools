@@ -89,5 +89,5 @@ if __name__ == "__main__":
               f" {server_url[:10]}")
 
         for f, data_type in (
-                (meta_fpath, "map-obs-meta"), (map_fpath, "map-obs")):
+                (meta_fpath, "metadata"), (map_fpath, "observations")):
             send_json_to_server(server_url, f, data_type, API_KEY)
