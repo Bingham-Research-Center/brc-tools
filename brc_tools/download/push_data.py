@@ -43,25 +43,35 @@ def send_json_to_server(server_address, fpath, file_data, API_KEY):
     }
 
     # Test basic connectivity first
-    health_response = requests.get(f"{server_address}/api/health")
-    print(f"Health check: {health_response.status_code}")
+    try:
+        health_response = requests.get(f"{server_address}/api/health", timeout=10)
+        print(f"Health check: {health_response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"Health check failed: {e}")
+        return
 
     # Prepare upload file
-    with open(fpath, 'rb') as f:
-        files = {'file': (os.path.basename(fpath), f, 'application/json')}
+    print(f"Uploading {os.path.basename(fpath)} to {endpoint}...")
+    try:
+        with open(fpath, 'rb') as f:
+            files = {'file': (os.path.basename(fpath), f, 'application/json')}
 
-        # Send the file
-        response = requests.post(
-            endpoint,
-            files=files,
-            headers=headers,
-            timeout=30,
-        )
+            # Send the file
+            response = requests.post(
+                endpoint,
+                files=files,
+                headers=headers,
+                timeout=30,
+            )
 
-    if response.status_code == 200:
-        print(f"Successfully uploaded {os.path.basename(fpath)} to {endpoint}")
-    else:
-        print(f"Failed to upload {os.path.basename(fpath)}: {response.text}")
+        if response.status_code == 200:
+            print(f"✅ Successfully uploaded {os.path.basename(fpath)}")
+        else:
+            print(f"❌ Upload failed ({response.status_code}): {response.text}")
+    except requests.exceptions.Timeout:
+        print(f"❌ Upload timed out after 30 seconds")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Upload error: {e}")
 
 def load_config():
     """Load API key and website URL from file.
