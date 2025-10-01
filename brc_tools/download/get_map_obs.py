@@ -81,7 +81,7 @@ if __name__ == "__main__":
     save_json(clean_df, map_fpath)
 
     # This is where I want to send json to the website server
-    send_json = False
+    send_json = True
     if send_json:
         # tempdir = os.environ.get('TMP_DIR')
         API_KEY, server_url = load_config()
