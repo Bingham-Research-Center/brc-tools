@@ -34,7 +34,7 @@ def save_json(df, fpath, orient='records'):
 
 
 def send_json_to_server(server_address, fpath, file_data, API_KEY):
-    endpoint = f"{server_address}/api/data/upload/{file_data}"
+    endpoint = f"{server_address}/api/upload/{file_data}"
     hostname = socket.getfqdn()
 
     headers = {
@@ -43,7 +43,7 @@ def send_json_to_server(server_address, fpath, file_data, API_KEY):
     }
 
     # Test basic connectivity first
-    health_response = requests.get(f"{server_address}/api/data/health")
+    health_response = requests.get(f"{server_address}/api/health")
     print(f"Health check: {health_response.status_code}")
 
     # Prepare upload file
@@ -72,8 +72,10 @@ def load_config():
     api_key = os.environ.get('DATA_UPLOAD_API_KEY')
     config_dir = os.path.join(os.path.expanduser('~'), '.config',
                               'ubair-website')
-    if len(api_key) != 64:
-        raise ValueError(f"API key should be 64 characters, got {len(api_key)}")
+    if not api_key:
+        raise ValueError("DATA_UPLOAD_API_KEY environment variable not set")
+    if len(api_key) != 32:
+        raise ValueError(f"API key should be 32 characters (hex), got {len(api_key)}")
 
 
     # Read website URL
