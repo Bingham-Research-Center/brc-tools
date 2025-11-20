@@ -1,0 +1,332 @@
+{
+  "version": "1.0.0",
+  "description": "Unified schema for UBAIR data pipeline - source of truth for CHPC and website",
+  "last_updated": "2025-11-19",
+
+  "stations": {
+    "UBHSP": {
+      "name": "Horsepool",
+      "lat": 40.144,
+      "lng": -109.467,
+      "elevation": 1524,
+      "type": "air_quality",
+      "network": "ubair",
+      "homepage": true
+    },
+    "UBCSP": {
+      "name": "Castle Peak",
+      "lat": 40.051,
+      "lng": -110.020,
+      "elevation": 1950,
+      "type": "air_quality",
+      "network": "ubair",
+      "homepage": true
+    },
+    "UB7ST": {
+      "name": "Seven Sisters",
+      "lat": 39.981,
+      "lng": -109.345,
+      "elevation": 1585,
+      "type": "air_quality",
+      "network": "ubair",
+      "homepage": true
+    },
+    "KVEL": {
+      "name": "Vernal",
+      "lat": 40.44,
+      "lng": -109.51,
+      "elevation": 1611,
+      "type": "airport",
+      "network": "airport",
+      "homepage": true
+    },
+    "K74V": {
+      "name": "Roosevelt",
+      "lat": 40.28,
+      "lng": -110.05,
+      "elevation": 1585,
+      "type": "airport",
+      "network": "airport",
+      "homepage": true
+    },
+    "COOPDSNU1": {
+      "name": "Duchesne",
+      "lat": 40.17,
+      "lng": -110.40,
+      "elevation": 1750,
+      "type": "coop",
+      "network": "coop",
+      "homepage": true
+    },
+    "UINU1": {
+      "name": "Fort Duchesne",
+      "lat": 40.28,
+      "lng": -109.86,
+      "elevation": 1524,
+      "type": "weather",
+      "network": "mesowest",
+      "homepage": true
+    },
+    "UTMYT": {
+      "name": "Myton",
+      "lat": 40.22,
+      "lng": -110.18,
+      "elevation": 1524,
+      "type": "road_weather",
+      "network": "udot",
+      "homepage": true
+    },
+    "COOPDINU1": {
+      "name": "Dinosaur NM",
+      "lat": 40.44,
+      "lng": -109.31,
+      "elevation": 1463,
+      "type": "coop",
+      "network": "coop",
+      "homepage": true
+    },
+    "COOPALMU1": {
+      "name": "Altamont",
+      "lat": 40.37,
+      "lng": -110.30,
+      "elevation": 2073,
+      "type": "coop",
+      "network": "coop",
+      "homepage": true
+    },
+    "UBRDW": {
+      "name": "Red Wash",
+      "lat": 40.20,
+      "lng": -109.35,
+      "elevation": 1524,
+      "type": "air_quality",
+      "network": "ubair",
+      "homepage": true,
+      "alt_ids": ["A1633", "RDN"]
+    },
+    "UBORY": {
+      "name": "Ouray",
+      "lat": 40.05,
+      "lng": -109.69,
+      "elevation": 1372,
+      "type": "air_quality",
+      "network": "ubair",
+      "homepage": true,
+      "alt_ids": ["A1622", "CHPU1"]
+    },
+    "UBDRF": {
+      "name": "Dry Fork",
+      "lat": 40.55,
+      "lng": -109.60,
+      "elevation": 1800,
+      "type": "air_quality",
+      "network": "ubair",
+      "homepage": true
+    },
+    "UBWHR": {
+      "name": "Whiterocks",
+      "lat": 40.48,
+      "lng": -109.91,
+      "elevation": 1676,
+      "type": "air_quality",
+      "network": "ubair",
+      "homepage": true,
+      "alt_ids": ["A1386", "QHW"]
+    },
+    "UTDAN": {
+      "name": "Daniels Summit",
+      "lat": 40.30,
+      "lng": -111.26,
+      "elevation": 2438,
+      "type": "road_weather",
+      "network": "udot",
+      "homepage": true
+    },
+    "UTICS": {
+      "name": "Indian Canyon",
+      "lat": 39.89,
+      "lng": -110.75,
+      "elevation": 2758,
+      "type": "road_weather",
+      "network": "udot",
+      "homepage": true
+    },
+    "UTSLD": {
+      "name": "Soldier Summit",
+      "lat": 39.93,
+      "lng": -111.08,
+      "elevation": 2282,
+      "type": "road_weather",
+      "network": "udot",
+      "homepage": true
+    },
+    "UCC34": {
+      "name": "Bluebell",
+      "lat": 40.37,
+      "lng": -110.21,
+      "elevation": 1890,
+      "type": "weather",
+      "network": "mesowest",
+      "homepage": false
+    },
+    "K40U": {
+      "name": "Manila",
+      "lat": 40.98,
+      "lng": -109.68,
+      "elevation": 1950,
+      "type": "airport",
+      "network": "airport",
+      "homepage": false
+    },
+    "UTSTV": {
+      "name": "Starvation",
+      "lat": 40.17,
+      "lng": -110.49,
+      "elevation": 1798,
+      "type": "road_weather",
+      "network": "udot",
+      "homepage": false
+    },
+    "QHW": {
+      "name": "Hawthorne",
+      "lat": 40.73,
+      "lng": -111.87,
+      "elevation": 1320,
+      "type": "air_quality",
+      "network": "slv_aq",
+      "homepage": false
+    },
+    "QCV": {
+      "name": "Copperview",
+      "lat": 40.63,
+      "lng": -111.90,
+      "elevation": 1295,
+      "type": "air_quality",
+      "network": "slv_aq",
+      "homepage": false
+    },
+    "QHV": {
+      "name": "Harrisville",
+      "lat": 41.28,
+      "lng": -111.98,
+      "elevation": 1372,
+      "type": "air_quality",
+      "network": "slv_aq",
+      "homepage": false
+    },
+    "QSM": {
+      "name": "Smithfield",
+      "lat": 41.84,
+      "lng": -111.83,
+      "elevation": 1381,
+      "type": "air_quality",
+      "network": "slv_aq",
+      "homepage": false
+    }
+  },
+
+  "variables": {
+    "air_temp": {
+      "display": "Temperature",
+      "units": "Celsius",
+      "thresholds": { "warning": 30, "danger": 35 }
+    },
+    "wind_speed": {
+      "display": "Wind Speed",
+      "units": "m/s",
+      "thresholds": null
+    },
+    "wind_direction": {
+      "display": "Wind Direction",
+      "units": "Degrees",
+      "thresholds": null
+    },
+    "dew_point_temperature": {
+      "display": "Dew Point",
+      "units": "Celsius",
+      "thresholds": null
+    },
+    "ozone_concentration": {
+      "display": "Ozone",
+      "units": "ppb",
+      "thresholds": { "warning": 50, "danger": 70 }
+    },
+    "PM_25_concentration": {
+      "display": "PM2.5",
+      "units": "ug/m3",
+      "thresholds": { "warning": 35, "danger": 55 }
+    },
+    "NOx_concentration": {
+      "display": "NOx",
+      "units": "ppb",
+      "thresholds": { "warning": 100, "danger": 150 }
+    },
+    "NO_concentration": {
+      "display": "NO",
+      "units": "ppb",
+      "thresholds": { "warning": 100, "danger": 150 }
+    },
+    "pressure": {
+      "display": "Pressure",
+      "units": "Pascals",
+      "thresholds": null
+    },
+    "sea_level_pressure": {
+      "display": "Sea Level Pressure",
+      "units": "Pascals",
+      "thresholds": null
+    },
+    "altimeter": {
+      "display": "Altimeter",
+      "units": "Pascals",
+      "thresholds": null
+    },
+    "soil_temp": {
+      "display": "Soil Temperature",
+      "units": "Celsius",
+      "thresholds": null
+    },
+    "snow_depth": {
+      "display": "Snow Depth",
+      "units": "Millimeters",
+      "thresholds": null
+    },
+    "solar_radiation": {
+      "display": "Solar Radiation",
+      "units": "W/m**2",
+      "thresholds": null
+    },
+    "outgoing_radiation_sw": {
+      "display": "Outgoing SW Radiation",
+      "units": "W/m**2",
+      "thresholds": null
+    },
+    "ceiling": {
+      "display": "Ceiling",
+      "units": "Meters",
+      "thresholds": null
+    },
+    "relative_humidity": {
+      "display": "Humidity",
+      "units": "%",
+      "thresholds": null
+    }
+  },
+
+  "outlook_format": {
+    "filename_pattern": "outlook_YYYYMMDD_HHMM.md",
+    "required_sections": ["## Summary"],
+    "max_length": 10000,
+    "encoding": "utf-8"
+  },
+
+  "data_format": {
+    "observation": {
+      "required_fields": ["stid", "variable", "value", "date_time", "units"],
+      "date_format": "ISO 8601 UTC"
+    },
+    "metadata": {
+      "required_fields": ["stid", "name", "elevation", "latitude", "longitude"]
+    }
+  }
+}
