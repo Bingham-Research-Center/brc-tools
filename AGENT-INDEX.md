@@ -79,10 +79,12 @@ send_json_to_server(
 
 ## Current Deployment
 
-**CHPC Partitions:**
-- **Owner node:** `lawson-np` (for testing/debugging - no restrictions)
-- **Shared node:** `notchpeak-shared-short` (for production - must be efficient)
-- See `../clyfar/CHPC-SYSTEM-INFO.md` for full partition selection guide
+**CHPC Reference:** See `docs/CHPC-REFERENCE.md` (canonical source)
+
+**Quick Reference:**
+- **Owner nodes:** `lawson-np` (2 nodes), `lawson-kp` (4 nodes)
+- **Fallback:** `notchpeak-shared` when owner nodes busy
+- **salloc:** `salloc -n 4 -N 1 --mem=16G -t 2:00:00 -p lawson-np -A lawson-np`
 
 **CHPC cron:**
 ```bash
