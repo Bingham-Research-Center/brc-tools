@@ -23,6 +23,7 @@ from brc_tools.utils.util_funcs import get_current_datetime
 if __name__ == "__main__":
     # Save to scratch or temp directory (works from any cwd)
     data_root = os.path.expanduser("~/gits/brc-tools/data")
+    os.makedirs(data_root, exist_ok=True)
     map_datetime = get_current_datetime()
 
     print("Downloading metadata...")
