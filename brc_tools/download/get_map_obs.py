@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import polars as pl
 import pandas as pd
 
-import synoptic
+from synoptic.services import Metadata, Latest, TimeSeries
 
 from brc_tools.utils.lookups import obs_map_vrbls, obs_map_stids
 from brc_tools.download.download_funcs import generate_json_fpath
@@ -26,8 +26,8 @@ if __name__ == "__main__":
     map_datetime = get_current_datetime()
 
     print("Downloading metadata...")
-    df_meta = synoptic.Metadata(stid=obs_map_stids, verbose=True,
-                                ).df()
+    df_meta = Metadata(stid=obs_map_stids, verbose=True,
+                       ).df()
 
     # Keep stid, name, elevation, latitude, longitude only
     df_meta = df_meta.select(
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     #                                 ).df().synoptic.pivot()
 
     print("Downloading latest observations...")
-    latest_obs = synoptic.Latest(stid=obs_map_stids, vars=obs_map_vrbls, verbose=True,
+    latest_obs = Latest(stid=obs_map_stids, vars=obs_map_vrbls, verbose=True,
                                  within=datetime.timedelta(hours=25), # 1 hour
                                 ).df()
 
