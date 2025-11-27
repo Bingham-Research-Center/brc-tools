@@ -21,8 +21,8 @@ from brc_tools.utils.util_funcs import get_current_datetime
 
 
 if __name__ == "__main__":
-    # Are we saving the dataframe to fisc first before exporting to json?
-    data_root = "../../data"
+    # Save to scratch or temp directory (works from any cwd)
+    data_root = os.path.expanduser("~/gits/brc-tools/data")
     map_datetime = get_current_datetime()
 
     print("Downloading metadata...")
