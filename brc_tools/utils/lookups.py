@@ -123,8 +123,14 @@ obs_map_stids = [
     'COOPDINU1', 'COOPROSU1',  'COOPVELU1', 'COOPFTDU1', 'COOPALMU1',
     'COOPDSNU1', 'COOPNELU1',
 
-    # UBAIR network
-    "UBHSP", "UB7ST", "UBCSP",
+    # UBAIR network (ozone monitoring - full network)
+    "UBHSP",   # Horsepool - KEY ozone monitor
+    "UBCSP",   # Castle Peak - KEY ozone monitor
+    "UB7ST",   # Seven Sisters
+    "UBRDW",   # Red Wash
+    "UBORY",   # Ouray
+    "UBDRF",   # Dry Fork
+    "UBWHR",   # Whiterocks
 
     # Coupled pairs for, e.g., contrasting temp, or tracking fronts
 
