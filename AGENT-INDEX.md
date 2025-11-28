@@ -1,8 +1,9 @@
 # AI Agent Quick Reference - brc-tools
 
-**Current Task:** Supporting Clyfar integration
-**Status:** Stable - no changes needed currently
-**Session Date:** 2025-11-23
+**Current Task:** Observation pipeline + Clyfar support
+**Status:** UBAIR stations fixed, awaiting CHPC cron verification
+**Last Session:** 2025-11-27
+**Branch:** `integration-clyfar-v0.9.5`
 
 ---
 
@@ -21,12 +22,16 @@
 ### Installation
 - **Version:** 0.1.0
 - **Install method:** Editable (`pip install -e .`)
-- **Installed in:** clyfar-2025 conda environment
-- **Location:** `/Users/johnlawson/PycharmProjects/brc-tools`
+- **Installed in:** clyfar-nov2025 conda environment (CHPC)
+- **Location:** `~/gits/brc-tools` (CHPC), local dev varies
 
-**Verify:**
+### 27 Nov Fix
+- Added missing UBAIR ozone stations to `brc_tools/utils/lookups.py`
+- Stations added: UBRDW, UBORY, UBDRF, UBWHR (7 total now)
+
+**Verify on CHPC:**
 ```bash
-conda activate clyfar-2025
+conda activate clyfar-nov2025
 pip list | grep brc-tools  # Should show: brc-tools 0.1.0 /path/to/brc-tools
 ```
 
