@@ -145,19 +145,26 @@ obs_map_stids = [
     # UBAIR network (ozone monitoring)
     # NOTE (30 Nov 2025): Some UB-series stations are offline or not returning data.
     # A-series IDs (Network 136) return ozone data for same physical locations.
-    # May need to "fuse" UB-series (met vars) + A-series (AQ vars) for display.
-    # See old_ubair_map_stids for the canonical AQ station list.
     #
-    # OFFLINE/NOT RETURNING DATA (investigate later):
+    # A-series stations (Network 136) - confirmed returning ozone:
+    "A3822",   # Dinosaur National Monument
+    "A1633",   # Red Wash (same location as UBRDW)
+    "A1622",   # Ouray (same location as UBORY)
+    "A1386",   # Whiterocks (same location as UBWHR)
+    "A1388",   # Myton
+    # Utah DAQ stations (Network 9) - confirmed returning ozone:
+    "QV4",     # Vernal
+    "QRS",     # Roosevelt
+    # UBAIR Network 209 - working:
+    "UB7ST",   # Seven Sisters - confirmed working
+    #
+    # OFFLINE/NOT RETURNING DATA (do not include):
     # "UBHSP",   # Horsepool - INACTIVE since Sep 2025
     # "UBCSP",   # Castle Peak - No data since Nov 5, 2025
     # "UBRDW",   # Red Wash - use A1633 instead
     # "UBORY",   # Ouray - use A1622 instead
     # "UBDRF",   # Dry Fork - not returning data
     # "UBWHR",   # Whiterocks - use A1386 instead
-    #
-    # WORKING:
-    "UB7ST",   # Seven Sisters - confirmed working
 
     # Coupled pairs for, e.g., contrasting temp, or tracking fronts
 
