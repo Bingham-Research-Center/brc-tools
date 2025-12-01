@@ -32,18 +32,37 @@ _VRBLS = {
 }
 
 ### WEBSITE LISTS ###
+# Canonical Uinta Basin AQ stations for front page
+# Status checked 30 Nov 2025 via synopticpy
+ubair_aq_stids = [
+    # WORKING (confirmed returning ozone_concentration):
+    "A3822",  # Dinosaur National Monument (Network 136)
+    "A1633",  # Red Wash (Network 136, =UBRDW location)
+    "UB7ST",  # Seven Sisters (Network 209 UBAIR)
+    "A1622",  # Ouray (Network 136, =UBORY location)
+    "QV4",    # Vernal (Network 9 Utah DAQ)
+    "A1386",  # Whiterocks (Network 136, =UBWHR location)
+    "QRS",    # Roosevelt (Network 9 Utah DAQ)
+    "A1388",  # Myton (Network 136)
+    # OFFLINE (investigate later - may come back online):
+    # "UBHSP",  # Horsepool - INACTIVE since Sep 2025
+    # "UBCSP",  # Castle Peak - No data since Nov 5, 2025
+    # "UBRVT",  # Roosevelt USU - INACTIVE (use QRS instead)
+]
+
+# Legacy list (kept for reference)
 old_ubair_map_stids = [
     "A3822",  # Dinosaur National Monument
     "A1633",  # Red Wash
     "UB7ST",  # Seven Sisters
-    "UBHSP",  # Horsepool
+    "UBHSP",  # Horsepool - OFFLINE
     "A1622",  # Ouray
     "QV4",    # Vernal
     "A1386",  # Whiterocks
     "QRS",    # Roosevelt OG
-    "UBRVT",  # Roosevelt USU
+    "UBRVT",  # Roosevelt USU - OFFLINE
     "A1388",  # Myton
-    "UBCSP"   # Castle Peak
+    "UBCSP"   # Castle Peak - OFFLINE
 ]
 
 obs_map_vrbls = [
@@ -123,14 +142,22 @@ obs_map_stids = [
     'COOPDINU1', 'COOPROSU1',  'COOPVELU1', 'COOPFTDU1', 'COOPALMU1',
     'COOPDSNU1', 'COOPNELU1',
 
-    # UBAIR network (ozone monitoring - full network)
-    "UBHSP",   # Horsepool - KEY ozone monitor
-    "UBCSP",   # Castle Peak - KEY ozone monitor
-    "UB7ST",   # Seven Sisters
-    "UBRDW",   # Red Wash
-    "UBORY",   # Ouray
-    "UBDRF",   # Dry Fork
-    "UBWHR",   # Whiterocks
+    # UBAIR network (ozone monitoring)
+    # NOTE (30 Nov 2025): Some UB-series stations are offline or not returning data.
+    # A-series IDs (Network 136) return ozone data for same physical locations.
+    # May need to "fuse" UB-series (met vars) + A-series (AQ vars) for display.
+    # See old_ubair_map_stids for the canonical AQ station list.
+    #
+    # OFFLINE/NOT RETURNING DATA (investigate later):
+    # "UBHSP",   # Horsepool - INACTIVE since Sep 2025
+    # "UBCSP",   # Castle Peak - No data since Nov 5, 2025
+    # "UBRDW",   # Red Wash - use A1633 instead
+    # "UBORY",   # Ouray - use A1622 instead
+    # "UBDRF",   # Dry Fork - not returning data
+    # "UBWHR",   # Whiterocks - use A1386 instead
+    #
+    # WORKING:
+    "UB7ST",   # Seven Sisters - confirmed working
 
     # Coupled pairs for, e.g., contrasting temp, or tracking fronts
 
