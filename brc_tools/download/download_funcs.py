@@ -8,7 +8,7 @@ import pytz
 import numpy as np
 import pandas as pd
 import requests
-import synoptic
+from synoptic.services import Metadata, TimeSeries
 
 
 def compute_start_time(valid_time, history_hours):
@@ -17,14 +17,14 @@ def compute_start_time(valid_time, history_hours):
 
 
 def download_obs_metadata(stids):
-    df_meta = synoptic.Metadata(stid=stids, verbose=True).df()
+    df_meta = Metadata(stid=stids, verbose=True).df()
     return df_meta
 
 
 def download_obs_timeseries(stids, start_time, valid_time, vrbls):
-    df_data = synoptic.TimeSeries(stid=stids,start=start_time, end=valid_time,
-                                  vars=vrbls, verbose=True,
-                                  ).df().synoptic.pivot()
+    df_data = TimeSeries(stid=stids, start=start_time, end=valid_time,
+                         vars=vrbls, verbose=True,
+                         ).df().synoptic.pivot()
     return df_data
 
 
