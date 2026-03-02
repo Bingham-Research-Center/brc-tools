@@ -86,8 +86,8 @@ def get_latest_hrrr_init():
             )
             log.info("Found HRRR init: %s", candidate.strftime("%Y-%m-%d %HZ"))
             return candidate
-        except Exception:
-            log.debug("No HRRR at %s, stepping back", candidate.strftime("%HZ"))
+        except Exception as exc:
+            log.warning("No HRRR at %s: %s", candidate.strftime("%HZ"), exc)
             continue
 
     raise RuntimeError("No HRRR run found in the last 6 hours")
