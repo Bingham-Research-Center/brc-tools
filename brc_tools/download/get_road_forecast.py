@@ -116,7 +116,7 @@ def fetch_forecast_hour(init_time, fxx):
     if not datasets:
         raise ValueError(f"No variables loaded for fxx={fxx}")
 
-    merged = xr.merge(datasets)
+    merged = xr.merge(datasets, compat="override")
 
     # Fix longitude from 0-360 to -180..180 if needed
     if "longitude" in merged.coords and float(merged.longitude.max()) > 180.0:
