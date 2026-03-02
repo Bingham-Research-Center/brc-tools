@@ -70,7 +70,7 @@ def get_latest_hrrr_init():
     Raises:
         RuntimeError: If no HRRR run is found in the last 6 hours.
     """
-    now = datetime.datetime.now(datetime.timezone.utc).replace(
+    now = datetime.datetime.utcnow().replace(
         minute=0, second=0, microsecond=0
     )
     start_hour = now - datetime.timedelta(hours=2)
