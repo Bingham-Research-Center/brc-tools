@@ -199,10 +199,11 @@ Invalidate the cache when a new upload arrives at `POST /api/upload/road-forecas
 
 ## 8. Cron Schedule
 
-On CHPC, add to crontab:
+On CHPC, add to crontab (see `docs/CHPC-REFERENCE.md` for full cron listing):
 
 ```
-50 * * * * cd ~/gits/brc-tools && python -m brc_tools.download.get_road_forecast >> /tmp/road_forecast.log 2>&1
+50 * * * * ~/gits/brc-tools/scripts/run_road_forecast.sh
+0 4 * * * ~/gits/brc-tools/scripts/rotate_logs.sh
 ```
 
-HRRR data is typically available ~45 minutes after initialization, so running at :50 gives a 5-minute buffer.
+The wrapper script (`scripts/run_road_forecast.sh`) handles conda activation, logging to `~/logs/road_forecast.log`, and exit-code tracking. HRRR data is typically available ~45 minutes after initialization, so running at :50 gives a 5-minute buffer.

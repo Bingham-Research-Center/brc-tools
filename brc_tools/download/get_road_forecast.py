@@ -404,9 +404,14 @@ def main():
         action="store_true",
         help="Fetch and print JSON but do not push to server",
     )
+    parser.add_argument(
+        "--data-dir",
+        default=os.path.expanduser("~/gits/brc-tools/data"),
+        help="Directory for output JSON files (default: ~/gits/brc-tools/data)",
+    )
     args = parser.parse_args()
 
-    data_root = os.path.expanduser("~/gits/brc-tools/data")
+    data_root = args.data_dir
     os.makedirs(data_root, exist_ok=True)
 
     # 1. Find latest HRRR init
