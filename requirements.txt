@@ -8,7 +8,7 @@ polars>=0.20.0
 scipy>=1.10.0
 
 # Meteorological data access
-SynopticPy>=2024.0.0
+synoptic>=0.0.2
 herbie-data>=2024.0.0
 
 # Visualization
