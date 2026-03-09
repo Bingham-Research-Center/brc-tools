@@ -129,6 +129,12 @@ export DATA_UPLOAD_API_KEY="<32-char-hex>"
 ```bash
 # Observations - every 10 minutes
 */10 * * * * source ~/.bashrc && conda activate brc-tools && python ~/gits/brc-tools/brc_tools/download/get_map_obs.py >> ~/logs/obs.log 2>&1
+
+# Road forecast - hourly at :50 (HRRR available ~:45)
+50 * * * * ~/gits/brc-tools/scripts/run_road_forecast.sh
+
+# Log rotation - daily at 4am
+0 4 * * * ~/gits/brc-tools/scripts/rotate_logs.sh
 ```
 
 ### Clyfar Forecasts (4× daily via Slurm)
