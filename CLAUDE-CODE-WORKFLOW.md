@@ -51,7 +51,7 @@ These survive between sessions!
 #### 2. Current Tasks → `WISHLIST-TASKS.md`
 ```markdown
 - [ ] Add retry logic to API calls
-- [ ] Fix PM_25_concentration variable name
+- [x] ~~Fix PM_25_concentration variable name~~ (verified correct)
 ```
 Claude Code checks this for priorities.
 

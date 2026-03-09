@@ -7,9 +7,10 @@
   - [x] COOPDINU1 (Dinosaur NM) - 40.44°N, -109.31°W
   - [x] COOPALMU1 (Altamont) - 40.37°N, -110.30°W  
   - [x] COOPDSNU1 (Duchesne) - 40.17°N, -110.40°W
-- [ ] Update variable name mapping for website compatibility:
-  - [ ] Ensure PM_25_concentration (not pm25_concentration)
-  - [ ] Verify all variables match website expectations
+- [x] ✅ Variable name mapping verified — all correct:
+  - [x] `PM_25_concentration` used consistently (no `pm25_concentration` anywhere)
+  - [x] All variables (`ozone_concentration`, `NOx_concentration`, `PM_10_concentration`) match website expectations
+  - [x] Road forecast pipeline uses separate namespace (`temp_2m`, etc.) with `data_type="road-forecast"`
 - [ ] Test data export format matches expected JSON structure
 
 ### Code Consolidation
@@ -106,11 +107,10 @@
 - Documentation → Team onboarding → Collaborative development
 
 ## Next Session Priorities
-1. Verify variable name mapping (PM_25_concentration) matches website
-2. Test data pipeline with all stations
-3. Create `brc_tools/config.py` for centralized settings
-4. Begin AQM code consolidation from `in_progress/`
-5. Add error handling and retry logic to API calls
+1. Test data pipeline with all stations
+2. Create `brc_tools/config.py` for centralized settings
+3. Begin AQM code consolidation from `in_progress/` (use `PM_25_concentration` for output)
+4. Add error handling and retry logic to API calls
 
 ## Notes for Claude Code Sessions
 - Always check `reference/` folder for context
