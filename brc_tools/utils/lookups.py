@@ -2,9 +2,31 @@
 """
 
 import os
+import re
 import sys
 
 import numpy as np
+
+
+# UDOT Traffic API endpoint for camera data
+UDOT_CAMERAS_API_URL = "https://www.udottraffic.utah.gov/api/v2/get/cameras"
+
+
+def slugify_camera_name(name):
+    """Convert a camera name to a filesystem-safe slug.
+
+    Example:
+        >>> slugify_camera_name("I-80 @ 150 N / MP 163.05, CLV")
+        'i-80_at_150_n_mp_163-05_clv'
+    """
+    s = name.lower()
+    s = s.replace("@", "at")
+    s = s.replace("/", " ")
+    s = re.sub(r"[^a-z0-9\s.-]", "", s)
+    s = re.sub(r"[\s]+", "_", s.strip())
+    s = s.replace(".", "-")
+    s = re.sub(r"_+", "_", s)
+    return s.strip("_")
 
 
 

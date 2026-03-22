@@ -132,7 +132,7 @@ data/               # Local data cache (gitignored?)
 
 ## Critical Updates Needed
 1. ✅ **Stations already present** in `lookups.py`: COOPDINU1, COOPALMU1, COOPDSNU1
-2. **Verify variable names**: Ensure PM_25_concentration matches website expectations
+2. ✅ **Variable names verified**: `PM_25_concentration` confirmed correct across all pipelines
 3. **Consolidate AQM code** from in_progress/
 4. ✅ **American English**: visualize directory renamed
 
