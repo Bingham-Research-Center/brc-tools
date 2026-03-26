@@ -4,6 +4,7 @@
 - **🚀 Start Here**: [CLAUDE-CODE-WORKFLOW.md](CLAUDE-CODE-WORKFLOW.md) - Developer workflow guide
 - **Project Overview**: [CLAUDE.md](CLAUDE.md) - Main context file
 - **Current Tasks**: [WISHLIST-TASKS.md](WISHLIST-TASKS.md) - Prioritized todo list
+- **Current Agent Hand-off**: [AGENT-INDEX.md](AGENT-INDEX.md) - Session endpoint and next steps
 - **Team Context**: [reference/BRC-TOOLS-SETUP.md](reference/BRC-TOOLS-SETUP.md)
 
 ## Project Structure
@@ -42,10 +43,10 @@
 4. **Language**: American English in code, British OK in communication
 
 ### Current Priorities
-1. Fix station data pipeline
-2. Consolidate AQM code
-3. Create testing framework
-4. Document for team accessibility
+1. Harden the hourly HRRR road proof-of-concept
+2. Keep upload off by default until the road bucket is fixed
+3. Keep road and aviation separate products
+4. Expand to longer dry-runs before any website-side work
 
 ## Quick Commands
 
@@ -54,18 +55,17 @@
 # Fetch observations
 python -m brc_tools.download.get_map_obs
 
-# Check station list
-from brc_tools.utils.lookups import obs_map_stids
+# Run minimal HRRR road dry-run
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python \
+-m brc_tools.download.get_road_forecast \
+--dry-run --max-fxx 1 --min-usable-hours 1 \
+--data-dir /tmp/brc-tools-road-smoke
 ```
 
 ### Environment Setup
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-
-# Install dependencies
-pip install -r requirements.txt
+# Dedicated local Miniforge env used for current HRRR work
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python -m pytest tests/test_road_forecast_logic.py
 ```
 
 ## File Naming Conventions
@@ -74,9 +74,9 @@ pip install -r requirements.txt
 - Data files: `{prefix}_{YYYYMMDD_HHMM}Z.json`
 
 ## API Keys Required
-- SYNOPTIC_API_KEY
+- SYNOPTIC_TOKEN
 - FLIGHTAWARE_API_KEY (optional)
-- BRC_API_KEY (for BasinWX server)
+- DATA_UPLOAD_API_KEY (for BasinWx uploads)
 
 ## Knowledge Base Philosophy
 - Keep reference material in `reference/` for persistence

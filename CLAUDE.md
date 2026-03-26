@@ -7,6 +7,22 @@ Research toolkit for the Bingham Research Center focused on atmospheric/environm
 
 **Context**: This is the Python/CHPC side of a two-part system. Data flows from CHPC compute servers → BasinWX web display. Team includes high school students through professors.
 
+## Current Focus
+- Production observations already run from `brc_tools/download/get_map_obs.py`.
+- Current dev work is a minimal hourly HRRR road proof-of-concept:
+  - `brc_tools/download/hrrr_access.py`
+  - `brc_tools/download/hrrr_config.py`
+  - `brc_tools/download/get_road_forecast.py`
+  - `scripts/run_road_forecast_smoke.sh`
+  - `tests/test_road_forecast_logic.py`
+- Verified on `2026-03-26`:
+  - dedicated Miniforge env at `/home/johnrobertlawson/.conda/envs/brc-tools`
+  - new road logic tests pass
+  - one live `--max-fxx 1` dry-run succeeds locally
+- Keep road and aviation separate.
+- Keep upload off by default until the road product contract is settled.
+- Hourly road MVP comes before 15-minute output.
+
 ## Core Functionality
 
 ### Data Download (`brc_tools/download/`)
@@ -30,21 +46,20 @@ Research toolkit for the Bingham Research Center focused on atmospheric/environm
 - Notebooks for various NWP products
 
 ## Key Dependencies
-- **synoptic**: For weather observations API
+- **SynopticPy**: For weather observations API
 - **polars**: DataFrame operations (preferred over pandas)
-- **herbie**: NWP model data access
+- **herbie-data**: NWP model data access
 - **requests**: API interactions
 - **numpy, scipy, matplotlib**: Scientific computing
 - **cartopy**: Map projections
 
 ## Environment Variables
 ```bash
-# Expected (need confirmation):
-SYNOPTIC_API_KEY=xxx
+# Common:
+DATA_UPLOAD_API_KEY=xxx
+SYNOPTIC_TOKEN=xxx
+BRC_TOOLS_HRRR_CACHE=/path/to/cache
 FLIGHTAWARE_API_KEY=xxx
-BRC_SERVER_URL=https://basinwx.com  # or similar
-BRC_API_KEY=xxx
-TMP_DIR=/path/to/temp
 ```
 
 ## Common Tasks
@@ -57,8 +72,11 @@ from brc_tools.download import get_map_obs
 
 ### Download NWP Model Data
 ```python
-# Use Herbie for AQM, HRRR, RRFS data
-# See in_progress/aqm/ for examples
+# Minimal hourly HRRR road proof-of-concept
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python \
+-m brc_tools.download.get_road_forecast \
+--dry-run --max-fxx 1 --min-usable-hours 1 \
+--data-dir /tmp/brc-tools-road-smoke
 ```
 
 ### Push Data to Server
@@ -75,7 +93,6 @@ send_json_to_server(server_url, filepath, data_type, API_KEY)
 - Saved as: `map_obs_YYYYMMDD_HHMMZ.json`
 
 ### File Naming Convention
-- Use `generate_json_fpath()` for consistent naming
 - Format: `{prefix}_{YYYYMMDD_HHMM}Z.json`
 
 ## Code Conventions
@@ -108,7 +125,7 @@ ruff check .
 mypy brc_tools/
 
 # Run tests (when written)
-pytest tests/
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python -m pytest tests/
 ```
 
 ## Project Structure
@@ -131,10 +148,10 @@ data/               # Local data cache (gitignored?)
 ```
 
 ## Critical Updates Needed
-1. ✅ **Stations already present** in `lookups.py`: COOPDINU1, COOPALMU1, COOPDSNU1
-2. **Verify variable names**: Ensure PM_25_concentration matches website expectations
-3. **Consolidate AQM code** from in_progress/
-4. ✅ **American English**: visualize directory renamed
+1. Run a `6-12` hour HRRR road dry-run and harden missing-hour handling
+2. Decide the v1 road upload bucket before enabling upload
+3. Keep road and aviation separate as the HRRR work expands
+4. Consolidate older `in_progress/` model code only after the HRRR road path is stable
 
 ## See Also
 - [WISHLIST-TASKS.md](WISHLIST-TASKS.md) - Full prioritized task list

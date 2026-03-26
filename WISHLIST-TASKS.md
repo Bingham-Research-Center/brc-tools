@@ -1,5 +1,23 @@
 # BRC Tools - Task Wishlist & Queue
 
+## Priority 0: HRRR Road Proof-of-Concept
+
+### Done This Session
+- [x] Add a shared HRRR access layer in `brc_tools/download/hrrr_access.py`
+- [x] Add shared HRRR route/query config in `brc_tools/download/hrrr_config.py`
+- [x] Add a minimal hourly road CLI in `brc_tools/download/get_road_forecast.py`
+- [x] Add a smoke wrapper in `scripts/run_road_forecast_smoke.sh`
+- [x] Add first logic tests in `tests/test_road_forecast_logic.py`
+- [x] Fix packaging from `synoptic` to `SynopticPy`
+- [x] Verify one live `--max-fxx 1` dry-run succeeds locally
+
+### Next Small Steps
+- [ ] Run a `6-12` hour dry-run and inspect partial-hour behaviour
+- [ ] Add tests for missing HRRR hours and partially available outputs
+- [ ] Decide the v1 road upload bucket before enabling upload by default
+- [ ] Keep road and aviation separate as the HRRR work expands
+- [ ] Delay 15-minute output until the hourly road path is stable
+
 ## Priority 1: Critical Data Pipeline Fixes
 
 ### Station Data Updates (URGENT)
@@ -106,11 +124,11 @@
 - Documentation → Team onboarding → Collaborative development
 
 ## Next Session Priorities
-1. Verify variable name mapping (PM_25_concentration) matches website
-2. Test data pipeline with all stations
-3. Create `brc_tools/config.py` for centralized settings
-4. Begin AQM code consolidation from `in_progress/`
-5. Add error handling and retry logic to API calls
+1. Run a longer HRRR road dry-run (`6-12` hours)
+2. Harden HRRR missing-hour handling and add tests
+3. Decide the road upload bucket for v1
+4. Keep observation upload stable while the HRRR path evolves
+5. Start aviation only after the road payload shape is stable
 
 ## Notes for Claude Code Sessions
 - Always check `reference/` folder for context

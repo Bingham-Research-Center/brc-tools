@@ -7,6 +7,32 @@ Functions that are general to many packages used by the Bingham Research Center.
 
 Note that the package is under `brc_tools` (note the underscore) and not `brc-tools` (note the hyphen). 
 
+## Current Session Endpoint (2026-03-26)
+
+Done:
+- Minimal hourly HRRR road proof-of-concept added in `brc_tools/download/hrrr_access.py`, `brc_tools/download/hrrr_config.py`, and `brc_tools/download/get_road_forecast.py`.
+- Dedicated Miniforge env created at `/home/johnrobertlawson/.conda/envs/brc-tools`.
+- Packaging updated from `synoptic` to `SynopticPy`.
+- Logic tests now exist in `tests/test_road_forecast_logic.py` and pass in the dedicated env.
+- A live dry-run succeeded with `--max-fxx 1`, wrote local JSON, and skipped upload.
+
+Next small steps:
+1. Run a `6-12` hour dry-run and harden partial-hour failure handling.
+2. Keep upload off by default until the v1 road upload bucket is fixed.
+3. Keep road and aviation separate products.
+4. Delay 15-minute output until the hourly road path is stable.
+
+Useful commands:
+```bash
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python -m pytest tests/test_road_forecast_logic.py
+
+BRC_TOOLS_HRRR_CACHE=/tmp/brc-tools-hrrr-cache \
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python \
+-m brc_tools.download.get_road_forecast \
+--dry-run --max-fxx 1 --min-usable-hours 1 \
+--data-dir /tmp/brc-tools-road-smoke
+```
+
 The wishlist includes:
 
 - [x] Basic setup

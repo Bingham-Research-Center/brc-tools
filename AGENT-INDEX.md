@@ -1,189 +1,77 @@
 # AI Agent Quick Reference - brc-tools
 
-**Current Task:** Observation pipeline + Clyfar support
-**Status:** UBAIR stations fixed, awaiting CHPC cron verification
-**Last Session:** 2025-11-27
-**Branch:** `integration-clyfar-v0.9.5`
+**Current Task:** Minimal hourly HRRR road proof-of-concept
+**Status:** Local code, tests, and one live dry-run working; upload still off by default
+**Last Session:** 2026-03-26
+**Working Branch:** `feat/hrrr-road-poc-minimal`
 
 ---
 
-## Quick Start
-
-**This repo:** Shared Python tools for BRC projects
-**Purpose:** Data download, processing, and upload to BasinWx
-**Used by:** clyfar (editable install)
-
-**Key module:** `brc_tools/download/push_data.py` (upload to website)
+## Start Here
+- Read `README.md` and the `Current Session Endpoint (2026-03-26)` section.
+- Read `AGENTS.md` for working rules.
+- Read `HRRR-MERGE-PLAN.md` before expanding the HRRR work.
 
 ---
 
-## Package Status
+## Current Endpoint
 
-### Installation
-- **Version:** 0.1.0
-- **Install method:** Editable (`pip install -e .`)
-- **Installed in:** clyfar-nov2025 conda environment (CHPC)
-- **Location:** `~/gits/brc-tools` (CHPC), local dev varies
+### Done
+- Shared HRRR access layer added in `brc_tools/download/hrrr_access.py`.
+- Shared HRRR config and route metadata added in `brc_tools/download/hrrr_config.py`.
+- Hourly road CLI added in `brc_tools/download/get_road_forecast.py`.
+- Smoke wrapper added in `scripts/run_road_forecast_smoke.sh`.
+- Logic tests added in `tests/test_road_forecast_logic.py`.
+- Packaging updated from `synoptic` to `SynopticPy`.
+- HRRR path cleaned so importing the road CLI no longer pulls Synoptic code.
 
-### 27 Nov Fix
-- Added missing UBAIR ozone stations to `brc_tools/utils/lookups.py`
-- Stations added: UBRDW, UBORY, UBDRF, UBWHR (7 total now)
+### Verified
+- Dedicated env: `/home/johnrobertlawson/.conda/envs/brc-tools`
+- Tests: `python -m pytest tests/test_road_forecast_logic.py`
+- Live dry-run: one successful `--max-fxx 1` run writing JSON to `/tmp/brc-tools-road-smoke`
 
-**Verify on CHPC:**
+### Next Small Steps
+1. Run a `6-12` hour dry-run.
+2. Harden partial-hour handling and add tests.
+3. Decide the v1 road upload bucket before enabling upload.
+4. Keep aviation separate and start it only after road output is stable.
+
+---
+
+## Key Files
+- `brc_tools/download/get_map_obs.py`: production observation pipeline
+- `brc_tools/download/push_data.py`: shared upload helper used across repos
+- `brc_tools/download/hrrr_access.py`: shared HRRR fetch and extraction helpers
+- `brc_tools/download/hrrr_config.py`: HRRR query map and route metadata
+- `brc_tools/download/get_road_forecast.py`: minimal hourly road forecast CLI
+- `tests/test_road_forecast_logic.py`: first HRRR road unit tests
+- `HRRR-MERGE-PLAN.md`: longer implementation plan and caveats
+
+---
+
+## Commands
 ```bash
-conda activate clyfar-nov2025
-pip list | grep brc-tools  # Should show: brc-tools 0.1.0 /path/to/brc-tools
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python -m pytest tests/test_road_forecast_logic.py
+
+BRC_TOOLS_HRRR_CACHE=/tmp/brc-tools-hrrr-cache \
+/home/johnrobertlawson/.conda/envs/brc-tools/bin/python \
+-m brc_tools.download.get_road_forecast \
+--dry-run --max-fxx 1 --min-usable-hours 1 \
+--data-dir /tmp/brc-tools-road-smoke
 ```
 
-### Configuration
-- **Package file:** `pyproject.toml` (proper package structure)
-- **Dependencies:** Listed in pyproject.toml
-- **Environment:** Uses `.env` for secrets
+---
+
+## Guardrails
+- Keep `push_data.py` stable unless the same change is needed by both `brc-tools` and `clyfar`.
+- Do not merge the old HRRR branches wholesale.
+- Keep road and aviation as separate products.
+- Hourly road MVP comes before 15-minute output, lagged ensemble work, or website integration.
+- Use Miniforge/conda/mamba rather than ad hoc `pip`.
 
 ---
 
-## Key Modules
-
-**Upload functionality:**
-- `brc_tools/download/push_data.py` - POST to website API
-  - `send_json_to_server(server_address, fpath, file_data, API_KEY)`
-  - Used by clyfar for uploading forecasts
-
-**Observation download:**
-- `brc_tools/download/get_map_obs.py` - Synoptic API → website
-  - Runs every 10 minutes via cron
-  - Self-contained (downloads + uploads)
-
-**Schema:**
-- `data/schema/ubair_schema.json` - Station metadata (config file)
-- NOT a JSON Schema validator (different from DATA_MANIFEST.json)
-
----
-
-## Integration Points
-
-**Clyfar uses:**
-```python
-from brc_tools.download.push_data import send_json_to_server
-
-send_json_to_server(
-    server_address="https://basinwx.com",
-    fpath="/path/to/forecast.json",
-    file_data=forecast_dict,
-    API_KEY=os.environ.get('DATA_UPLOAD_API_KEY')
-)
-```
-
-**Website expects:**
-- Header: `x-api-key: <API_KEY>`
-- Header: `x-client-hostname: <hostname>` (must end with chpc.utah.edu)
-- Method: POST to `/api/upload/:dataType`
-- Body: multipart/form-data with file
-
----
-
-## Current Deployment
-
-**CHPC Reference:** See `docs/CHPC-REFERENCE.md` (canonical source)
-
-**Quick Reference:**
-- **Owner nodes:** `lawson-np` (2 nodes), `lawson-kp` (4 nodes)
-- **Fallback:** `notchpeak-shared` when owner nodes busy
-- **salloc:** `salloc -n 4 -N 1 --mem=16G -t 2:00:00 -p lawson-np -A lawson-np`
-
-**CHPC cron:**
-```bash
-# Observations - Every 10 minutes
-*/10 * * * * source ~/.bashrc && cd ~/brc-tools && ~/brc-tools/venv/bin/python3 ~/brc-tools/brc_tools/download/get_map_obs.py
-```
-
-**Status:** ✅ Working in production
-
----
-
-## Documentation
-
-**In this repo:**
-- `README.md` - Updated with CHPC deployment section
-- `pyproject.toml` - Package configuration
-- `.env.example` - Environment template
-
-**In ubair-website repo:**
-- `CHPC-IMPLEMENTATION.md` - Deployment guide
-- `PYTHON-PACKAGING-DEPLOYMENT.md` - Packaging education
-- `chpc-deployment/` - Cron templates, setup scripts
-
----
-
-## For AI Agents
-
-**When to modify this repo:**
-- Changing upload API protocol
-- Adding new data sources
-- Updating authentication method
-- Fixing bugs in push_data.py
-
-**When NOT to modify:**
-- Clyfar-specific code (goes in clyfar repo)
-- Website-specific code (goes in ubair-website repo)
-- Just using upload functionality (import, don't modify)
-
-**Coordination:**
-- See `CROSS-REPO-SYNC.md` (to be created)
-- This is a shared library - changes affect multiple projects
-- Test thoroughly before deploying
-
----
-
-## Common Issues
-
-**"Module not found":**
-```bash
-# Install in editable mode
-conda activate <your-env>
-pip install -e /Users/johnlawson/PycharmProjects/brc-tools
-```
-
-**"API key not set":**
-```bash
-# Check environment variable
-echo $DATA_UPLOAD_API_KEY
-# Or add to .env file
-```
-
-**"Hostname validation failed":**
-- Must run from CHPC (*.chpc.utah.edu)
-- Or temporarily disable validation for local testing
-
----
-
-## Version History
-
-**v0.1.0** (current)
-- Initial package structure
-- Upload functionality working
-- Installed in clyfar for integration
-
-**Future:**
-- Tag v0.1.0-clyfar-integration after testing
-- Document in tech report
-- Consider additional data sources
-
----
-
-## Cross-Repo Links
-
-**Repos using brc-tools:**
-1. **clyfar** - Imports push_data for forecast uploads
-2. **ubair-website** - Receives uploaded data
-3. **preprint-clyfar-v0p9** - References in methodology
-
-**See also:**
-- `../ubair-website/COMPACT-RESUME-POINT.md` - Current session context
-- `../clyfar/INTEGRATION_GUIDE.md` - How clyfar uses this package
-
----
-
-**Last Updated:** 2025-11-23 (pre-compact)
-**Package Version:** 0.1.0
-**Status:** Stable, no changes needed
+## Cross-Repo Pointers
+- `../ubair-website`: upload routes and page-side consumers
+- `../clyfar`: useful operational patterns for scheduled model download and smoke runs
+- `docs/PIPELINE-ARCHITECTURE.md`: repo-local architecture notes
