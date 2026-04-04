@@ -39,6 +39,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+scraping = [
+    "apify-client>=1.0.0",
+    "playwright>=1.40.0",
+]
 dev = [
     "pytest>=7.4.0",
     "ruff>=0.1.0",

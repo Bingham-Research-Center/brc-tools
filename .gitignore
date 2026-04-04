@@ -46,11 +46,13 @@ env/
 .env.local
 *.env
 
-# Data files (keep schema)
+# Data files (keep schema and READMEs)
 data/*.json
 data/*.csv
 data/*.nc
 data/*.grib2
+data/scraped/*
+!data/scraped/README.md
 !data/schema/
 !data/README.md
 
