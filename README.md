@@ -2,6 +2,7 @@
 
 > 📚 **[Claude Code Developer Workflow Guide](CLAUDE-CODE-WORKFLOW.md)** - Start here if using Claude Code!  
 > 🗺️ **[Project Knowledge Index](CLAUDE-INDEX.md)** - Quick navigation to all documentation
+> 🤖 **[Copilot agent instructions](AGENTS.md)** - Start here if using GitHub Copilot's coding agent
 
 Functions that are general to many packages used by the Bingham Research Center. 
 
