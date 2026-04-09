@@ -1,4 +1,9 @@
-# Implementation plan: agent-friendly NWP and Synoptic helpers
+# NWP/Synoptic helper roadmap
+
+## Status (as of 2026-04-09)
+Phase 1 in progress. Tracked in GitHub issue #10. Reusable HRRR prototypes
+live on branch `feat/hrrr-road-poc-minimal` (not merged to main). See
+`./HRRR-BRANCH-NOTES.md` for the read order on that branch.
 
 ## Problem
 - Add reusable Python helper functions that CLI agents and scripts can call to assemble Herbie-based model downloads and Synoptic observation pulls without having to rediscover product names, inventory strings, caching rules, or GRIB2 decode quirks each time.
