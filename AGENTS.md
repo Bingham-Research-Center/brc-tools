@@ -2,7 +2,7 @@
 
 ## Start here
 
-- Read `README.md`, `AGENT-INDEX.md`, `CLAUDE.md`, and `WISHLIST-TASKS.md` first.
+- Read `README.md`, `CLAUDE-CODE-WORKFLOW.md`, `CLAUDE-INDEX.md`, `CLAUDE.md`, and `WISHLIST-TASKS.md` first.
 - For deployment and runtime context, use `docs/CHPC-REFERENCE.md` and `docs/PIPELINE-ARCHITECTURE.md`.
 - Treat issue comments or review comments that explicitly address `@copilot` as part of the task instructions.
 
