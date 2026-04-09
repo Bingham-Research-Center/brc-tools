@@ -1,0 +1,16 @@
+# Code owners for brc-tools
+# Lines later in this file take precedence.
+# See https://docs.github.com/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+# Default: any change is fine without a designated owner.
+
+# Agent context file: shared project facts. Personal preferences belong in
+# CLAUDE.local.md (gitignored). Edits to CLAUDE.md require John's review so
+# the file does not drift between teammates' local Claude Code sessions.
+/CLAUDE.md          @johnrobertlawson
+
+# Cross-repo sync protocol — touches all four sibling repos.
+/docs/CROSS-REPO-SYNC.md   @johnrobertlawson
+
+# NWP / HRRR roadmap — load-bearing for the active ingest work.
+/docs/nwp/          @johnrobertlawson

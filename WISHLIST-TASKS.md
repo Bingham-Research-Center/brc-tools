@@ -50,8 +50,8 @@
   - [ ] `docs/API-REFERENCE.md` - consolidated API docs
 
 ### Knowledge Base Structure
-- [x] ✅ Created `CLAUDE-INDEX.md` as master TOC for Claude Code
-- [x] ✅ CLAUDE.md is concise (<150 lines)
+- [x] ✅ Consolidated agent docs into a single terse `CLAUDE.md` (2026-04-09)
+- [x] ✅ HRRR/RRFS strategy docs grouped under `docs/nwp/`
 - [ ] Add `reference/WEBSITE-INTEGRATION.md` for frontend context
 - [ ] Document git workflow for team (high school to professor level)
 

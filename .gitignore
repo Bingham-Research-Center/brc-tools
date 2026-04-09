@@ -80,6 +80,10 @@ api.txt
 config.ini
 secrets.json
 
+# Per-user agent context overlay (see CLAUDE.md "Ownership" section)
+CLAUDE.local.md
+.claude/local.md
+
 # Test coverage
 .coverage
 .pytest_cache/
