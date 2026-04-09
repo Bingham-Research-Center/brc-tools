@@ -1,4 +1,8 @@
-# Copilot branch chat: HRRR and road-weather findings
+# HRRR branch notes (handoff from Copilot exploration)
+
+> Snapshot from a 2026-04-06 Copilot session that surveyed unmerged HRRR
+> branches. Preserved as historical context for the HRRR/RRFS ingest work
+> tracked in issue #10. See `./ROADMAP.md` for the forward-looking plan.
 
 ## TL;DR
 
@@ -142,9 +146,7 @@ This is relevant to your goals because it suggests good **derived variables** an
     - around lines `981-1030`
 
 ### Skip or defer unless you truly need them
-- `AGENT-INDEX.md`
-- `CLAUDE.md`
-- `CLAUDE-INDEX.md`
+- `CLAUDE.md` (high-level context only; not HRRR-specific)
 - big archived docs in `ubair-website/docs/archive/`
 - notebook output blobs in `in_progress/*.ipynb`
 
