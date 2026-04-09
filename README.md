@@ -1,7 +1,7 @@
 ### `brc-tools` - Bingham Research Center (python) Tools
 
-> 📚 **[Claude Code Developer Workflow Guide](CLAUDE-CODE-WORKFLOW.md)** - Start here if using Claude Code!  
-> 🗺️ **[Project Knowledge Index](CLAUDE-INDEX.md)** - Quick navigation to all documentation
+> AI agents: see [`CLAUDE.md`](CLAUDE.md) for project context.
+> Documentation index: [`docs/`](docs/). Current focus: HRRR/RRFS ingest in [`docs/nwp/`](docs/nwp/).
 
 Functions that are general to many packages used by the Bingham Research Center. 
 
@@ -29,17 +29,14 @@ John Lawson and Michael Davies, Bingham Research Center, 2025
 
 This package is deployed on CHPC to push weather data to the BasinWx website (`basinwx.com`).
 
-**For deployment instructions, see:**
-- **Master Guide:** `ubair-website/CHPC-IMPLEMENTATION.md` (single source of truth)
-- **Detailed Setup:** `ubair-website/chpc-deployment/DEPLOYMENT_GUIDE.md`
-- **Cron Configuration:** `ubair-website/chpc-deployment/cron_templates/`
+**Canonical reference:** [`docs/CHPC-REFERENCE.md`](docs/CHPC-REFERENCE.md) (account, partitions, salloc, cron).
 
 **Quick reference:**
 - **Production script:** `brc_tools/download/get_map_obs.py` (fetches and uploads observations every 10 min)
 - **Upload module:** `brc_tools/download/push_data.py` (handles secure POST to website API)
 - **Required env vars:** `DATA_UPLOAD_API_KEY`, `SYNOPTIC_API_TOKEN`
 
-**Data schema:** See `ubair-website/DATA_MANIFEST.json` for website expectations.
+**Cross-repo data contract:** `ubair-website/DATA_MANIFEST.json` defines the website expectations; deployment notes live in `ubair-website/CHPC-IMPLEMENTATION.md`.
 
 This is a list of files that are prime for putting into functions from notebooks.
 

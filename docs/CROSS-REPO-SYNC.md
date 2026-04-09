@@ -4,19 +4,19 @@
 
 ## The 4 Repositories
 
-1. **clyfar** (`/Users/johnlawson/PycharmProjects/clyfar`)
+1. **clyfar** (`~/gits/clyfar`)
    - Python ozone prediction model
    - Source of truth for: Categories, thresholds, inference method, membership functions
 
-2. **brc-tools** (`/Users/johnlawson/PycharmProjects/brc-tools`)
+2. **brc-tools** (`~/gits/brc-tools`)
    - Shared utilities for data download/upload
    - Source of truth for: API protocols, data transfer methods
 
-3. **ubair-website** (`/Users/johnlawson/WebstormProjects/ubair-website`)
+3. **ubair-website** (`~/gits/ubair-website`)
    - Node.js website for visualization
    - Source of truth for: Data schemas, API endpoints, display logic
 
-4. **preprint-clyfar-v0p9** (`/Users/johnlawson/Documents/GitHub/preprint-clyfar-v0p9`)
+4. **preprint-clyfar-v0p9** (`~/gits/preprint-clyfar-v0p9`)
    - LaTeX technical manuscript
    - Source of truth for: Scientific methodology description
 
@@ -59,10 +59,14 @@ These files must stay aligned across repos:
 
 | File | Location | What to sync |
 |------|----------|-------------|
-| **CONTRADICTIONS-REPORT.md** | All 4 repos | Findings from code vs report review |
 | **CROSS-REPO-SYNC.md** | All 4 repos | This protocol |
-| **AGENT-INDEX.md** | clyfar, brc-tools, ubair-website | Current status, key context |
 | **.env.example** | clyfar, brc-tools | Required environment variables |
+
+> **Note (2026-04-09):** brc-tools has consolidated its agent context into a
+> single `CLAUDE.md` (no longer maintains `AGENT-INDEX.md`). Other repos may
+> still use `AGENT-INDEX.md`. The `CONTRADICTIONS-REPORT.md` file lives in
+> `clyfar` and `preprint-clyfar-v0p9` (where the MSLP-unit issue actually
+> resides), not in brc-tools.
 
 ## Workflow for Making Changes
 
@@ -70,21 +74,21 @@ These files must stay aligned across repos:
 
 ```bash
 # 1. Update Python code first (source of truth)
-cd ~/PycharmProjects/clyfar
+cd ~/gits/clyfar
 # Edit fis/v0p9.py lines 78-117 (category definitions)
 
 # 2. Update tech report
-cd ~/Documents/GitHub/preprint-clyfar-v0p9
+cd ~/gits/preprint-clyfar-v0p9
 # Edit manuscript-claude-draft.tex lines 635-638, 739-742
 
 # 3. Update website schema
-cd ~/WebstormProjects/ubair-website
+cd ~/gits/ubair-website
 # Edit DATA_MANIFEST.json (forecasts.categories)
 
 # 4. Run contradiction check
 # Re-run Phase 1 review or manually verify alignment
 
-# 5. Update CONTRADICTIONS-REPORT.md in all 4 repos
+# 5. Update CONTRADICTIONS-REPORT.md in clyfar and preprint-clyfar-v0p9
 # Clear resolved contradictions, note new matches
 ```
 
@@ -92,48 +96,51 @@ cd ~/WebstormProjects/ubair-website
 
 ```bash
 # 1. Implement in clyfar first
-cd ~/PycharmProjects/clyfar
+cd ~/gits/clyfar
 # Add export function to export/to_basinwx.py
 # Test with test_integration.py
 
 # 2. Update website to receive/display
-cd ~/WebstormProjects/ubair-website
+cd ~/gits/ubair-website
 # Add schema to DATA_MANIFEST.json
 # Update API validation
 # Add display logic to frontend
 
 # 3. Document in tech report
-cd ~/Documents/GitHub/preprint-clyfar-v0p9
+cd ~/gits/preprint-clyfar-v0p9
 # Add methodology section if needed
 
-# 4. Update AGENT-INDEX.md in all repos
-# Note new data product, schema, endpoints
+# 4. Record agent context
+# In brc-tools: update CLAUDE.md if the data flow changes
+# In other repos: update AGENT-INDEX.md per their convention
 ```
 
 ### Scenario 3: Schedule Changes
 
 ```bash
 # 1. Update cron templates
-cd ~/WebstormProjects/ubair-website
+cd ~/gits/ubair-website
 # Edit chpc-deployment/cron_templates/
 
 # 2. Update all documentation mentioning schedule
 # Search all 4 repos for "twice daily", "4 times daily", etc.
 # Update CHPC-IMPLEMENTATION.md, INTEGRATION_GUIDE.md
 
-# 3. Update AGENT-INDEX.md
-# Note new schedule in all 3 code repos
+# 3. Record agent context
+# In brc-tools: update CLAUDE.md and docs/CHPC-REFERENCE.md
+# In other repos: update AGENT-INDEX.md per their convention
 ```
 
 ## AI Agent Instructions
 
 ### When an AI agent (Claude, Codex, Cursor, etc.) makes changes:
 
-1. **Check current state** - Read AGENT-INDEX.md first
+1. **Check current state** — In brc-tools, read `CLAUDE.md` first.
+   In other repos, read `AGENT-INDEX.md` per their convention.
 2. **Identify scope** - Will this affect other repos?
 3. **Update related files** - Don't leave partial updates
 4. **Flag for review** - Add TODO comment if uncertain about cross-repo impact
-5. **Update AGENT-INDEX.md** - Record what you changed
+5. **Record what you changed** in the appropriate agent context file.
 
 ### Multi-Agent Coordination
 
@@ -161,8 +168,8 @@ Before considering a change complete:
 - [ ] Python code updated (if applicable)
 - [ ] Tech report updated (if methodology changed)
 - [ ] Website schema updated (if data structure changed)
-- [ ] All 4 CONTRADICTIONS-REPORT.md files synced
-- [ ] AGENT-INDEX.md updated in affected repos
+- [ ] CONTRADICTIONS-REPORT.md updated in clyfar / preprint-clyfar-v0p9 if relevant
+- [ ] Agent context recorded (brc-tools: `CLAUDE.md`; other repos: `AGENT-INDEX.md`)
 - [ ] Tests pass in clyfar (test_integration.py)
 - [ ] Git commit messages include [SYNC-NEEDED] tag if applicable
 
@@ -181,21 +188,16 @@ If you discover contradictions:
 
 ```bash
 # Search for specific threshold across all repos
-cd ~ && grep -r "elevated.*75.*90" \
-  WebstormProjects/ubair-website \
-  PycharmProjects/clyfar \
-  PycharmProjects/brc-tools \
-  Documents/GitHub/preprint-clyfar-v0p9
+cd ~/gits && grep -r "elevated.*75.*90" \
+  ubair-website clyfar brc-tools preprint-clyfar-v0p9
 
 # Compare category definitions
-cd ~/PycharmProjects/clyfar && grep -A5 "ozone_cats" fis/v0p9.py
-cd ~/Documents/GitHub/preprint-clyfar-v0p9 && grep -A5 "background.*moderate.*elevated" *.tex
+cd ~/gits/clyfar && grep -A5 "ozone_cats" fis/v0p9.py
+cd ~/gits/preprint-clyfar-v0p9 && grep -A5 "background.*moderate.*elevated" *.tex
 
 # Check environment variable consistency
-cd ~ && grep -r "DATA_UPLOAD_API_KEY" \
-  WebstormProjects/ubair-website \
-  PycharmProjects/clyfar \
-  PycharmProjects/brc-tools
+cd ~/gits && grep -r "DATA_UPLOAD_API_KEY" \
+  ubair-website clyfar brc-tools
 ```
 
 ## Version Control Strategy
@@ -210,8 +212,8 @@ cd ~ && grep -r "DATA_UPLOAD_API_KEY" \
 ## Contact & Questions
 
 If uncertain about cross-repo impact:
-1. Check CONTRADICTIONS-REPORT.md for known issues
-2. Review AGENT-INDEX.md for current state
+1. Check CONTRADICTIONS-REPORT.md (lives in clyfar / preprint-clyfar-v0p9) for known issues
+2. Review the agent context file (brc-tools: `CLAUDE.md`; others: `AGENT-INDEX.md`)
 3. Ask in team chat before committing changes that span repos
 4. When in doubt, create a git branch for testing sync
 
