@@ -2,6 +2,7 @@
 
 import datetime
 import logging
+import os
 import tomllib
 from pathlib import Path
 
@@ -254,7 +255,25 @@ class NWPSource:
         return results
 
     def _herbie_fetch(self, init_dt, fxx, search_str, product, retries):
-        """Single Herbie fetch with cache validation and retry."""
+        """Single Herbie fetch with cache validation, file-level locking, and retry.
+
+        A per-GRIB-file lock (via fasteners) prevents concurrent threads/processes
+        from corrupting the cache when multiple workers download the same file.
+        The lock key is (model, init, fxx, product, member) — different search
+        strings hitting the same GRIB file serialize, but different files download
+        freely in parallel.
+        """
+        import tempfile
+        import fasteners
+
+        lock_dir = os.environ.get("BRC_TOOLS_LOCK_DIR") or tempfile.gettempdir()
+        member_str = self._member or "det"
+        lock_name = (
+            f"herbie_{self._cfg['herbie_model']}_{init_dt:%Y%m%d_%H}_"
+            f"f{fxx:03d}_{product}_{member_str}.lock"
+        )
+        lock = fasteners.InterProcessLock(os.path.join(lock_dir, lock_name))
+
         for attempt in range(retries):
             try:
                 herbie_kwargs = dict(
@@ -267,12 +286,14 @@ class NWPSource:
                 cache_dir = self._cache_dir()
                 if cache_dir is not None:
                     herbie_kwargs["save_dir"] = cache_dir
-                H = Herbie(init_dt, **herbie_kwargs)
-                grib_path = getattr(H, "grib", None)
-                if grib_path and not validate_cached_grib(grib_path):
-                    purge_cached_files(H)
 
-                ds = H.xarray(search_str, remove_grib=True)
+                with lock:
+                    H = Herbie(init_dt, **herbie_kwargs)
+                    grib_path = getattr(H, "grib", None)
+                    if grib_path and not validate_cached_grib(grib_path):
+                        purge_cached_files(H)
+                    ds = H.xarray(search_str, remove_grib=True)
+
                 return ds
             except Exception as exc:
                 logger.warning(
@@ -280,10 +301,11 @@ class NWPSource:
                     attempt + 1, retries, self._model_key, fxx, search_str, exc,
                 )
                 if attempt < retries - 1:
-                    try:
-                        purge_cached_files(H)
-                    except Exception:
-                        pass
+                    with lock:
+                        try:
+                            purge_cached_files(H)
+                        except Exception:
+                            pass
                     continue
                 if self._defaults.get("return_nans_on_failure", False):
                     return None
