@@ -73,50 +73,108 @@ class NWPSource:
         bbox: tuple | None = None,
         levels: list[int] | None = None,
         product: str | None = None,
+        max_workers: int = 6,
     ) -> xr.Dataset:
         """Fetch model data for canonical aliases over a range of forecast hours.
+
+        Downloads are parallelised across forecast hours (up to
+        ``max_workers`` concurrent threads). Set ``max_workers=1``
+        to force sequential behaviour.
 
         Returns an xr.Dataset with dims (time, ...) and variables renamed
         to their canonical ``output_var`` names from lookups.toml.
         """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         init_dt = _parse_init_time(init_time)
         aliases = self._lu["aliases"]
         sw, ne = self._resolve_bbox(region, bbox)
-
-        # Separate variables by product (surface vs pressure-level, etc.)
         var_groups = self._group_by_product(variables, aliases, product)
+        crop_method = self._cfg.get("crop_method", "lonlat_after_aux")
 
-        hour_slices = []
-        for fxx in forecast_hours:
+        # Build flat work list: (fxx, alias_name, search_str, output_var, product)
+        retries = self._defaults.get("download_retries", 2)
+        work_items = []
+        for fxx in (int(f) for f in forecast_hours):
             fxx_product = self._resolve_product_for_fxx(
-                product or self._default_product, int(fxx)
+                product or self._default_product, fxx
             )
-            merged_vars = {}
             for prod_key, var_list in var_groups.items():
                 actual_product = prod_key if prod_key else fxx_product
-                ds_vars = self._fetch_hour_variables(
-                    init_dt, int(fxx), var_list, aliases, actual_product, levels
-                )
-                merged_vars.update(ds_vars)
+                for alias_name, search_str, output_var in var_list:
+                    alias_cfg = aliases[alias_name]
+                    if "derived_from" in alias_cfg:
+                        continue
+                    for search, level_label in self._expand_search(
+                        search_str, levels, alias_cfg
+                    ):
+                        out_name = (
+                            output_var if level_label is None
+                            else f"{output_var}_{level_label}"
+                        )
+                        work_items.append(
+                            (fxx, search, actual_product, out_name, retries)
+                        )
 
-            if not merged_vars:
-                logger.warning("No data for f%03d; skipping", fxx)
+        def _do_fetch(item):
+            fxx, search, prod, out_name, ret = item
+            ds = self._herbie_fetch(init_dt, fxx, search, prod, ret)
+            if ds is not None:
+                data_vars = list(ds.data_vars)
+                if data_vars:
+                    ds = ds.rename({data_vars[0]: out_name})
+                keep = {"time", "latitude", "longitude", "y", "x"}
+                drop = [n for n in ds.coords if n not in keep and n not in ds.dims]
+                if drop:
+                    ds = ds.drop_vars(drop, errors="ignore")
+            return fxx, out_name, ds
+
+        # Submit all (hour × variable) pairs to a flat thread pool
+        raw_results: dict[tuple[int, str], xr.Dataset] = {}
+        fxx_set: set[int] = set()
+
+        if max_workers <= 1 or len(work_items) <= 1:
+            for item in work_items:
+                fxx, out_name, ds = _do_fetch(item)
+                if ds is not None:
+                    raw_results[(fxx, out_name)] = ds
+                    fxx_set.add(fxx)
+        else:
+            workers = min(max_workers, len(work_items))
+            logger.info(
+                "Parallel fetch: %d tasks (%d hours × %d vars) with %d workers",
+                len(work_items),
+                len(set(i[0] for i in work_items)),
+                len(set(i[3] for i in work_items)),
+                workers,
+            )
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(_do_fetch, item): item for item in work_items}
+                for future in as_completed(futures):
+                    try:
+                        fxx, out_name, ds = future.result()
+                        if ds is not None:
+                            raw_results[(fxx, out_name)] = ds
+                            fxx_set.add(fxx)
+                    except Exception as exc:
+                        item = futures[future]
+                        logger.warning("Fetch failed f%03d %s: %s", item[0], item[3], exc)
+
+        # Group by fxx, merge, normalize, crop
+        results: dict[int, xr.Dataset] = {}
+        for fxx in sorted(fxx_set):
+            hour_ds = {k[1]: v for k, v in raw_results.items() if k[0] == fxx}
+            if not hour_ds:
                 continue
-
-            # Merge all variable datasets for this hour
             ds_hour = xr.merge(
-                list(merged_vars.values()),
-                combine_attrs="drop",
-                compat="override",
+                list(hour_ds.values()), combine_attrs="drop", compat="override"
             )
             ds_hour = normalize_coords(ds_hour, init_dt, fxx)
-
             if sw is not None and ne is not None:
-                ds_hour = crop_to_bbox(
-                    ds_hour, sw, ne, self._cfg.get("crop_method", "lonlat_after_aux")
-                )
-            hour_slices.append(ds_hour)
+                ds_hour = crop_to_bbox(ds_hour, sw, ne, crop_method)
+            results[fxx] = ds_hour
 
+        hour_slices = [results[fxx] for fxx in sorted(results)]
         if not hour_slices:
             raise RuntimeError(
                 f"No data returned for {self._model_key} init={init_dt} "
