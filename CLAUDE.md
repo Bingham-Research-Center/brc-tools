@@ -18,16 +18,18 @@ website (companion repo: `ubair-website`). Used as a library by the
 ## Repo map
 ```
 brc_tools/        installable package
+  nwp/            NWPSource (HRRR/GEFS/RRFS via Herbie) + lookups.toml
+  obs/            ObsSource (SynopticPy wrapper, shared alias namespace)
   download/       Synoptic obs (get_map_obs.py) + push_data.py uploader
+                  + HRRR helpers (hrrr_access.py, get_road_forecast.py)
   aviation/       FlightAware helpers
   utils/          lookups (station IDs, variables) + helpers
   filter/ verify/ visualize/ ml/   scaffolded; mostly stubs
-in_progress/      ~23 experimental HRRR/RRFS/AQM scripts + notebooks;
-                  mine these for the HRRR work, do not import as library
+in_progress/      experimental HRRR/RRFS/AQM scripts + notebooks
 docs/             canonical project docs (see below)
 reference/        external references (FlightAware spec, setup Q&A)
-tests/            empty — add coverage during HRRR work
-scripts/          operational helpers (sync_schema.py)
+tests/            road forecast logic tests (3 passing)
+scripts/          case study + operational helpers
 ```
 
 ## Canonical docs (do not duplicate them here)

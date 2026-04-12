@@ -345,7 +345,6 @@ units       = "m"
 output_var  = "pbl_height"
 [aliases.pbl_height.search]
 hrrr = "HPBL:surface"
-gefs = "HPBL:surface"
 rrfs = "HPBL:surface"
 
 # ── Aliases: pressure levels (3-D, caller passes levels=[...]) ──────────────
