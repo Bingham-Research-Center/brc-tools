@@ -1,0 +1,496 @@
+# Canonical alias namespace for NWPSource and ObsSource.
+# Aliases resolve to per-model Herbie search strings and per-provider
+# SynopticPy variable names so NWP and obs frames are joinable on
+# (waypoint, valid_time, alias) without bespoke renaming.
+
+schema_version   = 1
+units_convention = "CF"
+
+# ── Models ──────────────────────────────────────────────────────────────────
+
+[models.hrrr]
+herbie_model         = "hrrr"
+description          = "NOAA HRRR, CONUS, 3 km"
+init_cadence_hours   = 1
+default_product      = "sfc"
+default_max_fxx      = 18
+extended_init_hours  = [0, 6, 12, 18]
+extended_max_fxx     = 48
+member_required      = false
+grid                 = "lambert_conformal"
+nearest_point_method = "kdtree_2d"
+crop_method          = "lonlat_after_aux"
+
+[models.hrrr.products]
+sfc  = { description = "Surface 2-D",           herbie_name = "sfc"  }
+prs  = { description = "Pressure levels 3-D",   herbie_name = "prs"  }
+nat  = { description = "Native hybrid levels",  herbie_name = "nat"  }
+subh = { description = "15-min sub-hourly sfc",  herbie_name = "subh" }
+
+[models.gefs]
+herbie_model         = "gefs"
+description          = "NOAA GEFSv12 global ensemble"
+init_cadence_hours   = 6
+default_product      = "atmos.25"
+default_max_fxx      = 240
+member_required      = true
+default_member       = "c00"
+members = [
+    "c00",
+    "p01", "p02", "p03", "p04", "p05", "p06", "p07", "p08", "p09", "p10",
+    "p11", "p12", "p13", "p14", "p15", "p16", "p17", "p18", "p19", "p20",
+    "p21", "p22", "p23", "p24", "p25", "p26", "p27", "p28", "p29", "p30",
+]
+grid                 = "latlon"
+nearest_point_method = "ds_sel_nearest"
+crop_method          = "lonlat_shift_then_sel"   # native lon is 0..360
+
+[models.gefs.products]
+"atmos.25" = { description = "0.25-deg atmos", herbie_name = "atmos.25", max_fxx = 240 }
+"atmos.5"  = { description = "0.5-deg atmos",  herbie_name = "atmos.5",  max_fxx = 384 }
+[[models.gefs.product_breakpoints]]
+above_fxx        = 240
+fallback_product = "atmos.5"
+
+[models.rrfs]
+herbie_model         = "rrfs"
+description          = "NOAA RRFS (experimental, evolving)"
+init_cadence_hours   = 1
+default_product      = "prslev"
+default_max_fxx      = 18
+member_required      = false
+grid                 = "lambert_conformal"
+nearest_point_method = "kdtree_2d"
+crop_method          = "lonlat_after_aux"
+
+[models.rrfs.products]
+prslev  = { description = "Pressure + surface", herbie_name = "prslev"  }
+natlev  = { description = "Native level",       herbie_name = "natlev"  }
+testbed = { description = "RRFS testbed",       herbie_name = "testbed" }
+
+# ── Regions ─────────────────────────────────────────────────────────────────
+
+[regions.uinta_basin]
+sw = [39.4, -110.9]
+ne = [41.1, -108.5]
+
+[regions.uinta_basin_wide]
+sw = [38.8, -111.5]
+ne = [41.7, -107.8]
+
+[regions.uinta_basin_xsection_we]
+sw = [40.20, -111.50]
+ne = [40.55, -108.80]
+
+[regions.utah]
+sw = [36.9, -114.2]
+ne = [42.1, -108.9]
+
+[regions.conus]
+sw = [21.0, -125.0]
+ne = [50.0, -66.0]
+
+# ── Waypoints ───────────────────────────────────────────────────────────────
+
+[waypoints.daniels_summit]
+lat = 40.290
+lon = -111.250
+elevation_m = 2497
+reference_stid = "UTDAN"
+
+[waypoints.fruitland]
+lat = 40.207
+lon = -110.842
+elevation_m = 2002
+reference_stid = "UTFRT"
+
+[waypoints.duchesne]
+lat = 40.163
+lon = -110.402
+elevation_m = 1684
+reference_stid = "COOPDSNU1"
+
+[waypoints.myton]
+lat = 40.193
+lon = -110.063
+elevation_m = 1554
+reference_stid = "UTMYT"
+
+[waypoints.roosevelt]
+lat = 40.300
+lon = -109.989
+elevation_m = 1580
+reference_stid = "QRS"
+
+[waypoints.vernal]
+lat = 40.455
+lon = -109.530
+elevation_m = 1622
+reference_stid = "QV4"
+
+[waypoints.seven_sisters]
+lat = 40.176
+lon = -109.349
+elevation_m = 1564
+reference_stid = "UB7ST"
+
+[waypoints.horsepool]
+lat = 40.144
+lon = -109.467
+elevation_m = 1569
+reference_stid = "UBHSP"
+
+[waypoints.dinosaur]
+lat = 40.244
+lon = -108.972
+elevation_m = 1463
+reference_stid = "A3822"
+
+[waypoint_groups]
+us40_basin = ["fruitland", "duchesne", "myton", "roosevelt", "vernal"]
+basin_full = ["fruitland", "duchesne", "myton", "roosevelt", "vernal", "dinosaur"]
+basin_west = ["fruitland", "duchesne", "horsepool"]
+basin_east = ["roosevelt", "vernal", "seven_sisters", "dinosaur"]
+basin_aq   = ["roosevelt", "vernal", "seven_sisters", "horsepool", "dinosaur"]
+foehn_path = ["daniels_summit", "fruitland", "duchesne", "myton", "roosevelt", "vernal"]
+
+# ── Aliases: surface / near-surface ─────────────────────────────────────────
+
+[aliases.temp_2m]
+description   = "Air temperature at 2 m"
+units         = "K"
+output_var    = "temp_2m"
+synoptic_name = "air_temp"
+synoptic_units = "C"
+[aliases.temp_2m.search]
+hrrr = "TMP:2 m above ground"
+gefs = "TMP:2 m above ground"
+rrfs = "TMP:2 m above ground"
+
+[aliases.dewpoint_2m]
+description   = "Dewpoint at 2 m"
+units         = "K"
+output_var    = "dewpoint_2m"
+synoptic_name = "dew_point_temperature"
+synoptic_units = "C"
+[aliases.dewpoint_2m.search]
+hrrr = "DPT:2 m above ground"
+gefs = "DPT:2 m above ground"
+rrfs = "DPT:2 m above ground"
+
+[aliases.rh_2m]
+description   = "Relative humidity at 2 m"
+units         = "%"
+output_var    = "rh_2m"
+synoptic_name = "relative_humidity"
+[aliases.rh_2m.search]
+hrrr = "RH:2 m above ground"
+gefs = "RH:2 m above ground"
+rrfs = "RH:2 m above ground"
+
+[aliases.wind_u_10m]
+description   = "Eastward wind at 10 m (geographic)"
+units         = "m s-1"
+output_var    = "wind_u_10m"
+synoptic_derived_from = ["wind_speed", "wind_direction"]
+[aliases.wind_u_10m.search]
+hrrr = "UGRD:10 m above ground"
+gefs = "UGRD:10 m above ground"
+rrfs = "UGRD:10 m above ground"
+
+[aliases.wind_v_10m]
+description   = "Northward wind at 10 m (geographic)"
+units         = "m s-1"
+output_var    = "wind_v_10m"
+synoptic_derived_from = ["wind_speed", "wind_direction"]
+[aliases.wind_v_10m.search]
+hrrr = "VGRD:10 m above ground"
+gefs = "VGRD:10 m above ground"
+rrfs = "VGRD:10 m above ground"
+
+[aliases.wind_speed_10m]
+description   = "Wind speed at 10 m (derived from U/V)"
+units         = "m s-1"
+output_var    = "wind_speed_10m"
+synoptic_name = "wind_speed"
+derived_from  = ["wind_u_10m", "wind_v_10m"]
+derivation    = "magnitude_2d"
+
+[aliases.wind_dir_10m]
+description   = "Wind direction at 10 m (degrees FROM)"
+units         = "degree"
+output_var    = "wind_dir_10m"
+synoptic_name = "wind_direction"
+derived_from  = ["wind_u_10m", "wind_v_10m"]
+derivation    = "wind_dir_meteorological"
+
+[aliases.wind_gust_10m]
+description   = "Wind gust at surface"
+units         = "m s-1"
+output_var    = "wind_gust_10m"
+synoptic_name = "wind_gust"
+[aliases.wind_gust_10m.search]
+hrrr = "GUST:surface"
+gefs = "GUST:surface"
+rrfs = "GUST:surface"
+
+[aliases.wind_u_80m]
+description = "Eastward wind at 80 m (HRRR/RRFS)"
+units       = "m s-1"
+output_var  = "wind_u_80m"
+[aliases.wind_u_80m.search]
+hrrr = "UGRD:80 m above ground"
+rrfs = "UGRD:80 m above ground"
+
+[aliases.wind_v_80m]
+description = "Northward wind at 80 m (HRRR/RRFS)"
+units       = "m s-1"
+output_var  = "wind_v_80m"
+[aliases.wind_v_80m.search]
+hrrr = "VGRD:80 m above ground"
+rrfs = "VGRD:80 m above ground"
+
+[aliases.mslp]
+description   = "Mean sea level pressure"
+units         = "Pa"
+output_var    = "mslp"
+synoptic_name = "sea_level_pressure"
+synoptic_units = "Pa"
+# HRRR uses MSLMA (Membrane SLP); GEFS/RRFS use PRMSL
+[aliases.mslp.search]
+hrrr = "MSLMA:mean sea level"
+gefs = "PRMSL:mean sea level"
+rrfs = "PRMSL:mean sea level"
+
+[aliases.pressure_surface]
+description   = "Surface pressure"
+units         = "Pa"
+output_var    = "pressure_surface"
+synoptic_name = "pressure"
+[aliases.pressure_surface.search]
+hrrr = "PRES:surface"
+gefs = "PRES:surface"
+rrfs = "PRES:surface"
+
+[aliases.precip_1hr]
+description   = "1-hour accumulated precipitation"
+units         = "kg m-2"
+output_var    = "precip_1hr"
+synoptic_name = "precip_accum_one_hour"
+[aliases.precip_1hr.search]
+hrrr = "APCP:surface:0-1 hour acc"
+gefs = "APCP:surface:0-1 hour acc"
+rrfs = "APCP:surface:0-1 hour acc"
+
+[aliases.snow_depth]
+description   = "Snow depth"
+units         = "m"
+output_var    = "snow_depth"
+synoptic_name = "snow_depth"
+synoptic_units = "mm"
+[aliases.snow_depth.search]
+hrrr = "SNOD:surface"
+gefs = "SNOD:surface"
+rrfs = "SNOD:surface"
+
+[aliases.cloud_cover_total]
+description = "Total cloud cover"
+units       = "%"
+output_var  = "cloud_cover_total"
+[aliases.cloud_cover_total.search]
+hrrr = "TCDC:entire atmosphere"
+gefs = "TCDC:entire atmosphere"
+rrfs = "TCDC:entire atmosphere"
+
+[aliases.cloud_cover_low]
+description = "Low cloud cover"
+units       = "%"
+output_var  = "cloud_cover_low"
+[aliases.cloud_cover_low.search]
+hrrr = "LCDC:low cloud layer"
+gefs = "LCDC:low cloud layer"
+rrfs = "LCDC:low cloud layer"
+
+[aliases.visibility]
+description   = "Surface visibility"
+units         = "m"
+output_var    = "visibility"
+synoptic_name = "visibility"
+[aliases.visibility.search]
+hrrr = "VIS:surface"
+gefs = "VIS:surface"
+rrfs = "VIS:surface"
+
+[aliases.cape_surface]
+description = "Surface-based CAPE"
+units       = "J kg-1"
+output_var  = "cape_surface"
+[aliases.cape_surface.search]
+hrrr = "CAPE:surface"
+gefs = "CAPE:surface"
+rrfs = "CAPE:surface"
+
+[aliases.cin_surface]
+description = "Surface-based CIN"
+units       = "J kg-1"
+output_var  = "cin_surface"
+[aliases.cin_surface.search]
+hrrr = "CIN:surface"
+gefs = "CIN:surface"
+rrfs = "CIN:surface"
+
+[aliases.pbl_height]
+description = "Planetary boundary layer height"
+units       = "m"
+output_var  = "pbl_height"
+[aliases.pbl_height.search]
+hrrr = "HPBL:surface"
+gefs = "HPBL:surface"
+rrfs = "HPBL:surface"
+
+# ── Aliases: pressure levels (3-D, caller passes levels=[...]) ──────────────
+# {level} placeholder is substituted per requested level (hPa).
+
+[aliases.temp_pl]
+description    = "Temperature on pressure levels"
+units          = "K"
+output_var     = "temp"
+vertical_kind  = "pressure"
+default_levels = [1000, 925, 850, 700, 500, 250]
+[aliases.temp_pl.search]
+hrrr = "TMP:{level} mb"
+gefs = "TMP:{level} mb"
+rrfs = "TMP:{level} mb"
+[aliases.temp_pl.products]
+hrrr = "prs"
+gefs = "atmos.25"
+rrfs = "prslev"
+
+[aliases.wind_u_pl]
+description    = "Eastward wind on pressure levels"
+units          = "m s-1"
+output_var     = "wind_u"
+vertical_kind  = "pressure"
+default_levels = [1000, 925, 850, 700, 500, 250]
+[aliases.wind_u_pl.search]
+hrrr = "UGRD:{level} mb"
+gefs = "UGRD:{level} mb"
+rrfs = "UGRD:{level} mb"
+[aliases.wind_u_pl.products]
+hrrr = "prs"
+gefs = "atmos.25"
+rrfs = "prslev"
+
+[aliases.wind_v_pl]
+description    = "Northward wind on pressure levels"
+units          = "m s-1"
+output_var     = "wind_v"
+vertical_kind  = "pressure"
+default_levels = [1000, 925, 850, 700, 500, 250]
+[aliases.wind_v_pl.search]
+hrrr = "VGRD:{level} mb"
+gefs = "VGRD:{level} mb"
+rrfs = "VGRD:{level} mb"
+[aliases.wind_v_pl.products]
+hrrr = "prs"
+gefs = "atmos.25"
+rrfs = "prslev"
+
+[aliases.height_pl]
+description    = "Geopotential height on pressure levels"
+units          = "gpm"
+output_var     = "height"
+vertical_kind  = "pressure"
+default_levels = [1000, 925, 850, 700, 500, 250]
+[aliases.height_pl.search]
+hrrr = "HGT:{level} mb"
+gefs = "HGT:{level} mb"
+rrfs = "HGT:{level} mb"
+[aliases.height_pl.products]
+hrrr = "prs"
+gefs = "atmos.25"
+rrfs = "prslev"
+
+[aliases.rh_pl]
+description    = "Relative humidity on pressure levels"
+units          = "%"
+output_var     = "rh"
+vertical_kind  = "pressure"
+default_levels = [1000, 925, 850, 700, 500]
+[aliases.rh_pl.search]
+hrrr = "RH:{level} mb"
+gefs = "RH:{level} mb"
+rrfs = "RH:{level} mb"
+[aliases.rh_pl.products]
+hrrr = "prs"
+gefs = "atmos.25"
+rrfs = "prslev"
+
+[aliases.omega_pl]
+description    = "Vertical velocity (omega) on pressure levels"
+units          = "Pa s-1"
+output_var     = "omega"
+vertical_kind  = "pressure"
+default_levels = [850, 700, 500, 300]
+[aliases.omega_pl.search]
+hrrr = "VVEL:{level} mb"
+gefs = "VVEL:{level} mb"
+rrfs = "VVEL:{level} mb"
+[aliases.omega_pl.products]
+hrrr = "prs"
+gefs = "atmos.25"
+rrfs = "prslev"
+
+# ── Aliases: native model levels (HRRR/RRFS only) ──────────────────────────
+
+[aliases.temp_ml]
+description   = "Temperature on native layers"
+units         = "K"
+output_var    = "temp_native"
+vertical_kind = "model_level"
+[aliases.temp_ml.search]
+hrrr = "TMP:hybrid level={level}"
+rrfs = "TMP:hybrid level={level}"
+[aliases.temp_ml.products]
+hrrr = "nat"
+rrfs = "natlev"
+
+[aliases.wind_u_ml]
+description   = "Eastward wind on native layers"
+units         = "m s-1"
+output_var    = "wind_u_native"
+vertical_kind = "model_level"
+[aliases.wind_u_ml.search]
+hrrr = "UGRD:hybrid level={level}"
+rrfs = "UGRD:hybrid level={level}"
+[aliases.wind_u_ml.products]
+hrrr = "nat"
+rrfs = "natlev"
+
+[aliases.wind_v_ml]
+description   = "Northward wind on native layers"
+units         = "m s-1"
+output_var    = "wind_v_native"
+vertical_kind = "model_level"
+[aliases.wind_v_ml.search]
+hrrr = "VGRD:hybrid level={level}"
+rrfs = "VGRD:hybrid level={level}"
+[aliases.wind_v_ml.products]
+hrrr = "nat"
+rrfs = "natlev"
+
+# ── Reserved prefixes (documentation only) ──────────────────────────────────
+# o3_*, pm25_*, pm10_*, nox_*, co_*, so2_*, aod_*, refl_*, helicity_*,
+# uh_*, ltng_*, sw_down, lw_down, shf, lhf, soil_t_*, soil_m_*,
+# ventrate, mxhgt
+
+# ── Defaults ────────────────────────────────────────────────────────────────
+
+[defaults]
+cache_dir_env_var      = "BRC_TOOLS_HERBIE_CACHE"
+prefer_server_subset   = true
+download_retries       = 2
+download_backoff_secs  = 1
+return_nans_on_failure = false
+validate_cache         = true
+min_grib_size_bytes    = 1000
