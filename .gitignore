@@ -54,10 +54,10 @@ data/*.grib2
 !data/schema/
 !data/README.md
 
-# Test outputs
+# Test outputs and generated figures
 test_figs/
 test_figs_parallel/
-figures/xsection/
+figures/
 
 # Logs
 *.log
