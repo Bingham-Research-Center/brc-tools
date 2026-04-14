@@ -77,6 +77,30 @@ See `.env.example` for the full list.
   `docs/nwp/ROADMAP.md`.
 - **Do not edit `in_progress/`** except to extract code out of it.
 
+## Quick-start: case study / visualisation script
+The working reference is `scripts/case_study_20250222.py` (23 figures).
+Minimal recipe for a new date:
+```python
+from brc_tools.nwp import NWPSource
+from brc_tools.nwp.source import load_lookups
+from brc_tools.nwp.derived import add_wind_fields, add_theta_e
+from brc_tools.visualize.planview import plot_planview_evolution
+from brc_tools.visualize.timeseries import plot_station_timeseries
+from brc_tools.verify.deterministic import paired_scores
+
+src = NWPSource("hrrr")
+ds = src.fetch(init_time="YYYY-MM-DD HHZ", forecast_hours=range(0,13),
+               variables=["temp_2m","dewpoint_2m","wind_u_10m","wind_v_10m","mslp"],
+               region="uinta_basin")
+ds = add_wind_fields(ds); ds = add_theta_e(ds)
+wp = {n: load_lookups()["waypoints"][n] for n in load_lookups()["waypoint_groups"]["us40_dense"]}
+fig = plot_planview_evolution(ds, "theta_e_2m", waypoints=wp, cmap="RdYlBu_r")
+```
+Obs: `ObsSource().timeseries(waypoint_group="us40_dense", start=..., end=..., variables=[...])`.
+Verification: `paired_scores(nwp_df, obs_df, ["temp_2m","wind_speed_10m"])`.
+Waypoint groups: `foehn_path` (6 stn), `us40_dense` (14 stn), `basin_full`, `basin_aq`.
+Variable aliases live in `brc_tools/nwp/lookups.toml`.
+
 ## Testing commands
 ```
 ruff check .
