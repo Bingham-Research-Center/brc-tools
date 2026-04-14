@@ -146,6 +146,50 @@ lon = -108.972
 elevation_m = 1463
 reference_stid = "A3822"
 
+# ── US-40 gap-fill stations (west to east) ─────────────────────────────────
+
+[waypoints.strawberry]
+lat = 40.242
+lon = -111.177
+elevation_m = 2328
+reference_stid = "UTCOP"
+
+[waypoints.starvation]
+lat = 40.173
+lon = -110.493
+elevation_m = 1757
+reference_stid = "UTSTV"
+
+[waypoints.little_red_fox]
+lat = 40.180
+lon = -110.305
+elevation_m = 1645
+reference_stid = "LRFU1"
+
+[waypoints.fort_duchesne]
+lat = 40.285
+lon = -109.862
+elevation_m = 1529
+reference_stid = "UINU1"
+
+[waypoints.east_lapoint]
+lat = 40.420
+lon = -109.670
+elevation_m = 1736
+reference_stid = "UTELP"
+
+[waypoints.asphalt_ridge]
+lat = 40.416
+lon = -109.582
+elevation_m = 1741
+reference_stid = "UTASH"
+
+[waypoints.split_mountain]
+lat = 40.380
+lon = -109.357
+elevation_m = 1475
+reference_stid = "SPMU1"
+
 [waypoint_groups]
 us40_basin = ["fruitland", "duchesne", "myton", "roosevelt", "vernal"]
 basin_full = ["fruitland", "duchesne", "myton", "roosevelt", "vernal", "dinosaur"]
@@ -153,6 +197,12 @@ basin_west = ["fruitland", "duchesne", "horsepool"]
 basin_east = ["roosevelt", "vernal", "seven_sisters", "dinosaur"]
 basin_aq   = ["roosevelt", "vernal", "seven_sisters", "horsepool", "dinosaur"]
 foehn_path = ["daniels_summit", "fruitland", "duchesne", "myton", "roosevelt", "vernal"]
+us40_dense = [
+    "daniels_summit", "strawberry", "fruitland", "starvation",
+    "duchesne", "little_red_fox", "myton", "roosevelt",
+    "fort_duchesne", "east_lapoint", "asphalt_ridge", "vernal",
+    "split_mountain", "dinosaur",
+]
 
 # ── Aliases: surface / near-surface ─────────────────────────────────────────
 

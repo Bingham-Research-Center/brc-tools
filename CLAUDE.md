@@ -19,17 +19,20 @@ website (companion repo: `ubair-website`). Used as a library by the
 ```
 brc_tools/        installable package
   nwp/            NWPSource (HRRR/GEFS/RRFS via Herbie) + lookups.toml
+                  + derived.py (theta-e, wind, gradients) + alignment.py
   obs/            ObsSource (SynopticPy wrapper, shared alias namespace)
+  verify/         deterministic metrics (RMSE, bias, MAE, paired_scores)
+  visualize/      planview.py (maps + obs overlay), timeseries.py
   download/       Synoptic obs (get_map_obs.py) + push_data.py uploader
                   + HRRR helpers (hrrr_access.py, get_road_forecast.py)
   aviation/       FlightAware helpers
   utils/          lookups (station IDs, variables) + helpers
-  filter/ verify/ visualize/ ml/   scaffolded; mostly stubs
+  filter/ ml/     scaffolded; stubs
 in_progress/      experimental HRRR/RRFS/AQM scripts + notebooks
 docs/             canonical project docs (see below)
 reference/        external references (FlightAware spec, setup Q&A)
-tests/            road forecast logic tests (3 passing)
-scripts/          case study + operational helpers
+tests/            30 passing (road forecast, derived, deterministic)
+scripts/          case study (23-figure quasi-front analysis) + operational
 ```
 
 ## Canonical docs (do not duplicate them here)
@@ -53,7 +56,8 @@ upload — do not change its signature without a coordinated cross-repo PR.
 
 ## Environment variables
 - `DATA_UPLOAD_API_KEY` — required for uploads (32-char hex).
-- `SYNOPTIC_API_TOKEN` — required for Synoptic downloads.
+- `SYNOPTIC_TOKEN` — required for Synoptic downloads (SynopticPy >=2025.9).
+  Also configurable via `~/.config/SynopticPy/config.toml`.
 - `FLIGHTAWARE_API_KEY` — optional, aviation only.
 
 See `.env.example` for the full list.

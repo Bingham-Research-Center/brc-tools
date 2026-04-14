@@ -63,11 +63,11 @@ class ObsSource:
             verbose=False,
         ).df().synoptic.pivot()
 
-        # Convert pandas → polars if needed
-        if hasattr(raw, "to_pandas"):
-            df = pl.from_pandas(raw.reset_index() if hasattr(raw, "reset_index") else raw)
+        # Convert to Polars if needed (SynopticPy >=2025.9 returns Polars natively)
+        if isinstance(raw, pl.DataFrame):
+            df = raw
         else:
-            df = pl.from_pandas(raw.reset_index())
+            df = pl.from_pandas(raw.reset_index() if hasattr(raw, "reset_index") else raw)
 
         # Rename Synoptic column names → canonical aliases
         rename_map = self._build_rename_map(variables, df.columns)
@@ -77,6 +77,14 @@ class ObsSource:
         time_col = next((c for c in df.columns if "time" in c.lower() or "date" in c.lower()), None)
         if time_col and time_col != "valid_time":
             df = df.rename({time_col: "valid_time"})
+
+        # Strip timezone to naive UTC (NWPSource uses naive datetimes)
+        if "valid_time" in df.columns:
+            vt = df["valid_time"]
+            if vt.dtype == pl.Datetime and getattr(vt.dtype, "time_zone", None) is not None:
+                df = df.with_columns(
+                    pl.col("valid_time").dt.replace_time_zone(None).alias("valid_time")
+                )
 
         # Normalize station ID column
         stid_col = next((c for c in df.columns if c.lower() in ("stid", "station_id", "station")), None)
