@@ -1,26 +1,24 @@
 # CLAUDE.md — Agent context for brc-tools
 
 Shared Python utilities for the Bingham Research Center. Pulls weather
-observations and NWP model data on CHPC and pushes JSON to the BasinWX
-website (companion repo: `ubair-website`). Used as a library by the
-`clyfar` ozone forecast model. Python package name is **`brc_tools`**
-(underscore), repo name is **`brc-tools`** (hyphen).
+observations (SynopticPy) and NWP model data (Herbie/HRRR) on CHPC;
+pushes JSON to the BasinWX website. Python package: **`brc_tools`**
+(underscore). Repo: **`brc-tools`** (hyphen).
 
 ## Current focus
-- HRRR/RRFS ingest → BasinWX (GitHub issue **#10**).
-- Strategy and read order: **`docs/nwp/README.md`**.
-- Reusable HRRR prototypes live on branch `feat/hrrr-road-poc-minimal`,
-  not on `main`. New NWP code goes in a new `brc_tools/nwp/` subpackage,
-  not in `brc_tools/download/`.
-- Phase 1 scope: HRRR hourly + Synoptic historical observations.
-  RRFS, sub-hourly HRRR, and ensembles are explicit Phase 2+ extensions.
+- NWP integration is operational (HRRR, GEFS, RRFS via `brc_tools/nwp/`).
+- Case study pipeline: natural language → Python script → diagnostic figures.
+- Issue **#10** tracks HRRR/RRFS → BasinWX. Strategy: `docs/nwp/README.md`.
+- HRRR 15-min sub-hourly and ensemble workflows = future extensions.
 
 ## Repo map
 ```
 brc_tools/        installable package
   nwp/            NWPSource (HRRR/GEFS/RRFS via Herbie) + lookups.toml
                   + derived.py (theta-e, wind, gradients) + alignment.py
+                  + case_study.py (shared helpers for case study scripts)
   obs/            ObsSource (SynopticPy wrapper, shared alias namespace)
+                  + scanner.py (event detection: scan_events, detect_foehn, etc.)
   verify/         deterministic metrics (RMSE, bias, MAE, paired_scores)
   visualize/      planview.py (maps + obs overlay), timeseries.py
   download/       Synoptic obs (get_map_obs.py) + push_data.py uploader
@@ -28,58 +26,34 @@ brc_tools/        installable package
   aviation/       FlightAware helpers
   utils/          lookups (station IDs, variables) + helpers
   filter/ ml/     scaffolded; stubs
-in_progress/      experimental HRRR/RRFS/AQM scripts + notebooks
-docs/             canonical project docs (see below)
-reference/        external references (FlightAware spec, setup Q&A)
-tests/            30 passing (road forecast, derived, deterministic)
-scripts/          case study (23-figure quasi-front analysis) + operational
+scripts/          case studies + operational scripts
+in_progress/      experimental (do not edit except to extract code out)
+docs/             project docs (pointers below)
+reference/        external references (FlightAware spec)
+tests/            pytest suite (scanner, derived, deterministic, road forecast)
+figures/          generated output (gitignored)
 ```
 
-## Canonical docs (do not duplicate them here)
-- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron.
-- `docs/ENVIRONMENT-SETUP.md` — venv/conda setup for new team members.
-- `docs/PIPELINE-ARCHITECTURE.md` — fetch → process → push pattern.
-- `docs/CROSS-REPO-SYNC.md` — protocol for the four sibling repos.
-- `docs/nwp/` — HRRR/RRFS roadmap, branch notes (current focus).
-- `WISHLIST-TASKS.md` — prioritised backlog (kept at root by convention).
-- `README.md` — human-facing entry point.
+## Primary workflow: natural language → case study
 
-## Key data-flow anchor (load-bearing — verify before changing)
-`brc_tools.download.push_data.send_json_to_server(server_address, fpath, file_data, API_KEY)`
-POSTs `multipart/form-data` to `{server_address}/api/upload/{file_data}`
-with headers `x-api-key` (32-char hex) and `x-client-hostname` (must end
-`.chpc.utah.edu`). A health check hits `{server_address}/api/health`
-first. Server URL is read from `~/.config/ubair-website/website_url` and
-the API key from the `DATA_UPLOAD_API_KEY` environment variable
-(`load_config()`). **`clyfar` imports this function** for forecast
-upload — do not change its signature without a coordinated cross-repo PR.
+User describes a weather event in natural language → agent writes a
+Python script using `brc_tools` → script fetches data and produces
+publication-quality diagnostic figures.
 
-## Environment variables
-- `DATA_UPLOAD_API_KEY` — required for uploads (32-char hex).
-- `SYNOPTIC_TOKEN` — required for Synoptic downloads (SynopticPy >=2025.9).
-  Also configurable via `~/.config/SynopticPy/config.toml`.
-- `FLIGHTAWARE_API_KEY` — optional, aviation only.
+**Working references** (read before writing a new case study):
+- `scripts/case_study_20250222.py` — 23-figure cold-pool erosion / quasi-front
+- `scripts/case_study_kvel_westerly.py` — synoptic wind event with obs scanning
+- `scripts/case_study_kvel_foehn.py` — mesoscale foehn with scan-and-select pattern
 
-See `.env.example` for the full list.
+**Pattern:**
+1. Scan obs to identify/rank candidate event dates (`scan_events`)
+2. Fetch HRRR surface + optional pressure-level data (`NWPSource.fetch`)
+3. Compute derived fields (`add_wind_fields`, `add_theta_e`, `hourly_tendency`)
+4. Plot planview evolution maps + station time series
+5. Run verification (`paired_scores`) if comparing NWP to obs
+6. Save figures to `figures/<case_study_name>/` (gitignored)
 
-## Conventions
-- **UTC internally, always.** Use `datetime.timezone.utc`, not pytz.
-- **Polars preferred over pandas** for new code (`.select()`, `.filter()`,
-  `.with_columns()`).
-- **American English in code** (the `visualise → visualize` rename is
-  done). British English in free-form comments is fine.
-- **Import order:** stdlib, third-party, local.
-- **JSON filenames:** use `generate_json_fpath()` →
-  `{prefix}_{YYYYMMDD_HHMM}Z.json`.
-- **Error handling:** wrap API calls in try/except; log and continue;
-  retry network requests with backoff.
-- **New NWP code → `brc_tools/nwp/`**, not `brc_tools/download/`. See
-  `docs/nwp/ROADMAP.md`.
-- **Do not edit `in_progress/`** except to extract code out of it.
-
-## Quick-start: case study / visualisation script
-The working reference is `scripts/case_study_20250222.py` (23 figures).
-Minimal recipe for a new date:
+## Quick-start recipe
 ```python
 from brc_tools.nwp import NWPSource
 from brc_tools.nwp.source import load_lookups
@@ -93,44 +67,146 @@ ds = src.fetch(init_time="YYYY-MM-DD HHZ", forecast_hours=range(0,13),
                variables=["temp_2m","dewpoint_2m","wind_u_10m","wind_v_10m","mslp"],
                region="uinta_basin")
 ds = add_wind_fields(ds); ds = add_theta_e(ds)
-wp = {n: load_lookups()["waypoints"][n] for n in load_lookups()["waypoint_groups"]["us40_dense"]}
+wp = {n: load_lookups()["waypoints"][n]
+      for n in load_lookups()["waypoint_groups"]["us40_dense"]}
 fig = plot_planview_evolution(ds, "theta_e_2m", waypoints=wp, cmap="RdYlBu_r")
 ```
-Obs: `ObsSource().timeseries(waypoint_group="us40_dense", start=..., end=..., variables=[...])`.
-Verification: `paired_scores(nwp_df, obs_df, ["temp_2m","wind_speed_10m"])`.
-Waypoint groups: `foehn_path` (6 stn), `us40_dense` (14 stn), `basin_full`, `basin_aq`.
-Variable aliases live in `brc_tools/nwp/lookups.toml`.
+- Obs: `ObsSource().timeseries(waypoint_group="us40_dense", start=..., end=..., variables=[...])`.
+- Verification: `paired_scores(nwp_df, obs_df, ["temp_2m","wind_speed_10m"])`.
+- Event scanning: `scan_events(stid="KVEL", variables=[...], months=(3,4,5), year=2025, criteria_fn=detect_wind_ramp, rank_key="wind_increase")`.
 
-## Testing commands
+## Module reference (for agent script construction)
+
+### Data acquisition
+| Module | Entry point | Returns | Purpose |
+|--------|------------|---------|---------|
+| `brc_tools.nwp` | `NWPSource(model)` | class | Fetch NWP gridded data |
+| `brc_tools.obs` | `ObsSource()` | class | Fetch station observations |
+| `brc_tools.obs.scanner` | `scan_events(...)` | `list[dict]` | Scan obs for event candidates |
+
+### NWPSource methods
+| Method | Returns | Key parameters |
+|--------|---------|----------------|
+| `.fetch(init_time, forecast_hours, variables, region=)` | `xr.Dataset` | variables from lookups.toml aliases |
+| `.extract_at_waypoints(ds, group=)` | `pl.DataFrame` | waypoint group from lookups.toml |
+| `.latest_init()` | `datetime` | most recent available init |
+
+### ObsSource methods
+| Method | Returns | Key parameters |
+|--------|---------|----------------|
+| `.timeseries(stids=, waypoint_group=, start=, end=, variables=)` | `pl.DataFrame` | one of stids/waypoint_group required |
+
+### Derived fields (`brc_tools.nwp.derived`)
+| Function | Input | Output | Notes |
+|----------|-------|--------|-------|
+| `add_wind_fields(ds)` | Dataset with wind_u_10m, wind_v_10m | adds wind_speed_10m, wind_dir_10m | call after fetch |
+| `add_theta_e(ds)` | Dataset with temp_2m, dewpoint_2m | adds theta_e_2m | uses mslp if present |
+| `hourly_tendency(ds, var)` | Dataset | adds `{var}_tendency` | forward difference |
+| `horizontal_gradient_magnitude(field)` | DataArray | DataArray | frontal detection |
+
+### Visualisation (`brc_tools.visualize`)
+| Function | Returns | Purpose |
+|----------|---------|---------|
+| `plot_planview(ds, var, ...)` | Figure | Single map panel |
+| `plot_planview_evolution(ds, var, ...)` | Figure | Multi-panel time evolution |
+| `plot_station_timeseries(nwp_series, var, ...)` | Figure | Multi-station waypoint panels |
+| `plot_verification_timeseries(nwp_df, obs_df, var, wp)` | Axes | NWP vs obs at one station |
+
+### Verification (`brc_tools.verify.deterministic`)
+| Function | Returns | Purpose |
+|----------|---------|---------|
+| `paired_scores(nwp_df, obs_df, vars)` | `pl.DataFrame` | Per-station RMSE, bias, MAE, corr |
+
+### Event scanning (`brc_tools.obs.scanner`)
+| Function | Returns | Purpose |
+|----------|---------|---------|
+| `scan_events(stid, variables, months, year, criteria_fn)` | `list[dict]` | Generic obs scan loop |
+| `detect_wind_ramp(day_df, date)` | `dict` or None | Wind ramp criteria |
+| `detect_foehn(day_df, date)` | `dict` or None | Foehn: warm + dry + wind |
+| `print_candidate_table(candidates)` | None | Formatted table output |
+
+### Case study helpers (`brc_tools.nwp.case_study`)
+| Function | Returns | Purpose |
+|----------|---------|---------|
+| `load_waypoints(group)` | `dict` | Waypoint metadata from lookups.toml |
+| `fetch_multi_init(src, date, init_hours, vars, fhour_map)` | `dict[int, Dataset]` | Multi-init fetch loop |
+| `extract_all_waypoints(src, datasets, group)` | `dict[int, DataFrame]` | Waypoint extraction loop |
+| `fetch_obs(waypoint_group=, stids=, event_date=, variables=)` | `DataFrame` or None | Obs fetch with error handling |
+| `run_figure_pipeline(figures)` | None | Per-figure try/except runner |
+| `annotate(fig, text)` | None | Attribution text |
+
+### Available lookups (`brc_tools/nwp/lookups.toml`)
+- **Models**: hrrr, gefs, rrfs
+- **Regions**: uinta_basin, uinta_basin_wide, utah, conus
+- **Waypoint groups**: `foehn_path` (6 stn W→E), `us40_dense` (14 stn), `basin_full`, `basin_aq`, `basin_west`, `basin_east`
+- **Surface aliases**: temp_2m, dewpoint_2m, wind_u_10m, wind_v_10m, wind_speed_10m (derived), wind_dir_10m (derived), mslp, pbl_height, rh_2m, precip_1hr, snow_depth, visibility, cape_surface, cin_surface, wind_gust_10m, cloud_cover_total
+- **Pressure-level aliases** (pass `levels=[...]`): temp_pl, wind_u_pl, wind_v_pl, height_pl, rh_pl, omega_pl
+
+## Case study construction pattern
+
+When asked to analyse a weather event, construct a script following this template:
+
+1. **Configuration block**: OUTDIR, EVENT_DATE, INIT_HOURS, SFC_VARS, WP_GROUP, OBS_VARS
+2. **Event selection**: Either user-specified date or `scan_events()` to find candidates
+3. **Data fetch**: `fetch_multi_init()` for each init hour (adds wind + theta-e by default)
+4. **Waypoint extraction**: `extract_all_waypoints()` for point time series
+5. **Obs fetch**: `fetch_obs()` for waypoint group and/or single station
+6. **Figure functions**: Each figure in its own `def`, returning fig. Use `run_figure_pipeline()`.
+7. **Main**: Parse args (`--scan-only`, `--date`), run phases sequentially, save to `figures/{case_name}/`
+
+Key conventions:
+- All times in UTC (naive datetime, no timezone)
+- Polars DataFrames for tabular data, xarray Datasets for gridded
+- NWP temps in Kelvin; obs temps in Celsius; use `unit_transform=lambda x: x-273.15`
+- MSLP in Pa from NWP; use `pa_to_hpa()` or `lambda x: x/100.0`
+- Wind speed in m/s; use `KT_FACTOR = 1.94384` for knots
+- Figures saved as PNG at DPI=150 to `figures/{case_name}/`
+
+## Key data-flow anchor (load-bearing — verify before changing)
+`brc_tools.download.push_data.send_json_to_server(server_address, fpath, file_data, API_KEY)`
+POSTs `multipart/form-data` to `{server_address}/api/upload/{file_data}`
+with headers `x-api-key` (32-char hex) and `x-client-hostname` (must end
+`.chpc.utah.edu`). Health check: `{server_address}/api/health`.
+Server URL from `~/.config/ubair-website/website_url`; API key from
+`DATA_UPLOAD_API_KEY` env var. **`clyfar` imports this function** — do not
+change its signature without a cross-repo PR.
+
+## Environment variables
+- `DATA_UPLOAD_API_KEY` — required for uploads (32-char hex).
+- `SYNOPTIC_TOKEN` — required for Synoptic obs (SynopticPy >=2024.0.0).
+  Also via `~/.config/SynopticPy/config.toml`.
+- `FLIGHTAWARE_API_KEY` — optional, aviation only.
+- `BRC_TOOLS_HERBIE_CACHE` — optional, NWP GRIB cache dir.
+- `BRC_TOOLS_LOCK_DIR` — optional, parallel-download lock dir (default: tempdir).
+
+## Conventions
+- **UTC internally, always.** `datetime.timezone.utc`, not pytz.
+- **Polars preferred** over pandas for new code.
+- **American English** in code. British in prose is fine.
+- **Import order:** stdlib → third-party → local.
+- **JSON filenames:** `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
+- Wrap API calls in try/except; log and continue; retry with backoff.
+- New NWP code → `brc_tools/nwp/`, not `brc_tools/download/`.
+
+## Testing
 ```
-ruff check .
-mypy brc_tools/
 pytest tests/
 ```
 
+## Docs (detail lives here, not in this file)
+- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron
+- `docs/ENVIRONMENT-SETUP.md` — venv/conda setup
+- `docs/PIPELINE-ARCHITECTURE.md` — fetch → process → push
+- `docs/CROSS-REPO-SYNC.md` — protocol for four sibling repos
+- `docs/nwp/` — HRRR/RRFS roadmap and branch notes
+- `docs/CASE-STUDY-GUIDE.md` — how to write a case study
+- `docs/API-REFERENCE.md` — full API reference
+- `WISHLIST-TASKS.md` — backlog
+
 ## Related repos
-- `ubair-website` — Node.js site that receives the uploads (data contract).
-- `clyfar` — ozone forecast model; imports `brc_tools.download.push_data`.
-- `preprint-clyfar-v0p9` — LaTeX manuscript; methodology source of truth.
+- `ubair-website` — Node.js site receiving uploads (data contract)
+- `clyfar` — ozone forecast model; imports `brc_tools.download.push_data`
+- `preprint-clyfar-v0p9` — LaTeX manuscript
 
-## Things deliberately NOT in this file
-- CHPC salloc / cron templates → `docs/CHPC-REFERENCE.md`
-- Python env install steps → `docs/ENVIRONMENT-SETUP.md`
-- Pipeline / data-flow design → `docs/PIPELINE-ARCHITECTURE.md`
-- HRRR branch read order → `docs/nwp/HRRR-BRANCH-NOTES.md`
-- HRRR phased plan → `docs/nwp/ROADMAP.md`
-- Backlog → `WISHLIST-TASKS.md`
-
-## Ownership
-This `CLAUDE.md` is the **shared project context** — facts every teammate
-and every Claude Code session should agree on. It is governed by
-`.github/CODEOWNERS` and any PR touching it requires review from
-@johnrobertlawson, so the file does not silently drift between teammates'
-local sessions.
-
-For **personal** preferences (machine-specific paths, in-progress notes,
-"explain Polars in extra detail to me", etc.), create `CLAUDE.local.md`
-at the repo root. It is gitignored, never committed, and Claude Code
-reads it automatically alongside this file. Each teammate has their own;
-they never collide. Sync your `CLAUDE.local.md` across your own machines
-via a private dotfiles repo, not through this repo.
+Governed by `.github/CODEOWNERS`; PRs require review from @johnrobertlawson.
+Personal preferences go in `CLAUDE.local.md` (gitignored).

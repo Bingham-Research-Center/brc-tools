@@ -60,15 +60,18 @@ FlightAware → Flight Data → Filtered → JSON → BasinWX
 ## Current Implementation Status
 
 ### Working
-- Basic Synoptic fetching (`download_funcs.py`)
-- JSON generation (`push_data.py`)
-- Station lookups (`lookups.py`)
+- **NWP data pipeline** (`brc_tools/nwp/`): NWPSource fetches HRRR/GEFS/RRFS via Herbie with parallel downloads, canonical alias resolution, spatial cropping, and waypoint extraction. Fully operational for case studies.
+- **Observation pipeline** (`brc_tools/obs/`): ObsSource fetches SynopticPy data with shared alias namespace. Event scanner detects wind ramp and foehn events.
+- **Model/obs alignment** (`brc_tools/nwp/alignment.py`): Temporal join and unit harmonisation for verification workflows.
+- **Verification** (`brc_tools/verify/deterministic.py`): RMSE, bias, MAE, correlation via `paired_scores`.
+- **Visualisation** (`brc_tools/visualize/`): Plan-view maps with obs overlay, multi-station time series, verification plots.
+- **Upload pipeline** (`brc_tools/download/push_data.py`): JSON generation and POST to BasinWX.
+- **Station lookups** (`brc_tools/utils/lookups.py`, `brc_tools/nwp/lookups.toml`)
 
-### Needs Integration
-- AQM explorers in `in_progress/`
-- Error handling and retries
-- Logging system
-- Scheduling/automation
+### Not yet integrated
+- AQM explorers in `in_progress/` (production pipeline not built)
+- Centralised scheduling/automation (cron jobs exist but not formalised)
+- HRRR sub-hourly and ensemble operational pipelines
 
 ## Configuration Management
 
@@ -76,9 +79,9 @@ FlightAware → Flight Data → Filtered → JSON → BasinWX
 ```python
 class Config:
     # API Settings
-    SYNOPTIC_API_KEY = os.getenv('SYNOPTIC_API_KEY')
+    SYNOPTIC_TOKEN = os.getenv('SYNOPTIC_TOKEN')
     BASINWX_URL = 'https://www.basinwx.com'
-    BASINWX_API_KEY = os.getenv('BRC_API_KEY')
+    DATA_UPLOAD_API_KEY = os.getenv('DATA_UPLOAD_API_KEY')
     
     # Data Settings
     STATION_LIST = [...]  # From lookups.py

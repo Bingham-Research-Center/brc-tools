@@ -1,9 +1,25 @@
 # NWP/Synoptic helper roadmap
 
-## Status (as of 2026-04-09)
-Phase 1 in progress. Tracked in GitHub issue #10. Reusable HRRR prototypes
-live on branch `feat/hrrr-road-poc-minimal` (not merged to main). See
-`./HRRR-BRANCH-NOTES.md` for the read order on that branch.
+## Status (as of 2026-04-15)
+**Phases 0–4 complete.** Phase 5 partially done. Phase 6 in progress.
+Tracked in GitHub issue #10.
+
+### What was built
+- **NWPSource** (`brc_tools/nwp/source.py`): HRRR/GEFS/RRFS fetch via Herbie, parallel downloads, canonical alias namespace, waypoint extraction (PR #16).
+- **ObsSource** (`brc_tools/obs/source.py`): SynopticPy wrapper sharing the alias namespace.
+- **Event scanner** (`brc_tools/obs/scanner.py`): Generic `scan_events` loop with `detect_wind_ramp` and `detect_foehn` criteria functions.
+- **Derived fields** (`brc_tools/nwp/derived.py`): Wind speed/dir, theta-e, potential temperature, tendencies, gradients.
+- **Alignment** (`brc_tools/nwp/alignment.py`): Model/obs temporal join, unit harmonisation.
+- **Verification** (`brc_tools/verify/deterministic.py`): RMSE, bias, MAE, correlation, `paired_scores`.
+- **Visualisation**: `planview.py` (maps + obs overlay), `timeseries.py` (multi-station panels).
+- **Case study helpers** (`brc_tools/nwp/case_study.py`): Shared config, multi-init fetch, figure pipeline.
+- **lookups.toml**: 30+ variable aliases, 14 waypoints, 5 regions, 7 waypoint groups, 3 model configs.
+- **Three case studies**: Feb 2025 quasi-front (23 figs), KVEL westerly, KVEL foehn.
+- **Test suite**: 45 tests (scanner, derived, deterministic, road forecast).
+
+### What remains
+- Phase 5: HRRR sub-hourly (15-min), lagged ensemble workflows (GEFS config exists).
+- Phase 6: Comprehensive integration tests, API reference docs, deployment docs.
 
 ## Problem
 - Add reusable Python helper functions that CLI agents and scripts can call to assemble Herbie-based model downloads and Synoptic observation pulls without having to rediscover product names, inventory strings, caching rules, or GRIB2 decode quirks each time.
