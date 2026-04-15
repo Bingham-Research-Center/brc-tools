@@ -66,8 +66,8 @@ class NWPSource:
 
     def fetch(
         self,
-        init_time,
-        forecast_hours,
+        init_time: str | datetime.datetime,
+        forecast_hours: range | list[int],
         variables: list[str],
         *,
         region: str | None = None,
@@ -78,12 +78,35 @@ class NWPSource:
     ) -> xr.Dataset:
         """Fetch model data for canonical aliases over a range of forecast hours.
 
-        Downloads are parallelised across forecast hours (up to
-        ``max_workers`` concurrent threads). Set ``max_workers=1``
-        to force sequential behaviour.
+        Parameters
+        ----------
+        init_time : str or datetime
+            Model initialisation time.  Accepts ``"YYYY-MM-DD HHZ"`` or a
+            tz-naive UTC datetime.
+        forecast_hours : range or list[int]
+            Forecast hours to download (e.g. ``range(0, 13)``).
+        variables : list[str]
+            Canonical alias names from ``lookups.toml`` (e.g.
+            ``["temp_2m", "wind_u_10m", "mslp"]``).  Derived aliases like
+            ``wind_speed_10m`` are *not* fetched here — add them post-hoc
+            with ``add_wind_fields(ds)``.
+        region : str, optional
+            Named region from ``lookups.toml`` (e.g. ``"uinta_basin"``).
+        bbox : tuple, optional
+            Explicit ``(sw_lat, sw_lon, ne_lat, ne_lon)`` bounding box.
+        levels : list[int], optional
+            Pressure levels for ``_pl`` aliases (e.g. ``[850, 700, 500]``).
+        product : str, optional
+            Override the model's default Herbie product.
+        max_workers : int
+            Concurrent download threads (default 6).
 
-        Returns an xr.Dataset with dims (time, ...) and variables renamed
-        to their canonical ``output_var`` names from lookups.toml.
+        Returns
+        -------
+        xr.Dataset
+            Gridded dataset with dims ``(time, y, x)`` and variables
+            renamed to their canonical ``output_var`` names.  The ``time``
+            coordinate holds valid times (init + fxx).
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 

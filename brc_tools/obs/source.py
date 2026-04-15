@@ -34,14 +34,35 @@ class ObsSource:
         stids: list[str] | None = None,
         waypoint_group: str | None = None,
         waypoints: list[str] | None = None,
-        start,
-        end,
+        start: str | datetime.datetime,
+        end: str | datetime.datetime,
         variables: list[str],
     ) -> pl.DataFrame:
         """Fetch time series from Synoptic stations, renamed to canonical aliases.
 
-        Returns a Polars DataFrame with columns: stid, waypoint (if
-        waypoints were used), valid_time, plus one column per alias.
+        Provide exactly one of *stids*, *waypoint_group*, or *waypoints*.
+
+        Parameters
+        ----------
+        stids : list[str], optional
+            Explicit Synoptic station IDs (e.g. ``["KVEL", "KPVU"]``).
+        waypoint_group : str, optional
+            Named group from ``lookups.toml`` (e.g. ``"foehn_path"``).
+        waypoints : list[str], optional
+            Individual waypoint names from ``lookups.toml``.
+        start : str or datetime
+            Start time (``"YYYY-MM-DD HHZ"`` or tz-naive UTC datetime).
+        end : str or datetime
+            End time.
+        variables : list[str]
+            Canonical alias names (e.g. ``["temp_2m", "wind_speed_10m"]``).
+
+        Returns
+        -------
+        pl.DataFrame
+            Columns: ``stid``, ``valid_time`` (tz-naive UTC), plus one
+            column per requested alias.  A ``waypoint`` column is added
+            when *waypoint_group* or *waypoints* was used.
         """
         from synoptic.services import TimeSeries
 
