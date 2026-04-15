@@ -63,8 +63,8 @@ The `.env` file stores sensitive information like API keys:
 
 ```bash
 # .env.example shows what you need:
-SYNOPTIC_API_KEY=your_key_here
-BRC_API_KEY=your_key_here
+SYNOPTIC_TOKEN=your_token_here
+DATA_UPLOAD_API_KEY=your_32char_hex_key_here
 
 # The actual .env file is gitignored (never uploaded)
 # Each team member has their own .env locally
@@ -77,7 +77,7 @@ import os
 
 load_dotenv()  # This loads your .env file
 
-api_key = os.getenv('SYNOPTIC_API_KEY')
+api_key = os.getenv('SYNOPTIC_TOKEN')
 ```
 
 ## What are ruff and mypy?
