@@ -25,38 +25,29 @@ Usage::
 
 import argparse
 import datetime
-import time
-import traceback
 from pathlib import Path
 
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import numpy as np
 import polars as pl
-import xarray as xr
 
 from brc_tools.nwp import NWPSource
-from brc_tools.nwp.derived import (
-    add_theta_e,
-    add_wind_fields,
-    hourly_tendency,
-    pa_to_hpa,
-    temp_K_to_C,
+from brc_tools.nwp.case_study import (
+    annotate,
+    extract_all_waypoints,
+    fetch_multi_init,
+    fetch_obs,
+    load_waypoints,
+    next_day,
+    run_figure_pipeline,
 )
-from brc_tools.nwp.source import load_lookups
+from brc_tools.obs.scanner import detect_foehn, print_candidate_table, scan_events
 from brc_tools.visualize.planview import (
-    KT_FACTOR,
-    _get_latlon,
-    add_map_features,
-    add_waypoints,
     plot_planview,
     plot_planview_evolution,
 )
-from brc_tools.visualize.timeseries import (
-    plot_station_timeseries,
-    plot_verification_timeseries,
-)
+from brc_tools.visualize.timeseries import plot_station_timeseries
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -99,22 +90,8 @@ RUN_STYLES = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _load_waypoints(group=WP_GROUP):
-    lu = load_lookups()
-    names = lu["waypoint_groups"][group]
-    return {name: lu["waypoints"][name] for name in names}
-
-
 def _annotate(fig, text=ANNOTATION):
-    fig.text(
-        0.99, 0.01, text, fontsize=6, ha="right", va="bottom",
-        fontstyle="italic", color="gray",
-    )
-
-
-def _next_day(date_str: str) -> str:
-    d = datetime.date.fromisoformat(date_str)
-    return (d + datetime.timedelta(days=1)).isoformat()
+    annotate(fig, text)
 
 
 def _safe_float_list(series):
@@ -127,241 +104,43 @@ def _safe_float_list(series):
 # ---------------------------------------------------------------------------
 
 def scan_foehn_events(months=(5, 6, 7, 8, 9), year=2025):
-    """Scan KVEL for foehn events: warming + drying + westerly wind ramp."""
-    from brc_tools.obs import ObsSource
-    obs = ObsSource()
-    candidates = []
-
-    scan_vars = ["wind_speed_10m", "wind_dir_10m", "temp_2m", "dewpoint_2m"]
-
-    for month in months:
-        start = f"{year}-{month:02d}-01 00Z"
-        if month == 12:
-            end = f"{year + 1}-01-01 00Z"
-        else:
-            end = f"{year}-{month + 1:02d}-01 00Z"
-
-        print(f"  Querying KVEL {year}-{month:02d} ...")
-        try:
-            df = obs.timeseries(
-                stids=["KVEL"],
-                start=start, end=end,
-                variables=scan_vars,
-            )
-        except Exception as exc:
-            print(f"    Failed: {exc}")
-            continue
-        time.sleep(0.5)
-
-        if df.is_empty():
-            print("    No data")
-            continue
-
-        print(f"    {df.shape[0]} rows")
-
-        df = df.with_columns(pl.col("valid_time").cast(pl.Date).alias("date"))
-        for date_val in df["date"].unique().sort().to_list():
-            day_df = df.filter(pl.col("date") == date_val).sort("valid_time")
-            result = _detect_foehn(day_df, date_val)
-            if result is not None:
-                candidates.append(result)
-
-    candidates.sort(key=lambda c: c["foehn_score"], reverse=True)
-    return candidates
-
-
-def _detect_foehn(day_df, date_val):
-    """Detect a foehn event: westerly wind ramp with warming AND drying.
-
-    Window: 20–06 UTC (≈ 2 PM – midnight MDT).
-    Criteria:
-      - Westerly (225–315°) for ≥3 consecutive hours
-      - Wind speed increase ≥5 m/s
-      - Temperature increase ≥2 C concurrent with the wind ramp
-      - Dewpoint decrease ≥2 C concurrent (drying signature)
-      - No large temperature DROP after the warming (rules out fronts)
-    """
-    if isinstance(date_val, datetime.date) and not isinstance(date_val, datetime.datetime):
-        d = date_val
-    else:
-        d = date_val.date() if hasattr(date_val, "date") else date_val
-
-    win_start = datetime.datetime(d.year, d.month, d.day, 20, 0)
-    win_end = win_start + datetime.timedelta(hours=10)  # 20Z–06Z
-
-    window = day_df.filter(
-        (pl.col("valid_time") >= win_start) & (pl.col("valid_time") <= win_end)
+    """Scan KVEL for foehn events using the library scanner."""
+    return scan_events(
+        stid="KVEL",
+        variables=["wind_speed_10m", "wind_dir_10m", "temp_2m", "dewpoint_2m"],
+        months=months,
+        year=year,
+        criteria_fn=detect_foehn,
+        rank_key="foehn_score",
     )
-
-    required = ["wind_speed_10m", "wind_dir_10m", "temp_2m", "dewpoint_2m"]
-    for col in required:
-        if col not in window.columns:
-            return None
-
-    window = window.drop_nulls(subset=required)
-    if window.shape[0] < 5:
-        return None
-
-    speeds = window["wind_speed_10m"].to_list()
-    dirs_ = window["wind_dir_10m"].to_list()
-    temps = window["temp_2m"].to_list()
-    dewpts = window["dewpoint_2m"].to_list()
-
-    # -- Wind criteria: consecutive westerly hours --
-    max_consec = 0
-    run = 0
-    for dv in dirs_:
-        if 225 <= dv <= 315:
-            run += 1
-            max_consec = max(max_consec, run)
-        else:
-            run = 0
-    if max_consec < 3:
-        return None
-
-    # -- Wind speed increase --
-    peak_speed = max(speeds)
-    if peak_speed < 7.0:
-        return None
-    baseline_speed = np.nanmean(speeds[:3]) if len(speeds) >= 3 else speeds[0]
-    wind_increase = peak_speed - baseline_speed
-    if wind_increase < 4.0:
-        return None
-
-    peak_idx = speeds.index(peak_speed)
-
-    # -- Temperature increase concurrent with wind ramp --
-    # Compare first 3 values to the max in the ramp period
-    baseline_temp = np.nanmean(temps[:3])
-    # Use values around peak wind to measure warming
-    ramp_end = min(peak_idx + 3, len(temps))
-    ramp_temps = temps[max(0, peak_idx - 2):ramp_end]
-    peak_temp = max(ramp_temps) if ramp_temps else max(temps)
-    temp_increase = peak_temp - baseline_temp
-    if temp_increase < 2.0:
-        return None
-
-    # -- Dewpoint decrease (drying) --
-    baseline_dewpt = np.nanmean(dewpts[:3])
-    ramp_dewpts = dewpts[max(0, peak_idx - 2):ramp_end]
-    min_dewpt = min(ramp_dewpts) if ramp_dewpts else min(dewpts)
-    dewpt_decrease = baseline_dewpt - min_dewpt
-    if dewpt_decrease < 2.0:
-        return None
-
-    # -- Anti-front check: temperature should NOT drop sharply after peak --
-    # If temp drops > 5 C after peak_idx, it's likely a frontal passage
-    post_peak_temps = temps[peak_idx:]
-    if len(post_peak_temps) >= 3:
-        post_min = min(post_peak_temps)
-        if (peak_temp - post_min) > 6.0:
-            return None  # likely a frontal passage followed by cooling
-
-    # -- Composite foehn score: reward warming + drying + wind --
-    foehn_score = round(wind_increase + temp_increase + dewpt_decrease, 1)
-
-    peak_time = window["valid_time"].to_list()[peak_idx]
-
-    return {
-        "date": str(d),
-        "foehn_score": foehn_score,
-        "peak_speed_ms": round(peak_speed, 1),
-        "wind_increase": round(wind_increase, 1),
-        "temp_increase_C": round(temp_increase, 1),
-        "dewpt_decrease_C": round(dewpt_decrease, 1),
-        "consec_westerly": max_consec,
-        "peak_time_utc": str(peak_time),
-    }
-
-
-def print_foehn_table(candidates):
-    if not candidates:
-        print("\n  No qualifying foehn events found.")
-        return
-
-    print(f"\n  {'Rank':<5} {'Date':<12} {'Score':<7} {'Wind+':<7} {'Temp+':<7} "
-          f"{'Td-':<7} {'Peak m/s':<9} {'W hrs':<6} {'Peak time (UTC)'}")
-    print("  " + "-" * 85)
-    for i, c in enumerate(candidates[:15], 1):
-        print(f"  {i:<5} {c['date']:<12} {c['foehn_score']:<7} "
-              f"{c['wind_increase']:<7} {c['temp_increase_C']:<7} "
-              f"{c['dewpt_decrease_C']:<7} {c['peak_speed_ms']:<9} "
-              f"{c['consec_westerly']:<6} {c['peak_time_utc']}")
 
 
 # ---------------------------------------------------------------------------
 # Data fetching
 # ---------------------------------------------------------------------------
 
-def fetch_surface_runs(src, date):
-    fhour_map = {12: FHOURS_12Z, 18: FHOURS_18Z}
-    datasets = {}
-    for ih in INIT_HOURS:
-        init_str = f"{date} {ih:02d}Z"
-        fhours = fhour_map[ih]
-        print(f"  Fetching HRRR sfc init={init_str} f00-f{max(fhours):02d} ...")
-        ds = src.fetch(
-            init_time=init_str,
-            forecast_hours=fhours,
-            variables=SFC_VARS,
-            region="uinta_basin",
-        )
-        ds = add_wind_fields(ds)
-        ds = add_theta_e(ds)
-        # Compute T-Td spread (K)
-        if "temp_2m" in ds.data_vars and "dewpoint_2m" in ds.data_vars:
-            ds["t_td_spread"] = ds["temp_2m"] - ds["dewpoint_2m"]
-            ds["t_td_spread"].attrs["units"] = "K"
-        datasets[ih] = ds
-        print(f"    -> {ds.sizes}")
-    return datasets
-
-
-def extract_waypoint_series(src, datasets, group=WP_GROUP):
-    wp_series = {}
-    for ih, ds in datasets.items():
-        print(f"  Extracting waypoints ({group}) for {ih}Z run ...")
-        df = src.extract_at_waypoints(ds, group=group)
-        wp_series[ih] = df
-    return wp_series
+def _add_t_td_spread(ds):
+    """Post-process hook: add T-Td spread (K) for foehn drying analysis."""
+    if "temp_2m" in ds.data_vars and "dewpoint_2m" in ds.data_vars:
+        ds["t_td_spread"] = ds["temp_2m"] - ds["dewpoint_2m"]
+        ds["t_td_spread"].attrs["units"] = "K"
+    return ds
 
 
 def fetch_foehn_obs(date):
-    try:
-        from brc_tools.obs import ObsSource
-        obs = ObsSource()
-        end = _next_day(date)
-        print(f"  Fetching foehn-path obs {date} 12Z — {end} 06Z ...")
-        obs_df = obs.timeseries(
-            waypoint_group=WP_GROUP,
-            start=f"{date} 12Z",
-            end=f"{end} 06Z",
-            variables=OBS_VARS,
-        )
-        print(f"    -> {obs_df.shape[0]} obs rows")
-        return obs_df
-    except Exception as exc:
-        print(f"  [WARN] Obs fetch failed: {exc}")
-        return None
+    """Fetch observations for the foehn-path waypoint group."""
+    return fetch_obs(
+        waypoint_group=WP_GROUP, event_date=date, variables=OBS_VARS,
+        start_spec="{date} 12Z", end_spec="{next_day} 06Z",
+    )
 
 
 def fetch_kvel_obs(date):
-    try:
-        from brc_tools.obs import ObsSource
-        obs = ObsSource()
-        end = _next_day(date)
-        print(f"  Fetching KVEL obs {date} 06Z — {end} 12Z ...")
-        obs_df = obs.timeseries(
-            stids=["KVEL"],
-            start=f"{date} 06Z",
-            end=f"{end} 12Z",
-            variables=OBS_VARS,
-        )
-        print(f"    -> {obs_df.shape[0]} rows")
-        return obs_df
-    except Exception as exc:
-        print(f"  [WARN] KVEL obs fetch failed: {exc}")
-        return None
+    """Fetch KVEL observations directly (24-hour window)."""
+    return fetch_obs(
+        stids=["KVEL"], event_date=date, variables=OBS_VARS,
+        start_spec="{date} 06Z", end_spec="{next_day} 12Z",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -798,8 +577,8 @@ def figure10_obs_overlay_wind(datasets, waypoints, obs_df, date):
     targets = [
         np.datetime64(f"{date}T20:00:00"),
         np.datetime64(f"{date}T22:00:00"),
-        np.datetime64(f"{_next_day(date)}T00:00:00"),
-        np.datetime64(f"{_next_day(date)}T02:00:00"),
+        np.datetime64(f"{next_day(date)}T00:00:00"),
+        np.datetime64(f"{next_day(date)}T02:00:00"),
     ]
 
     fig, axes = plt.subplots(
@@ -864,7 +643,7 @@ def main():
         print(f"\n[Phase 1] Scanning KVEL for foehn events "
               f"({args.year}, months {months}) ...")
         candidates = scan_foehn_events(months=months, year=args.year)
-        print_foehn_table(candidates)
+        print_candidate_table(candidates)
 
         if not candidates:
             print("\nNo qualifying foehn events found.")
@@ -888,14 +667,18 @@ def main():
     print(f"[Phase 2] Fetching HRRR + Obs for {EVENT_DATE}")
     print(f"{'=' * 60}")
 
-    waypoints = _load_waypoints(WP_GROUP)
+    fhour_map = {12: FHOURS_12Z, 18: FHOURS_18Z}
+    waypoints = load_waypoints(WP_GROUP)
     src = NWPSource("hrrr")
 
     print("\n[1/4] Fetching HRRR surface data (2 runs) ...")
-    sfc_datasets = fetch_surface_runs(src, EVENT_DATE)
+    sfc_datasets = fetch_multi_init(
+        src, EVENT_DATE, INIT_HOURS, SFC_VARS, fhour_map,
+        post_process=_add_t_td_spread,
+    )
 
     print("\n[2/4] Extracting waypoint time series ...")
-    wp_series = extract_waypoint_series(src, sfc_datasets, group=WP_GROUP)
+    wp_series = extract_all_waypoints(src, sfc_datasets, group=WP_GROUP)
 
     print("\n[3/4] Fetching foehn-path observations ...")
     obs_df = fetch_foehn_obs(EVENT_DATE)
@@ -908,7 +691,7 @@ def main():
     print("[Phase 3] Generating 10 figures ...")
     print(f"{'=' * 60}")
 
-    for name, func, func_args in [
+    run_figure_pipeline([
         ("Fig 1: Foehn meteogram (KVEL obs)",
          figure1_foehn_meteogram, (kvel_obs, EVENT_DATE)),
         ("Fig 2: Hovmöller — Temperature",
@@ -929,13 +712,7 @@ def main():
          figure9_pbl_theta_e, (sfc_datasets, waypoints)),
         ("Fig 10: Obs overlay on wind speed",
          figure10_obs_overlay_wind, (sfc_datasets, waypoints, obs_df, EVENT_DATE)),
-    ]:
-        print(f"\n{name} ...")
-        try:
-            func(*func_args)
-        except Exception as exc:
-            print(f"  [ERROR] {name} failed: {exc}")
-            traceback.print_exc()
+    ])
 
     print(f"\n{'=' * 60}")
     print(f"Done. 10 figures saved to: {OUTDIR}")
