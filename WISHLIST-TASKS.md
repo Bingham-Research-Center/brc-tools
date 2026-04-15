@@ -1,46 +1,43 @@
-# BRC Tools - Task Backlog
+# BRC Tools — Task Backlog
 
-## Priority 1: Data Pipeline
+Completed items are removed once merged; git history is the record.
 
-- [ ] Variable name mapping for website compatibility (`PM_25_concentration` not `pm25_concentration`)
-- [ ] Test data export format matches expected JSON structure
-- [ ] Move AQM code from `in_progress/aqm/` to `brc_tools/models/aqm.py`
-- [ ] Extract reusable functions from notebooks in `in_progress/notebooks/`
+## Priority 1: Reliability
 
-## Priority 2: Infrastructure
+The NWP/obs pipeline is functional but undertested. One regression in
+alias resolution or coordinate handling could silently produce wrong data
+in every case study.
 
-- [x] Create `brc_tools/nwp/` with NWPSource and lookups.toml (PR #16)
-- [x] Create `brc_tools/obs/` with ObsSource (PR #16)
-- [x] Model/obs alignment and unit harmonisation (alignment.py)
-- [x] Event detection scanner (obs/scanner.py)
-- [x] Case study shared helpers (nwp/case_study.py)
-- [ ] Create `brc_tools/config.py` for centralised settings (API endpoints, defaults, station lists)
-- [ ] Add structured logging (replace print statements)
-- [ ] Create fallback mechanisms for missing data
+- [ ] **NWPSource integration tests (mocked Herbie)** — mock `Herbie.xarray()` to return synthetic datasets; test alias resolution, product grouping, coordinate normalization, spatial cropping, waypoint extraction, and failure handling. This is the single highest-leverage task.
+- [ ] **ObsSource integration tests (mocked SynopticPy)** — mock `TimeSeries` to return synthetic DataFrames; test alias renaming, waypoint column injection, timezone stripping.
+- [ ] **End-to-end pipeline test** — fetch → extract_at_waypoints → align_obs_to_nwp → paired_scores with synthetic data. Validates the full verification workflow.
+- [ ] Install and configure ruff in the brc-tools conda env (referenced in docs but not installed).
 
-## Priority 3: Documentation
+## Priority 2: Operational delivery (issue #10)
 
-- [x] CLAUDE.md agent-discoverability update (module reference tables)
-- [x] API reference (`docs/API-REFERENCE.md`)
-- [x] Case study guide (`docs/CASE-STUDY-GUIDE.md`)
-- [x] NWP roadmap status update
-- [ ] `reference/WEBSITE-INTEGRATION.md` — frontend context and data contract
-- [ ] Document git workflow for team (range of experience levels)
+The case study pipeline proves the NWP library works. Closing #10 means
+the website receives fresh HRRR forecasts automatically.
 
-## Priority 4: Features
+- [ ] **Define BasinWX JSON contract for HRRR waypoint forecasts** — document the expected JSON shape, variable names (`PM_25_concentration` vs `pm25_concentration`), and upload endpoint. Needs `reference/WEBSITE-INTEGRATION.md`.
+- [ ] **HRRR waypoint forecast script** — scheduled script that calls `NWPSource.fetch()` → `extract_at_waypoints()` → formats JSON → `push_data.send_json_to_server()`. Target: hourly cron on CHPC.
+- [ ] Test data export format matches the JSON contract above.
+- [ ] Add structured logging to the operational script (replace print statements for scheduled/unattended runs).
 
-- [ ] Base Pipeline class with fetch → process → push pattern
-- [ ] HRRR sub-hourly (15-min) support
-- [ ] GEFS ensemble workflows (lagged, spread, probability)
-- [ ] Complete `verify/infogain.py`
-- [ ] Add basic ML utilities in `ml/`
-- [ ] Export to JSON for web rendering (time series, heatmaps)
-- [ ] Cross-section and profile plotting (stubs exist)
+## Priority 3: Analysis capability
 
-## Priority 5: Developer Experience
+Extend the case study toolkit for deeper diagnostics.
 
-- [ ] Pre-commit hooks for code quality
-- [ ] GitHub Actions CI/CD
-- [ ] `CONTRIBUTING.md` with git workflow
-- [ ] NWPSource / ObsSource integration tests (with mocked API)
-- [ ] `examples/` folder with simple use cases
+- [ ] **Cross-section plotting** (`visualize/crosssection.py`) — vertical cross-section along a waypoint transect using pressure-level data. Key for foehn descent analysis. Stubs exist.
+- [ ] **Profile plotting** (`visualize/profile.py`) — single-station vertical profile. Stubs exist.
+- [ ] HRRR sub-hourly (15-min) support — product "subh" is defined in lookups.toml but untested.
+- [ ] GEFS ensemble workflows — spread, probability, lagged ensemble. Config exists; no analysis code yet.
+- [ ] Move AQM code from `in_progress/aqm/` to `brc_tools/models/aqm.py`.
+- [ ] Extract reusable functions from notebooks in `in_progress/notebooks/`.
+
+## Priority 4: Developer experience
+
+Important before onboarding new contributors.
+
+- [ ] GitHub Actions CI/CD (run pytest + ruff on PRs).
+- [ ] Pre-commit hooks for code quality.
+- [ ] `CONTRIBUTING.md` with git workflow (document for range of experience levels).
