@@ -10,6 +10,7 @@ pushes JSON to the BasinWX website. Python package: **`brc_tools`**
 - Case study pipeline: natural language → Python script → diagnostic figures.
 - Issue **#10** tracks HRRR/RRFS → BasinWX. Strategy: `docs/nwp/README.md`.
 - HRRR 15-min sub-hourly and ensemble workflows = future extensions.
+- Prioritised backlog: `WISHLIST-TASKS.md` (next: integration tests, then HRRR operational pipeline).
 
 ## Repo map
 ```
