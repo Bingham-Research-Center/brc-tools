@@ -328,9 +328,30 @@ units         = "kg m-2"
 output_var    = "precip_1hr"
 synoptic_name = "precip_accum_one_hour"
 [aliases.precip_1hr.search]
-hrrr = "APCP:surface:0-1 hour acc"
+hrrr = "APCP:surface"
 gefs = "APCP:surface:0-1 hour acc"
 rrfs = "APCP:surface:0-1 hour acc"
+
+[aliases.snowfall_1hr]
+description   = "1-hour accumulated snowfall"
+units         = "m"
+output_var    = "snowfall_1hr"
+[aliases.snowfall_1hr.search]
+hrrr = "ASNOW:surface"
+
+[aliases.categorical_rain]
+description   = "Categorical rain flag"
+units         = "flag"
+output_var    = "categorical_rain"
+[aliases.categorical_rain.search]
+hrrr = "CRAIN:surface"
+
+[aliases.categorical_snow]
+description   = "Categorical snow flag"
+units         = "flag"
+output_var    = "categorical_snow"
+[aliases.categorical_snow.search]
+hrrr = "CSNOW:surface"
 
 [aliases.snow_depth]
 description   = "Snow depth"
