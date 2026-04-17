@@ -45,6 +45,7 @@ publication-quality diagnostic figures.
 - `scripts/case_study_20250222.py` — 23-figure cold-pool erosion / quasi-front
 - `scripts/case_study_kvel_westerly.py` — synoptic wind event with obs scanning
 - `scripts/case_study_kvel_foehn.py` — mesoscale foehn with scan-and-select pattern
+- `scripts/snow_depth_april_range.py` — obs-only multi-year climatology (no NWP); SynopticPy Metadata for station discovery by bbox + variable
 
 **Pattern:**
 1. Scan obs to identify/rank candidate event dates (`scan_events`)
@@ -73,6 +74,7 @@ wp = {n: load_lookups()["waypoints"][n]
 fig = plot_planview_evolution(ds, "theta_e_2m", waypoints=wp, cmap="RdYlBu_r")
 ```
 - Obs: `ObsSource().timeseries(waypoint_group="us40_dense", start=..., end=..., variables=[...])`.
+- Station discovery (not supported by ObsSource): `synoptic.services.Metadata(bbox=..., vars=...)` directly.
 - Verification: `paired_scores(nwp_df, obs_df, ["temp_2m","wind_speed_10m"])`.
 - Event scanning: `scan_events(stid="KVEL", variables=[...], months=(3,4,5), year=2025, criteria_fn=detect_wind_ramp, rank_key="wind_increase")`.
 
