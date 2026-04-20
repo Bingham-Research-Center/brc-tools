@@ -356,6 +356,7 @@ def _extract_grid(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray]:
 
     lat = np.asarray(ds["latitude"].values, dtype=float)
     lon = np.asarray(ds["longitude"].values, dtype=float)
+    lon = np.where(lon > 180, lon - 360, lon)
     if lat.ndim == 1 and lon.ndim == 1:
         lon_grid, lat_grid = np.meshgrid(lon, lat)
         return lat_grid, lon_grid
