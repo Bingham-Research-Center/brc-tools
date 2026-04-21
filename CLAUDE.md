@@ -174,6 +174,15 @@ Server URL from `~/.config/ubair-website/website_url`; API key from
 `DATA_UPLOAD_API_KEY` env var. **`clyfar` imports this function** — do not
 change its signature without a cross-repo PR.
 
+### HRRR surface layer export (`brc_tools/nwp/basinwx.py`)
+CLI: `scripts/export_hrrr_surface_layers.py`. Use `--server-url` to
+override the config-file URL (enables separate dev/prod cron entries).
+CHPC cron template (not yet deployed):
+```
+30 * * * * source ~/.bashrc && conda activate brc-tools && cd ~/gits/brc-tools && python scripts/export_hrrr_surface_layers.py --upload --server-url https://basinwx.dev >> ~/logs/hrrr_upload_dev.log 2>&1
+```
+Swap `--server-url` to `https://www.basinwx.com` for production.
+
 ## Environment variables
 - `DATA_UPLOAD_API_KEY` — required for uploads (32-char hex).
 - `SYNOPTIC_TOKEN` — required for Synoptic obs (SynopticPy >=2024.0.0).

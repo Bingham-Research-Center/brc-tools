@@ -200,6 +200,7 @@ def export_latest_surface_layers(
     stride: int = DEFAULT_STRIDE,
     upload: bool = False,
     upload_bucket: str = DEFAULT_UPLOAD_BUCKET,
+    server_url: str | None = None,
 ) -> list[Path]:
     """Export the latest HRRR surface layers and a run index file."""
     output_root = Path(output_dir).expanduser()
@@ -247,9 +248,10 @@ def export_latest_surface_layers(
     if upload:
         from brc_tools.download.push_data import load_config, send_json_to_server
 
-        api_key, server_url = load_config()
+        api_key, config_url = load_config()
+        url = server_url or config_url
         for path in written_paths:
-            send_json_to_server(server_url, str(path), upload_bucket, api_key)
+            send_json_to_server(url, str(path), upload_bucket, api_key)
 
     return written_paths
 
@@ -297,6 +299,11 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_UPLOAD_BUCKET,
         help=f"Upload bucket name (default: {DEFAULT_UPLOAD_BUCKET})",
     )
+    parser.add_argument(
+        "--server-url",
+        default=None,
+        help="Override server URL (default: read from ~/.config/ubair-website/website_url)",
+    )
     return parser.parse_args()
 
 
@@ -318,6 +325,7 @@ def main() -> int:
             stride=args.stride,
             upload=args.upload,
             upload_bucket=args.upload_bucket,
+            server_url=args.server_url,
         )
     except Exception as exc:
         LOG.error("HRRR surface export failed: %s", exc)
