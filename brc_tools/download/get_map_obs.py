@@ -16,7 +16,7 @@ from synoptic.services import Metadata, Latest, TimeSeries
 from brc_tools.utils.lookups import obs_map_vrbls, obs_map_stids
 from brc_tools.download.download_funcs import generate_json_fpath
 from brc_tools.download.push_data import (clean_dataframe_for_json, save_json,
-                                          send_json_to_server, load_config)
+                                          send_json_to_all, load_config_urls)
 from brc_tools.utils.util_funcs import get_current_datetime
 
 
@@ -81,14 +81,13 @@ if __name__ == "__main__":
     clean_df = clean_dataframe_for_json(latest_obs)
     save_json(clean_df, map_fpath)
 
-    # This is where I want to send json to the website server
     send_json = True
     if send_json:
-        # tempdir = os.environ.get('TMP_DIR')
-        API_KEY, server_url = load_config()
-        print(f"Using API key {API_KEY[:5]}... and server URL starting"
-              f" {server_url[:10]}")
+        API_KEY, server_urls = load_config_urls()
+        print(f"Using API key {API_KEY[:5]}... and {len(server_urls)} URL(s): "
+              f"primary={server_urls[0]}"
+              + (f", mirrors={server_urls[1:]}" if len(server_urls) > 1 else ""))
 
         for f, data_type in (
                 (meta_fpath, "metadata"), (map_fpath, "observations")):
-            send_json_to_server(server_url, f, data_type, API_KEY)
+            send_json_to_all(server_urls, f, data_type, API_KEY)

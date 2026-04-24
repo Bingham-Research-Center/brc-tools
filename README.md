@@ -46,6 +46,36 @@ This package is deployed on CHPC to push weather data to BasinWX.
 
 **Cross-repo data contract:** see [`docs/CROSS-REPO-SYNC.md`](docs/CROSS-REPO-SYNC.md).
 
+### Upload destinations (fan-out)
+
+Uploads can target one or more servers (e.g. production + dev). Resolution
+order used by `load_config_urls()` in `brc_tools/download/push_data.py`:
+
+1. `BASINWX_API_URLS` env var — comma-separated list. First URL is primary
+   (failure raises), remaining URLs are best-effort mirrors (failure logged
+   as WARN but non-fatal).
+2. `~/.config/ubair-website/website_urls` — same format, file fallback.
+3. `~/.config/ubair-website/website_url` — legacy single-URL file, preserved
+   for back-compat.
+
+Example:
+
+```bash
+export BASINWX_API_URLS="https://basinwx.com,https://basinwx.dev"
+```
+
+Use this for dual-site pushes from CHPC. For one-shot dev uploads, the
+HRRR export CLI also accepts `--server-url` as a single-URL override.
+
+### Why `send_json_to_server` is preserved
+
+`brc_tools.download.push_data.send_json_to_server(server, fpath, bucket, key)`
+retains its original single-URL signature because **the `clyfar` repo imports
+it directly**. New brc-tools code should use `send_json_to_all(urls, ...)`
+instead; the legacy function stays intact until `clyfar` migrates (tracked as
+a follow-up, needs a cross-repo PR per
+[`docs/CROSS-REPO-SYNC.md`](docs/CROSS-REPO-SYNC.md)).
+
 ## Authors
 
 John Lawson and Michael Davies, Bingham Research Center, 2025
