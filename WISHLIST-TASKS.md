@@ -41,3 +41,35 @@ Important before onboarding new contributors.
 - [ ] GitHub Actions CI/CD (run pytest + ruff on PRs).
 - [ ] Pre-commit hooks for code quality.
 - [ ] `CONTRIBUTING.md` with git workflow (document for range of experience levels).
+
+## Priority 5: Documentation and agent onboarding
+
+Deferred from Phase 2 of the dual-site fan-out work (2026-04-23); parked
+here so the next cold-start agent knows to tackle it.
+
+- [ ] **CLAUDE.md overhaul** — current file is accurate but grew ad-hoc.
+  Goal: reorganise around "what an AI agent needs to know on a cold start"
+  with clear sections for (a) active pipelines + cadences, (b) load-bearing
+  data-flow anchors, (c) quick-start for case-study construction, (d) what
+  *not* to change without a cross-repo PR. Keep it under 200 lines.
+- [ ] **Roadmap brainstorm** — prepare a small doc (`docs/ROADMAP.md` or
+  similar) that captures the next 6–12 months of work in outcome terms, not
+  task lists. Input to the CLAUDE.md overhaul.
+- [ ] **Prune root + file contents** for AI-and-human readability: remove
+  stale `docs/` entries (PIPELINE-ARCHITECTURE aspirational, `nwp/MERGE-PLAN`
+  historical), consolidate `docs/nwp/` archive, and make sure every top-level
+  file earns its place.
+- [ ] **Update "Key data-flow anchor" in CLAUDE.md** post-fan-out to mention
+  `send_json_to_all` + `BASINWX_API_URLS` (small; bundle with the overhaul
+  above unless a cold-start agent wants a quick win first).
+
+## Priority 6: Seasonal ops (pause/resume)
+
+- [ ] **Clyfar/FFION/GEFS-plot pipelines paused end-March 2026** for the
+  season; resume ~October 2026. When resuming, verify they still use the new
+  fan-out path (`send_json_to_all`) — check clyfar's import site first since
+  it still uses the legacy `send_json_to_server`.
+- [ ] **HRRR surface-layer cron** needs installing on the CHPC cron host
+  once fan-out is shipped. Template in `CLAUDE.md` under "HRRR surface layer
+  export" (adjust cadence and `--server-url` as needed once `BASINWX_API_URLS`
+  is set).

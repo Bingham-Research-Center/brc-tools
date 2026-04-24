@@ -246,12 +246,12 @@ def export_latest_surface_layers(
     written_paths.append(index_path)
 
     if upload:
-        from brc_tools.download.push_data import load_config, send_json_to_server
+        from brc_tools.download.push_data import load_config_urls, send_json_to_all
 
-        api_key, config_url = load_config()
-        url = server_url or config_url
+        api_key, config_urls = load_config_urls()
+        urls = [server_url] if server_url else config_urls
         for path in written_paths:
-            send_json_to_server(url, str(path), upload_bucket, api_key)
+            send_json_to_all(urls, str(path), upload_bucket, api_key)
 
     return written_paths
 

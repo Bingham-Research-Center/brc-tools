@@ -253,10 +253,10 @@ def main() -> int:
 
     if args.upload and not args.dry_run:
         try:
-            from brc_tools.download.push_data import load_config, send_json_to_server
+            from brc_tools.download.push_data import load_config_urls, send_json_to_all
 
-            api_key, server_url = load_config()
-            send_json_to_server(server_url, output_path, args.upload_bucket, api_key)
+            api_key, server_urls = load_config_urls()
+            send_json_to_all(server_urls, output_path, args.upload_bucket, api_key)
         except Exception as exc:
             LOG.error("Road forecast upload failed: %s", exc)
             return 1
