@@ -72,6 +72,45 @@ def wind_components(speed, direction_deg):
     return u, v
 
 
+KT_PER_MS = 1.94384
+
+
+def headwind_kt(u_ms, v_ms, runway_heading_deg):
+    """Headwind component along a runway heading, in knots.
+
+    Positive = opposing the aircraft (conventional aviation sign).
+
+    Parameters
+    ----------
+    u_ms, v_ms : array-like
+        Eastward and northward wind components (m/s).
+    runway_heading_deg : float or array-like
+        Runway heading in degrees true (0 = N, 90 = E).
+    """
+    theta = np.radians(np.asarray(runway_heading_deg))
+    u = np.asarray(u_ms)
+    v = np.asarray(v_ms)
+    return -(u * np.sin(theta) + v * np.cos(theta)) * KT_PER_MS
+
+
+def crosswind_kt(u_ms, v_ms, runway_heading_deg):
+    """Crosswind component across a runway heading, in knots.
+
+    Positive = from the right of the aircraft (conventional aviation sign).
+
+    Parameters
+    ----------
+    u_ms, v_ms : array-like
+        Eastward and northward wind components (m/s).
+    runway_heading_deg : float or array-like
+        Runway heading in degrees true (0 = N, 90 = E).
+    """
+    theta = np.radians(np.asarray(runway_heading_deg))
+    u = np.asarray(u_ms)
+    v = np.asarray(v_ms)
+    return (v * np.sin(theta) - u * np.cos(theta)) * KT_PER_MS
+
+
 # ---------------------------------------------------------------------------
 # Thermodynamic quantities
 # ---------------------------------------------------------------------------
