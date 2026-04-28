@@ -83,6 +83,7 @@ def build_road_payload(
     ]
 
     routes_out: dict[str, dict[str, object]] = {}
+    points_out: list[dict[str, object]] = []
     for route_id, corridor in ROAD_CORRIDORS.items():
         route_forecasts = forecasts_by_route.get(route_id, {})
         waypoints_out = []
@@ -106,6 +107,20 @@ def build_road_payload(
                     "forecasts": forecast_arrays,
                 }
             )
+            points_out.append(
+                {
+                    "route_id": route_id,
+                    "name": waypoint["name"],
+                    "lat": waypoint["lat"],
+                    "lon": waypoint["lon"],
+                    "elevation_m": waypoint["elevation_m"],
+                    "reference_stid": waypoint["reference_stid"],
+                    "forecasts": [
+                        {"valid_time": valid_time, **hour}
+                        for valid_time, hour in zip(valid_times, hourly_values)
+                    ],
+                }
+            )
 
         routes_out[route_id] = {
             "name": corridor["name"],
@@ -121,6 +136,7 @@ def build_road_payload(
         "valid_times": valid_times,
         "variables": ROAD_FORECAST_VARIABLES_META,
         "routes": routes_out,
+        "points": points_out,
         "cameras": [],
     }
 
