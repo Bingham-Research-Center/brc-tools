@@ -201,7 +201,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--upload-bucket",
-        default="forecasts",
+        default="road-forecast",
         help="Upload bucket name passed to the shared uploader",
     )
     return parser.parse_args()
