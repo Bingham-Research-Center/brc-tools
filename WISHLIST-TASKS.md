@@ -31,8 +31,6 @@ Extend the case study toolkit for deeper diagnostics.
 - [ ] **Profile plotting** (`visualize/profile.py`) — single-station vertical profile. Stubs exist.
 - [ ] HRRR sub-hourly (15-min) support — product "subh" is defined in lookups.toml but untested.
 - [ ] GEFS ensemble workflows — spread, probability, lagged ensemble. Config exists; no analysis code yet.
-- [ ] Move AQM code from `in_progress/aqm/` to `brc_tools/models/aqm.py`.
-- [ ] Extract reusable functions from notebooks in `in_progress/notebooks/`.
 
 ## Priority 4: Developer experience
 
