@@ -137,6 +137,45 @@ export DATA_UPLOAD_API_KEY="<32-char-hex>"
 30 3,9,15,21 * * * cd ~/gits/clyfar && ./scripts/submit_clyfar.sh >> ~/logs/clyfar_submit.log 2>&1
 ```
 
+### HRRR surface layers → BasinWX (not yet deployed)
+
+Exporter: `brc_tools/nwp/basinwx.py`. CLI wrapper:
+`scripts/export_hrrr_surface_layers.py`. Use `--server-url` to override
+the config-file URL so dev and prod cron entries are independent.
+
+**Prerequisites on the CHPC runner** (`brc_tools/download/push_data.py`
+reads these):
+
+- `DATA_UPLOAD_API_KEY` env var (32-char hex). Same value as the
+  website's `.env`. Set in `~/.bashrc` or load from secure store.
+- `~/.config/ubair-website/website_url` — single-line file with the
+  default server URL (overridden by `--server-url`).
+- Runner FQDN must end with `.chpc.utah.edu` (server validates
+  `x-client-hostname`).
+- Conda env: `brc-tools` with `pip install -e .` in `~/gits/brc-tools`.
+
+**Manual smoke test** (before wiring cron):
+```bash
+# Dry run, no upload
+python scripts/export_hrrr_surface_layers.py --run-count 1 --max-fxx 6
+
+# Upload to dev
+python scripts/export_hrrr_surface_layers.py --run-count 1 --max-fxx 6 \
+  --upload --server-url https://basinwx.dev
+```
+
+**Crontab (dev, hourly at HH:30 — HRRR latency is ~2 h):**
+```bash
+30 * * * * source ~/.bashrc && conda activate brc-tools && cd ~/gits/brc-tools && \
+  python scripts/export_hrrr_surface_layers.py --upload \
+    --server-url https://basinwx.dev \
+    >> ~/logs/hrrr_upload_dev.log 2>&1
+```
+
+Production: swap `--server-url https://www.basinwx.com`. Expected payload
+per cycle is ~2 MB (3 runs × ~600 KB + index); the website caps uploads
+at 10 MB.
+
 ---
 
 ## Common Pitfalls
