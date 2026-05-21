@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "perplexity": {
+      "command": "npx",
+      "args": ["-y", "@perplexity-ai/mcp-server"],
+      "env": {
+        "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}"
+      }
+    },
+    "mistral": {
+      "command": "npx",
+      "args": ["-y", "mistral-mcp"],
+      "env": {
+        "MISTRAL_API_KEY": "${MISTRAL_API_KEY}"
+      }
+    }
+  }
+}
