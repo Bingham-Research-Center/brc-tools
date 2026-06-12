@@ -36,9 +36,16 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "python-dotenv>=1.0.0",
     "pytz>=2023.3",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
+api = [
+    # LLM client SDKs for brc_tools.api.{perplexity,mistral}.
+    # Not needed on CHPC (HRRR upload + obs cron only use core deps).
+    "openai>=1.0",
+    "mistralai>=1.0",
+]
 dev = [
     "pytest>=7.4.0",
     "ruff>=0.1.0",

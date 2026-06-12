@@ -141,3 +141,19 @@ Tracked in GitHub issue #10.
 ## Confirmed phase 1 scope
 - Phase 1 will target **HRRR hourly + Synoptic historical observations first**.
 - HRRR 15-minute output, RRFS, and broader ensemble workflows remain explicit phase 2+ extensions once the base interface is stable.
+
+---
+
+## Archive: branch survey 2026-04-06
+
+Snapshot of pre-merge branches preserved in case anyone needs to mine
+prototype code that did not land in `main`. Source: Copilot exploration
+session. Use `git show <branch>:<path>` rather than checking out.
+
+| Branch | Repo | Value | Caveat |
+| --- | --- | --- | --- |
+| `feat/hrrr-road-poc-minimal` | `brc-tools` | Reusable HRRR helpers; encodes US-40 sequence (Duchesne → Myton → Roosevelt → Vernal) | Not merged |
+| `origin/chore/hrrr-road-ops-docs` | `brc-tools` | Website contract, cron, and upload route spec | Mostly docs/ops |
+| `origin/feat/hrrr-road-forecast-core` | `brc-tools` | Earlier full road-forecast implementation | Largely superseded by minimal branch |
+| `origin/recovery/brc-tools-hrrr-direct-main-2026-03-02` | `brc-tools` | Historical recovery point | Ancestry/reference only |
+| `origin/feat/rwis-surface-snow-decisions` | `ubair-website` | RWIS / surface-status / visibility logic | No HRRR forecast endpoint inside |
