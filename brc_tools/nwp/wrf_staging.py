@@ -193,32 +193,59 @@ def _isoformat_utc(value: dt.datetime) -> str:
     return _ensure_utc(value).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _lead_times_from_inventory(inv) -> list[int]:
-    """Best-effort integer lead-time list from a Herbie inventory DataFrame.
+_LEAD_RE = re.compile(r"(\d+)\s*hour")
 
-    Reforecast idx rows carry forecast ranges like ``"24 hour fcst"``; parse the
-    hour out. Returns ``[]`` if the structure is unrecognised (non-fatal — the
-    manifest just records an empty coverage list).
-    """
+
+def _parse_lead(text) -> int | None:
+    """Integer lead hour from a forecast-time string ('12 hour fcst' -> 12)."""
+    m = _LEAD_RE.search(str(text))
+    if m:
+        return int(m.group(1))
+    s = str(text).strip()
+    return int(s) if s.isdigit() else None
+
+
+def _inv_lead_values(inv) -> list:
+    """The inventory column carrying lead time, as a list (empty if none)."""
+    columns = list(getattr(inv, "columns", []))
+    col = next((c for c in ("forecast_time", "step", "fxx", "lead_time") if c in columns), None)
+    if col is None:
+        return []
     try:
-        columns = list(getattr(inv, "columns", []))
-        col = next(
-            (c for c in ("forecast_time", "step", "fxx", "lead_time") if c in columns),
-            None,
-        )
-        if col is None:
-            return []
-        hours: set[int] = set()
-        for val in inv[col].tolist():
-            text = str(val)
-            match = re.search(r"(\d+)\s*hour", text)
-            if match:
-                hours.add(int(match.group(1)))
-            elif text.strip().isdigit():
-                hours.add(int(text.strip()))
-        return sorted(hours)
+        return inv[col].tolist()
     except Exception:  # pragma: no cover - defensive
         return []
+
+
+def _lead_times_from_inventory(inv) -> list[int]:
+    """Best-effort sorted integer lead-time list from a Herbie inventory."""
+    if inv is None:
+        return []
+    hours = {h for h in (_parse_lead(v) for v in _inv_lead_values(inv)) if h is not None}
+    return sorted(hours)
+
+
+def _lead_search_regex(inv, lo: int, hi: int) -> tuple[str | None, list[int]]:
+    """Herbie ``search`` regex selecting only lead times in ``[lo, hi]``.
+
+    Matches the inventory's ``:<var>:<level>:<N> hour fcst:`` lines on the lead
+    token (the leading ``:`` disambiguates 12 from 112), so ``Herbie.download``
+    fetches only those GRIB messages by byte-range. Returns
+    ``(regex_or_None, in_window_leads)``; the regex is ``None`` when no integer
+    ``N hour fcst`` lead falls in the window (e.g. accumulation fields), in which
+    case the caller stages the whole file.
+    """
+    leads = sorted(
+        {
+            h
+            for h in (_parse_lead(v) for v in _inv_lead_values(inv))
+            if h is not None and lo <= h <= hi
+        }
+    )
+    if not leads:
+        return None, []
+    alt = "|".join(str(h) for h in leads)
+    return rf":(?:{alt}) hour fcst:", leads
 
 
 # ── core stager ─────────────────────────────────────────────────────────────
@@ -237,6 +264,7 @@ def stage_reforecast(
     overwrite: bool = False,
     keep_herbie_cache: bool = False,
     validate_tokens: bool = True,
+    lead_subset: bool = False,
 ) -> list[StagedFile]:
     """Stage all WPS ``variable_level`` files for one reforecast init + member.
 
@@ -265,6 +293,11 @@ def stage_reforecast(
     validate_tokens : bool
         Guard each token with ``H.inventory()`` and raise on an empty result
         (catches typo/absent tokens that would otherwise 404 silently).
+    lead_subset : bool
+        Download only the GRIB messages whose lead time falls in ``fxx_window``
+        (Herbie byte-range ``search=``), instead of the whole bucket file (f3–f240).
+        For the Jan-2013 window this is ~6× smaller. Falls back to the whole file
+        for fields whose lead is not an integer ``N hour fcst`` (e.g. accumulations).
 
     Returns
     -------
@@ -334,19 +367,29 @@ def stage_reforecast(
                 save_dir=str(save_dir),
             )
 
-            if validate_tokens:
-                inv = _safe_inventory(H)
-                if inv is None or len(inv) == 0:
-                    raise ValueError(
-                        f"variable_level {token!r} returned an empty inventory for "
-                        f"{herbie_model} {init_dt:%Y-%m-%d %HZ} {member_token}. "
-                        "Check the token against the S3 listing."
-                    )
-                lead_times = _lead_times_from_inventory(inv)
-            else:
-                lead_times = []
+            inv = _safe_inventory(H) if (validate_tokens or lead_subset) else None
+            if validate_tokens and (inv is None or len(inv) == 0):
+                raise ValueError(
+                    f"variable_level {token!r} returned an empty inventory for "
+                    f"{herbie_model} {init_dt:%Y-%m-%d %HZ} {member_token}. "
+                    "Check the token against the S3 listing."
+                )
+            lead_times = _lead_times_from_inventory(inv)
 
-            local = _download(H)
+            search = None
+            if lead_subset and inv is not None:
+                search, sub_leads = _lead_search_regex(
+                    inv, int(fxx_window[0]), int(fxx_window[1])
+                )
+                if search is not None:
+                    lead_times = sub_leads
+                else:
+                    LOG.warning(
+                        "lead-subset: no integer lead in %s..%s for %s; staging whole file",
+                        fxx_window[0], fxx_window[1], token,
+                    )
+
+            local = _download(H, search=search)
             if not validate_cached_grib(local):
                 purge_cached_files(H)
                 raise RuntimeError(f"Downloaded GRIB failed validation: {local}")
@@ -418,9 +461,13 @@ def _safe_inventory(H):
         return None
 
 
-def _download(H) -> Path:
-    """Download the whole GRIB (retains it) and return the local path."""
-    out = H.download()  # no search -> full file
+def _download(H, search=None) -> Path:
+    """Download the GRIB (retains it) and return the local path.
+
+    ``search=None`` downloads the whole file; a regex downloads only the matching
+    GRIB messages by byte-range (used by ``lead_subset``).
+    """
+    out = H.download(search=search)
     if out is not None:
         return Path(out)
     getter = getattr(H, "get_localFilePath", None)
@@ -647,6 +694,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--herbie-save-dir", default=None, help="Herbie working cache before the move.")
     parser.add_argument("--keep-herbie-cache", action="store_true", help="Copy instead of move out of cache.")
     parser.add_argument("--overwrite", action="store_true", help="Re-download even if already staged.")
+    parser.add_argument(
+        "--lead-subset", action="store_true",
+        help="Download only lead times in --fxx-window (byte-range), not the whole f3-f240 bucket.",
+    )
     parser.add_argument("--no-quicklook", action="store_true", help="Skip quicklook figures.")
     parser.add_argument("--obs-check", action="store_true", help="Attempt SynopticPy obs overlay (opt-in).")
     parser.add_argument("--no-validate-tokens", action="store_true", help="Skip the H.inventory() token guard.")
@@ -690,6 +741,7 @@ def main(argv: list[str] | None = None) -> int:
             keep_herbie_cache=args.keep_herbie_cache,
             overwrite=args.overwrite,
             validate_tokens=not args.no_validate_tokens,
+            lead_subset=args.lead_subset,
         )
     except Exception as exc:  # noqa: BLE001
         LOG.error("WRF-input staging failed: %s", exc)

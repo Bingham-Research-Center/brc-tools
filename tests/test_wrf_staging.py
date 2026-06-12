@@ -19,12 +19,15 @@ from brc_tools.nwp.wrf_staging import (
     StagedFile,
     _canonical_staging_path,
     _fxx_bucket,
+    _lead_search_regex,
     _member_token,
     _sha256,
     build_manifest,
     stage_fnl_filler,
     stage_reforecast,
 )
+
+_FULL_LEADS = list(range(3, 61, 3))  # 3..60 h, mimics a Days:1-10 inventory slice
 
 _VALID_GRIB = b"GRIB" + b"\x00" * 1400  # passes validate_cached_grib (magic + size)
 
@@ -37,7 +40,8 @@ class FakeHerbie:
 
     init_count = 0
     download_count = 0
-    inventory_rows = ["12 hour fcst", "24 hour fcst", "36 hour fcst", "48 hour fcst"]
+    last_search = None
+    inventory_rows = [f"{h} hour fcst" for h in _FULL_LEADS]
 
     def __init__(self, date, *, model, member, fxx, variable_level, save_dir, **kw):
         type(self).init_count += 1
@@ -62,6 +66,7 @@ class FakeHerbie:
 
     def download(self, *_a, **_k):
         type(self).download_count += 1
+        type(self).last_search = _k.get("search", _a[0] if _a else None)
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self._cache_path.write_bytes(_VALID_GRIB)
         return self._cache_path
@@ -71,7 +76,8 @@ class FakeHerbie:
 def fake_herbie(monkeypatch):
     FakeHerbie.init_count = 0
     FakeHerbie.download_count = 0
-    FakeHerbie.inventory_rows = ["12 hour fcst", "24 hour fcst", "36 hour fcst", "48 hour fcst"]
+    FakeHerbie.last_search = None
+    FakeHerbie.inventory_rows = [f"{h} hour fcst" for h in _FULL_LEADS]
     monkeypatch.setattr(wrf_staging, "Herbie", FakeHerbie)
     return FakeHerbie
 
@@ -166,9 +172,10 @@ def test_stage_reforecast_moves_into_layout(tmp_path, fake_herbie):
         assert dest.exists() and validate_cached_grib(dest)
         assert dest.parent == tmp_path / "t" / "gefs_reforecast" / "c00"
         assert sf.member == "c00" and sf.member_int == 0
-        assert sf.lead_times == [12, 24, 36, 48]  # parsed from inventory
+        assert sf.lead_times == _FULL_LEADS  # whole bucket parsed from inventory
         assert sf.sha256 and sf.size_bytes == len(_VALID_GRIB)
         assert sf.remote_url and sf.remote_url.endswith(".grib2")
+    assert fake_herbie.last_search is None  # whole-file download, no byte-range subset
     # files were MOVED out of the Herbie cache, not copied
     assert not any((tmp_path / "cache").glob("_cache_*.grib2"))
 
@@ -205,6 +212,32 @@ def test_validate_tokens_raises_on_empty_inventory(tmp_path, fake_herbie):
             case="t",
             herbie_save_dir=tmp_path / "cache",
         )
+
+
+def test_lead_search_regex():
+    import re
+
+    inv = pd.DataFrame({"forecast_time": [f"{h} hour fcst" for h in _FULL_LEADS]})
+    rgx, leads = _lead_search_regex(inv, 12, 48)
+    assert leads == [12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48]
+    assert rgx == r":(?:12|15|18|21|24|27|30|33|36|39|42|45|48) hour fcst:"
+    # leading ':' guards 12 vs 112; trailing ' hour' guards 12 vs 120
+    assert re.search(rgx, ":TMP:2 m above ground:12 hour fcst:ENS=low-res ctl")
+    assert not re.search(rgx, ":TMP:2 m above ground:112 hour fcst:ENS=low-res ctl")
+    assert not re.search(rgx, ":HGT:500 mb:120 hour fcst:ENS=low-res ctl")
+    # accumulation-style leads (no integer 'N hour fcst' in window) -> None
+    inv2 = pd.DataFrame({"forecast_time": ["0-3 hour acc", "0-6 hour acc"]})
+    assert _lead_search_regex(inv2, 12, 48) == (None, [])
+
+
+def test_lead_subset_passes_search_and_subsets(tmp_path, fake_herbie):
+    staged = stage_reforecast(
+        init_time="2013-01-31 00Z", variable_levels=["tmp_2m"], member=0,
+        output_root=tmp_path, case="t", herbie_save_dir=tmp_path / "cache",
+        fxx_window=(12, 48), lead_subset=True,
+    )
+    assert fake_herbie.last_search == r":(?:12|15|18|21|24|27|30|33|36|39|42|45|48) hour fcst:"
+    assert staged[0].lead_times == [12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48]
 
 
 def test_remote_url_recorded(tmp_path, fake_herbie):

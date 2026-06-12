@@ -3,6 +3,11 @@
 **Status:** first proof complete; **NOT yet validated through WRF/WPS.** Work lives on branch
 `feat/wrf-input-staging` (do not merge to `main` until `real.exe` succeeds — see Microtask 30).
 
+**⚠️ Branch is behind `origin/main`.** This branch was cut from a `main` ~18 commits behind
+`origin/main`; upstream has already **slimmed `CLAUDE.md`** and added a `brc_tools/api/` package.
+Reconciling — together with the user's in-flight `WISHLIST-TASKS.md` / `docs/CHPC-REFERENCE.md` edits —
+is a **user-owned step**: do it before merging to `main`, and prefer the upstream slimmed `CLAUDE.md`.
+
 **Goal of this track:** produce, from NWP data, the GRIB inputs WRF/WPS actually want for a Uinta
 Basin case (test case: **2013-01-31 12Z → 2013-02-02 00Z**, one domain, ~4 km), stage them to
 scratch with provenance, and *prove* WRF ingests them. brc-tools owns the **download + staging +
@@ -46,7 +51,8 @@ analysis** as a second ungrib stream (multi-`fg_name` metgrid).
 **Quick start (small smoke; see §5 for where to run big stages):**
 ```bash
 python scripts/stage_wrf_inputs.py --case jan2013_basin_gefs \
-  --init-time "2013-01-31 00Z" --members 0 --variable-levels tmp_2m,weasd_sfc --fxx-window 12,48
+  --init-time "2013-01-31 00Z" --members 0 --variable-levels tmp_2m,weasd_sfc \
+  --fxx-window 12,48 --lead-subset      # --lead-subset = only f12..f48, ~6x smaller
 ```
 
 ---
@@ -62,6 +68,7 @@ python scripts/stage_wrf_inputs.py --case jan2013_basin_gefs \
   | `hgt_pres` (≤700 hPa) | **469 MB** | 80 × 3-hourly, f3→f240 |
   | `hgt_pres_abv700mb` (>700 hPa) | **307 MB** | 80 × 3-hourly, f3→f240 |
 - The S3-confirmed token list and the **`_abv700mb` split-file path** are proven to download.
+- **Lead-time subsetting** (`--lead-subset`) proven: `tmp_2m` **58 MB → 9.7 MB** (only f12–f48, byte-range via Herbie `search=`). Full WPS set drops from ~4 GB to ~650 MB.
 - Manifest carries full provenance (`git_sha`, `tool_version`, `herbie_version`, per-file `sha256`,
   `size_bytes`, `remote_url`, empirically-parsed `lead_times`).
 - Quicklooks (`figures/jan2013_basin_gefs/`) show the expected physics: `tmp_2m` = the **cold-pool
@@ -80,7 +87,7 @@ the case only needs f12→f48 (~84 % wasted) — see Microtask 2 (lead-time subs
    abort. Fix = **two-stream ungrib + GFS/FNL fusion** (lives in brc-wrf).
 2. **FNL filler is a stub.** `stage_fnl_filler()` raises `NotImplementedError`; 2013 FNL = **NCAR RDA
    ds083.2** (RDA auth, not Herbie).
-3. **Full stage is multi-GB and lead-time-wasteful** → needs Herbie `search=` subsetting + a DTN.
+3. **Full stage is multi-GB** (~4 GB whole-bucket) → use `--lead-subset` (~650 MB, **implemented**) + a DTN (§5).
 4. **`obs_sanity_overlay` is wired but untested**; 2013 basin obs are sparse anyway.
 5. **Download node tension:** login nodes have internet but shouldn't do heavy I/O; compute/interactive
    nodes may lack internet (proxy). → use a **DTN** (§5).
@@ -95,7 +102,7 @@ filler, then prove through WPS/real on the brc-wrf side).
 
 ### A. brc-tools staging (this repo)
 - [ ] **1. [AI+H]** Implement `stage_fnl_filler()` — GFS/FNL from NCAR RDA ds083.2 (RDA token/globus/wget), stage to `<case>/gfs_fnl/`, append `source="gfs_fnl"` manifest entries. *(H: needs an RDA account.)*
-- [ ] **2. [AI]** Add Herbie `search=` lead-time subsetting (`--lead-subset`) so only f12–f48 download, not f3–f240. Cuts the full set from ~4 GB to <1 GB. **Highest-leverage.**
+- [x] **2. [AI] ✅ DONE** — Herbie `search=` lead-time subsetting (`--lead-subset`): only f12–f48 download. Proven `tmp_2m` 58 MB→9.7 MB (6×); full set ~4 GB→~650 MB.
 - [ ] **3. [AI]** Add `--dry-run` / `--plan` that lists every S3 object + total bytes before downloading (so users gauge load before committing a DTN job).
 - [ ] **4. [AI]** Add a token-preflight: list the S3 prefix for an init and diff against `wps_variable_levels` (catches dataset drift across years 2000–2019).
 - [ ] **5. [AI]** Unit-test `obs_sanity_overlay` with a synthetic polars DataFrame (currently untested).
@@ -143,30 +150,14 @@ CHPC reality (from `chpc-slurm-job-examples.md` and the inventory):
 - **Compute / interactive (`salloc`) nodes** on `lawson-np`: **internet is NOT guaranteed** — "compute nodes may require an http(s) proxy… treat outbound network as *verify first*, not assumed." So an interactive node is **not** a safe place to download from AWS.
 - **DTN — `notchpeak-dtn`**: dedicated high-bandwidth node **with internet**, purpose-built for large transfers. **Run the full stage here.**
 
-**DTN staging job** (`stage_inputs.dtn.slurm`):
+**DTN staging job:** committed at **`scripts/stage_inputs.dtn.slurm`** — submit with:
 ```bash
-#!/bin/bash
-#SBATCH --job-name=stage_wrf_inputs
-#SBATCH --account=dtn
-#SBATCH --partition=notchpeak-dtn
-#SBATCH --qos=notchpeak-dtn
-#SBATCH --nodes=1
-#SBATCH --ntasks=4
-#SBATCH --mem=32G
-#SBATCH --time=1-00:00:00
-#SBATCH --output=stage_%j.out
-set -euo pipefail
-cd ~/gits/brc-tools
-PY=~/software/pkg/miniforge3/envs/clyfar-nov2025/bin/python   # env with herbie 2025.11.3
-# Stage on the SAME filesystem as Herbie's cache so the move is a rename, not a copy:
-"$PY" scripts/stage_wrf_inputs.py \
-  --case jan2013_basin_gefs --init-time "2013-01-31 00Z" --members 0 \
-  --fxx-window 12,48 --no-quicklook \
-  --herbie-save-dir /scratch/general/vast/$USER/wrf_inputs/.herbie_cache
-# (after Microtask 2 lands, add --lead-subset to avoid downloading f3..f240)
+sbatch scripts/stage_inputs.dtn.slurm   # control member, --lead-subset (f12–f48, ~650 MB)
 ```
-> Quicklook needs matplotlib/cartopy; keep `--no-quicklook` on the DTN and render figures separately
-> on a login node from the already-staged files if you want them.
+It pins `account=dtn / partition=notchpeak-dtn / qos=notchpeak-dtn`, calls the env's python directly
+(login env doesn't carry into batch jobs), stages with `--lead-subset`, and writes to
+`/scratch/general/vast/$USER/wrf_inputs/jan2013_basin_gefs/`. Quicklook is off on the DTN (no
+matplotlib/cartopy) — render figures separately on a login node from the staged files if wanted.
 
 ### 5b. Running WRF — use **notch392** via the validated script
 
