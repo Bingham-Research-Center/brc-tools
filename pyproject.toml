@@ -33,6 +33,7 @@ dependencies = [
     "matplotlib>=3.7.0",
     "cartopy>=0.22.0",
     "requests>=2.31.0",
+    "fasteners>=0.18",
     "beautifulsoup4>=4.12.0",
     "python-dotenv>=1.0.0",
     "pytz>=2023.3",

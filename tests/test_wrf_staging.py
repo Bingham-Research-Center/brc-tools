@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import requests
 
 from brc_tools.nwp import wrf_staging
 from brc_tools.nwp._cache import validate_cached_grib
@@ -21,9 +22,10 @@ from brc_tools.nwp.wrf_staging import (
     _fxx_bucket,
     _lead_search_regex,
     _member_token,
+    _nam_cycle_times,
     _sha256,
     build_manifest,
-    stage_fnl_filler,
+    stage_nam_analysis,
     stage_reforecast,
 )
 
@@ -149,9 +151,32 @@ def test_staged_file_schema():
     assert d["init_time"].endswith("Z") and isinstance(d["member_int"], int)
 
 
-def test_fnl_filler_is_stub():
-    with pytest.raises(NotImplementedError, match="ds083.2"):
-        stage_fnl_filler()
+def test_nam_cycle_enumeration():
+    import datetime as dt
+
+    init = dt.datetime(2013, 1, 31, 0, tzinfo=dt.timezone.utc)
+    cycles = _nam_cycle_times(init, (12, 48), cadence_hours=6, pad_cycles=0)
+    assert [c.strftime("%Y%m%d_%H%M") for c in cycles] == [
+        "20130131_1200", "20130131_1800",
+        "20130201_0000", "20130201_0600", "20130201_1200", "20130201_1800",
+        "20130202_0000",
+    ]
+    # off-grid window start snaps DOWN to the 6 h cycle grid (13Z -> 12Z)
+    assert _nam_cycle_times(init, (13, 18), 6, 0)[0].strftime("%H%M") == "1200"
+    # pad_cycles widens the window by one cycle each end (12Z - 6h -> 06Z)
+    assert _nam_cycle_times(init, (12, 18), 6, 1)[0].strftime("%H%M") == "0600"
+
+
+def test_canonical_staging_path_memberless():
+    p = _canonical_staging_path(Path("/root"), "c", "nam_analysis", "", "namanl_218_x.grb")
+    assert p == Path("/root/c/nam_analysis/namanl_218_x.grb")  # no member dir
+
+
+def test_lookups_nam_analysis_parses():
+    cfg = wrf_staging.load_lookups()["models"]["nam_analysis"]
+    assert cfg["cadence_hours"] == 6
+    assert "{yyyymmdd}" in cfg["filename_template"]
+    assert cfg["url_template"].startswith("https://www.ncei.noaa.gov/")
 
 
 # ── stager (mocked Herbie) ───────────────────────────────────────────────────
@@ -252,6 +277,103 @@ def test_remote_url_recorded(tmp_path, fake_herbie):
     assert staged[0].remote_url.startswith("https://noaa-gefs-retrospective.s3.amazonaws.com/")
 
 
+# ── NAM analysis stager (mocked HTTP) ────────────────────────────────────────
+
+
+class FakeResponse:
+    """Stand-in for a streamed ``requests`` response yielding a tiny valid GRIB."""
+
+    def __init__(self, status_code=200, content=_VALID_GRIB):
+        self.status_code = status_code
+        self._content = content
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"status {self.status_code}")
+
+    def iter_content(self, chunk_size=1):
+        yield self._content
+
+
+class FakeGet:
+    """Records requested URLs; 404s any URL containing a registered ``missing`` token."""
+
+    def __init__(self):
+        self.urls = []
+        self.missing = set()
+
+    def __call__(self, url, stream=False, timeout=None):
+        self.urls.append(url)
+        code = 404 if any(m in url for m in self.missing) else 200
+        return FakeResponse(status_code=code)
+
+
+@pytest.fixture
+def fake_nam_http(monkeypatch):
+    fg = FakeGet()
+    monkeypatch.setattr(wrf_staging.requests, "get", fg)
+    return fg
+
+
+def test_stage_nam_analysis_layout_and_manifest(tmp_path, fake_nam_http):
+    staged = stage_nam_analysis(
+        init_time="2013-01-31 00Z",
+        fxx_window=(12, 48),
+        output_root=tmp_path,
+        case="t",
+    )
+    assert len(staged) == 7  # 6-hourly cycles 12Z Jan31 .. 00Z Feb2
+    for sf in staged:
+        dest = Path(sf.local_path)
+        assert dest.exists() and validate_cached_grib(dest)
+        assert dest.parent == tmp_path / "t" / "nam_analysis"  # no member dir
+        assert dest.name.startswith("namanl_218_") and dest.name.endswith("_000.grb")
+        assert sf.source == "nam_analysis" and sf.member == "" and sf.member_int == 0
+        assert sf.variable_level == "all" and sf.lead_times == [0]
+        assert sf.sha256 and sf.size_bytes == len(_VALID_GRIB)
+        assert sf.remote_url.startswith("https://www.ncei.noaa.gov/")
+    assert len(fake_nam_http.urls) == 7  # one whole-file GET per cycle
+
+
+def test_stage_nam_skips_missing_cycle(tmp_path, fake_nam_http):
+    fake_nam_http.missing.add("20130201_0600")  # one interior cycle 404s
+    staged = stage_nam_analysis(
+        init_time="2013-01-31 00Z", fxx_window=(12, 48),
+        output_root=tmp_path, case="t",
+    )
+    assert len(staged) == 6  # missing cycle skipped, not fatal
+    assert all("20130201_0600" not in sf.local_path for sf in staged)
+
+
+def test_stage_nam_all_missing_raises(tmp_path, fake_nam_http):
+    fake_nam_http.missing.add("namanl_218")  # in every URL -> every cycle 404s
+    with pytest.raises(RuntimeError, match="missing/unreachable"):
+        stage_nam_analysis(
+            init_time="2013-01-31 00Z", fxx_window=(12, 48),
+            output_root=tmp_path, case="t",
+        )
+
+
+def test_stage_nam_skips_existing(tmp_path, fake_nam_http):
+    dest = _canonical_staging_path(
+        tmp_path, "t", "nam_analysis", "", "namanl_218_20130131_1200_000.grb"
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(_VALID_GRIB)
+    staged = stage_nam_analysis(
+        init_time="2013-01-31 00Z", fxx_window=(12, 12),  # single 12Z cycle
+        output_root=tmp_path, case="t", overwrite=False,
+    )
+    assert len(staged) == 1
+    assert fake_nam_http.urls == []  # already staged -> no HTTP call
+
+
 # ── manifest ─────────────────────────────────────────────────────────────────
 
 
@@ -315,3 +437,22 @@ def test_live_single_variable_single_member(tmp_path):
     p = Path(staged[0].local_path)
     assert p.exists() and validate_cached_grib(p)
     assert staged[0].sha256 and staged[0].lead_times
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
+    not os.environ.get("RUN_LIVE_NCEI"),
+    reason="set RUN_LIVE_NCEI=1 to hit the real NCEI NAM analysis archive",
+)
+def test_live_nam_single_cycle(tmp_path):
+    staged = stage_nam_analysis(
+        init_time="2013-01-31 00Z",
+        fxx_window=(12, 12),  # one analysis cycle (~115 MB)
+        output_root=tmp_path,
+        case="live_nam_smoke",
+    )
+    assert len(staged) == 1
+    p = Path(staged[0].local_path)
+    assert p.exists() and validate_cached_grib(p)
+    assert staged[0].source == "nam_analysis"
+    assert staged[0].size_bytes > 1_000_000  # a real NAM file, not a stub

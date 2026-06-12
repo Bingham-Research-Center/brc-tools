@@ -30,22 +30,26 @@ OUT=/scratch/general/vast/$USER/wrf_inputs
 cd "$REPO"
 echo "=== stage start $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ==="
 
-# Stage the full WPS variable set for the control member, lead-subset to the case
-# window (f12..f48) so we pull ~650 MB, not the whole ~4 GB f3..f240 bucket.
-# Herbie cache on the SAME filesystem as the output makes the move a rename.
-# Quicklook off (no matplotlib/cartopy needed on the DTN).
+# Stage TWO sources into one case + one manifest:
+#  - nam_analysis    : auth-free NAM 12 km analysis (NCEI, no NCAR RDA) -- the validated
+#                      single-stream WRF forcing (Vtable.NAM). ~7 files, ~0.8 GB. THE runnable path.
+#  - gefs_reforecast : control member, lead-subset to f12..f48 (~650 MB, not the whole ~4 GB
+#                      f3..f240 bucket) -- ensemble forcing for the later two-stream path.
+# --lead-subset applies to the reforecast only; NAM ignores it. Herbie cache on the SAME
+# filesystem as the output makes the reforecast move a rename. Quicklook off on the DTN.
 "$PY" scripts/stage_wrf_inputs.py \
   --case "$CASE" --init-time "2013-01-31 00Z" --members 0 \
+  --source nam_analysis,gefs_reforecast \
   --fxx-window 12,48 --lead-subset --no-quicklook \
   --output-dir "$OUT" --herbie-save-dir "$OUT/.herbie_cache"
 
 echo "=== staged set ==="
-ls -lh "$OUT/$CASE/gefs_reforecast/c00/" || true
-"$PY" -m json.tool "$OUT/$CASE/manifest_$CASE.json" | head -40
-rm -rf "$OUT/.herbie_cache"   # leftover .idx; staged GRIB already moved into c00/
+ls -lh "$OUT/$CASE/nam_analysis/" "$OUT/$CASE/gefs_reforecast/c00/" || true
+"$PY" -m json.tool "$OUT/$CASE/manifest_$CASE.json" | head -50
+rm -rf "$OUT/.herbie_cache"   # leftover .idx; staged GRIB already moved into place
 echo "=== stage done $(date -u +%H:%M:%S) ==="
 
 # NEXT (see docs/WRF-INPUT-STAGING.md microtasks):
-#  - Microtask 1: also stage the gfs_fnl filler (NCAR RDA ds083.2) into $OUT/$CASE/gfs_fnl/.
-#  - brc-wrf: link $OUT/$CASE/gefs_reforecast/c00/ into the WRF case grib_data/, then
-#    two-stream ungrib (GEFS + FNL) -> metgrid (fg_name='GEFS','FNL') -> real.exe.
+#  - brc-wrf (single-stream, validated): link $OUT/$CASE/nam_analysis/ into the WRF case
+#    grib_data/, then ungrib (Vtable.NAM) -> metgrid (fg_name='NAM') -> real.exe.
+#  - brc-wrf (two-stream, later): add the reforecast as fg_name='GEFS','NAM' for ensemble forcing.

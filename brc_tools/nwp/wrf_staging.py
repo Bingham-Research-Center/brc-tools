@@ -22,9 +22,12 @@ Key design constraints (see ``docs`` / the WRF handoff doc):
 * Herbie writes into its own cache layout; we **move** files into the canonical
   ``<case>/<source>/<member>/`` layout.
 
-The GFS/FNL "filler" source the user fuses in WPS (to supply the land-sea mask and
-other fields the reforecast lacks) is a documented stub — see
-:func:`stage_fnl_filler`.
+The land-sea mask, SST, skin temp, and soil that the reforecast lacks come from an
+**auth-free NAM 12 km analysis** (NCEI ``namanl_218``) staged by
+:func:`stage_nam_analysis` — no NCAR RDA account, no Herbie, just a direct HTTP GET.
+NAM analysis works either as a standalone single-stream WRF forcing (the validated
+Feb-2013 Basin recipe, ``Vtable.NAM``) or as the reforecast's second metgrid stream;
+the WPS-side fusion (``Vtable.NAM`` + ``fg_name``) lives in the brc-wrf repo.
 """
 
 from __future__ import annotations
@@ -38,10 +41,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import fasteners
+import requests
 from herbie import Herbie
 
 from brc_tools.nwp._cache import purge_cached_files, validate_cached_grib
@@ -110,8 +115,15 @@ def _fxx_bucket(fxx: int, breakpoint: int = 240) -> str:
 def _canonical_staging_path(
     root: Path, case: str, source: str, member_token: str, filename: str
 ) -> Path:
-    """``<root>/<case>/<source>/<member_token>/<filename>``."""
-    return Path(root) / case / source / member_token / filename
+    """``<root>/<case>/<source>/<member_token>/<filename>``.
+
+    ``member_token`` may be empty (analysis sources with no ensemble member),
+    in which case the member level is dropped: ``<root>/<case>/<source>/<filename>``.
+    """
+    base = Path(root) / case / source
+    if member_token:
+        base = base / member_token
+    return base / filename
 
 
 def _reforecast_filename(variable_level: str, init_dt: dt.datetime, member_token: str) -> str:
@@ -487,20 +499,193 @@ def _remote_url(H) -> str | None:
     return sources.get(key) or sources.get("aws") or next(iter(sources.values()))
 
 
-def stage_fnl_filler(**_kwargs) -> list[StagedFile]:
-    """STUB — GFS/FNL filler source (documented extension point).
+# ── NAM analysis filler/forcing (auth-free NCEI, no NCAR RDA) ────────────────
 
-    For the 2013 case the WPS "filler" (land-sea mask, SST, skin temp, and any
-    fields the reforecast lacks) must come from **NCAR RDA ds083.2** (RDA auth +
-    globus/wget), which Herbie does not serve. It should stage into
-    ``<case>/gfs_fnl/`` and append ``StagedFile`` records with ``source="gfs_fnl"``.
-    The metgrid-side fusion (two ungrib streams + multiple ``fg_name``) lives in
-    the brc-wrf repo, not here.
+
+DEFAULT_NAM_SOURCE = "nam_analysis"
+DEFAULT_NAM_CADENCE_HOURS = 6
+
+
+def _snap_down_to_cadence(t: dt.datetime, cadence_hours: int) -> dt.datetime:
+    """Floor ``t`` to the nearest analysis cycle (multiples of cadence from 00Z)."""
+    floored_hour = (t.hour // cadence_hours) * cadence_hours
+    return t.replace(hour=floored_hour, minute=0, second=0, microsecond=0)
+
+
+def _nam_cycle_times(
+    init_dt: dt.datetime,
+    fxx_window: tuple[int, int],
+    cadence_hours: int,
+    pad_cycles: int = 0,
+) -> list[dt.datetime]:
+    """Analysis cycle times spanning ``[init+lo, init+hi]`` on the cadence grid.
+
+    ``pad_cycles`` extends the window by that many cadence steps each end so
+    metgrid has bracketing analyses. NAM analysis cycles are 00/06/12/18Z.
     """
-    raise NotImplementedError(
-        "GFS/FNL filler for 2013 must come from NCAR RDA ds083.2 (not Herbie); "
-        "stage into <case>/gfs_fnl/. See the WRF-input staging handoff gaps."
+    lo, hi = int(fxx_window[0]), int(fxx_window[1])
+    pad = dt.timedelta(hours=pad_cycles * cadence_hours)
+    start = _snap_down_to_cadence(
+        init_dt + dt.timedelta(hours=lo) - pad, cadence_hours
     )
+    end = init_dt + dt.timedelta(hours=hi) + pad
+    times, step, t = [], dt.timedelta(hours=cadence_hours), start
+    while t <= end:
+        times.append(t)
+        t += step
+    return times
+
+
+def _http_download_grib(
+    url: str, dest: Path, *, timeout: float, retries: int, backoff: float
+) -> bool:
+    """Stream a GRIB from ``url`` to ``dest`` (auth-free GET).
+
+    Returns ``True`` on success, ``False`` if the remote file is missing (404 —
+    NCEI has isolated gaps, so the caller skips that cycle). Raises after
+    ``retries`` attempts on a persistent non-404 error (a real outage, not a gap).
+    """
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            with requests.get(url, stream=True, timeout=timeout) as resp:
+                if resp.status_code == 404:
+                    LOG.warning("NAM cycle missing (404), skipping: %s", url)
+                    return False
+                resp.raise_for_status()
+                with open(tmp, "wb") as handle:
+                    for chunk in resp.iter_content(chunk_size=1 << 20):
+                        if chunk:
+                            handle.write(chunk)
+            tmp.replace(dest)
+            return True
+        except requests.RequestException as exc:
+            last_exc = exc
+            LOG.warning(
+                "NAM download attempt %d/%d failed (%s): %s", attempt, retries, exc, url
+            )
+            tmp.unlink(missing_ok=True)
+            if attempt < retries:
+                time.sleep(backoff * attempt)
+    raise RuntimeError(
+        f"NAM download failed after {retries} attempts: {url}"
+    ) from last_exc
+
+
+def _nam_staged_file(
+    dest: Path, cycle: dt.datetime, url: str, source: str, cfg: dict
+) -> StagedFile:
+    """Provenance record for one staged NAM analysis file (whole file, all fields)."""
+    return StagedFile(
+        source=source,
+        herbie_model="",  # direct NCEI HTTP, not a Herbie fetch
+        member="",  # analysis: no ensemble member
+        member_int=0,
+        init_time=_isoformat_utc(cycle),  # analysis time == valid time
+        variable_level="all",  # full file; Vtable/metgrid selects fields
+        fxx_bucket="analysis",
+        lead_times=[0],
+        product=str(cfg.get("default_product", "namanl_218")),
+        local_path=str(dest),
+        remote_url=url,
+        size_bytes=dest.stat().st_size,
+        sha256=_sha256(dest),
+        created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+    )
+
+
+def stage_nam_analysis(
+    *,
+    init_time: str | dt.datetime,
+    fxx_window: tuple[int, int] = DEFAULT_FXX_WINDOW,
+    output_root: str | Path = DEFAULT_SCRATCH_ROOT,
+    case: str = DEFAULT_CASE,
+    source: str = DEFAULT_NAM_SOURCE,
+    cadence_hours: int | None = None,
+    pad_cycles: int = 0,
+    overwrite: bool = False,
+    validate: bool = True,
+    timeout: float = 120.0,
+    retries: int = 3,
+    backoff: float = 5.0,
+) -> list[StagedFile]:
+    """Stage NAM 12 km analysis (NCEI ``namanl_218``) across the case window.
+
+    The **auth-free filler/forcing** that replaces the old NCAR-RDA
+    ``stage_fnl_filler`` stub. NAM analysis carries the full WRF field set the
+    GEFS reforecast lacks (land-sea mask, SST, skin temp, 4-layer soil, snow), so
+    it serves either as a standalone single-stream forcing (the validated Feb-2013
+    Basin recipe, ``Vtable.NAM``) or as the reforecast's second metgrid stream.
+
+    One **whole** GRIB per analysis cycle (00/06/12/18Z) is downloaded by direct
+    HTTP from the NCEI historical archive — no NCAR RDA account, no Herbie. Fields
+    are **not** cherry-picked; the WPS ``Vtable``/metgrid selects what it needs.
+
+    ``fxx_window`` is the valid-time window relative to ``init_time``; cycles are
+    enumerated on the analysis cadence grid (default 6 h, from ``lookups.toml``)
+    spanning it. Isolated missing cycles (NCEI gaps) are logged and skipped.
+    Returns one :class:`StagedFile` per file; does not write the manifest.
+    """
+    init_dt = _parse_init_time(init_time)
+    lu = load_lookups()
+    cfg = lu["models"].get(source, {})
+    cadence = int(cadence_hours or cfg.get("cadence_hours", DEFAULT_NAM_CADENCE_HOURS))
+    url_template = cfg.get("url_template")
+    filename_template = cfg.get("filename_template")
+    if not url_template or not filename_template:
+        raise ValueError(
+            f"source {source!r} needs url_template + filename_template in lookups.toml."
+        )
+
+    cycles = _nam_cycle_times(init_dt, fxx_window, cadence, pad_cycles)
+    lock_dir = os.environ.get("BRC_TOOLS_LOCK_DIR") or tempfile.gettempdir()
+
+    staged: list[StagedFile] = []
+    for cycle in cycles:
+        fmt = {
+            "yyyymm": f"{cycle:%Y%m}",
+            "yyyymmdd": f"{cycle:%Y%m%d}",
+            "hhmm": f"{cycle:%H%M}",
+        }
+        filename = filename_template.format(**fmt)
+        url = url_template.format(filename=filename, **fmt)
+        dest = _canonical_staging_path(output_root, case, source, "", filename)
+
+        lock = fasteners.InterProcessLock(
+            os.path.join(lock_dir, f"stage_nam_{cycle:%Y%m%d_%H}.lock")
+        )
+        with lock:
+            if not overwrite and dest.exists() and validate_cached_grib(dest):
+                LOG.info("skip (already staged): %s", dest)
+                staged.append(_nam_staged_file(dest, cycle, url, source, cfg))
+                continue
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if not _http_download_grib(
+                url, dest, timeout=timeout, retries=retries, backoff=backoff
+            ):
+                continue  # 404 — isolated missing cycle, already logged
+
+            if validate and not validate_cached_grib(dest):
+                dest.unlink(missing_ok=True)
+                raise RuntimeError(f"Downloaded NAM GRIB failed validation: {dest}")
+
+            staged.append(_nam_staged_file(dest, cycle, url, source, cfg))
+            LOG.info("staged NAM %s -> %s (%d bytes)", filename, dest, dest.stat().st_size)
+
+    if not staged:
+        raise RuntimeError(
+            f"NAM staging produced no files for init {init_dt:%Y-%m-%d %HZ} window "
+            f"{fxx_window}: all {len(cycles)} cycle(s) were missing/unreachable. Check the "
+            "NCEI URL template ([models.nam_analysis] in lookups.toml)."
+        )
+    if len(staged) < len(cycles):
+        LOG.warning(
+            "NAM: staged %d of %d cycles (%d missing gap(s)).",
+            len(staged), len(cycles), len(cycles) - len(staged),
+        )
+    return staged
 
 
 # ── manifest ────────────────────────────────────────────────────────────────
@@ -579,13 +764,17 @@ def stage_case(
     interval_hours: int = DEFAULT_INTERVAL_HOURS,
     variable_levels: list[str] | None = None,
     source: str = DEFAULT_SOURCE,
+    sources: tuple[str, ...] | None = None,
     quicklook: bool = True,
     obs_check: bool = False,
     **stage_kwargs,
 ) -> Path:
-    """Stage every requested member, write the manifest, optional quicklook/obs.
+    """Stage every requested source/member, write the manifest, optional quicklook/obs.
 
-    Returns the manifest path.
+    ``sources`` (e.g. ``("gefs_reforecast", "nam_analysis")``) overrides the
+    singular ``source``; ``nam_analysis`` is staged via :func:`stage_nam_analysis`
+    (one whole file per analysis cycle), any other source via
+    :func:`stage_reforecast` (per member). Returns the manifest path.
     """
     init_dt = _parse_init_time(init_time)
     window = (
@@ -593,27 +782,42 @@ def stage_case(
         _isoformat_utc(init_dt + dt.timedelta(hours=int(fxx_window[1]))),
     )
 
+    src_list = tuple(sources) if sources else (source,)
+
     staged: list[StagedFile] = []
-    for member in members:
-        staged.extend(
-            stage_reforecast(
-                init_time=init_dt,
-                variable_levels=variable_levels,
-                member=member,
-                output_root=output_root,
-                case=case,
-                source=source,
-                fxx_window=fxx_window,
-                **stage_kwargs,
+    for src in src_list:
+        if src == DEFAULT_NAM_SOURCE:
+            staged.extend(
+                stage_nam_analysis(
+                    init_time=init_dt,
+                    fxx_window=fxx_window,
+                    output_root=output_root,
+                    case=case,
+                    source=src,
+                    overwrite=stage_kwargs.get("overwrite", False),
+                )
             )
-        )
+        else:
+            for member in members:
+                staged.extend(
+                    stage_reforecast(
+                        init_time=init_dt,
+                        variable_levels=variable_levels,
+                        member=member,
+                        output_root=output_root,
+                        case=case,
+                        source=src,
+                        fxx_window=fxx_window,
+                        **stage_kwargs,
+                    )
+                )
 
     manifest = build_manifest(
         case=case,
         region=region,
         requested_window=window,
         interval_hours=interval_hours,
-        sources=[source],
+        sources=list(src_list),
         staged=staged,
     )
     case_dir = Path(output_root) / case
@@ -683,6 +887,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--members", default="0", help="Comma list of member integers 0-4 (default: 0 = control)."
     )
     parser.add_argument(
+        "--source",
+        default=DEFAULT_SOURCE,
+        help="Comma list of sources: gefs_reforecast, nam_analysis (default: gefs_reforecast).",
+    )
+    parser.add_argument(
         "--variable-levels",
         default="",
         help="Comma list of variable_level tokens (default: lookups wps_variable_levels).",
@@ -717,6 +926,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parse_args(argv)
     members = tuple(_parse_int_csv(args.members))
+    sources = tuple(s.strip() for s in args.source.split(",") if s.strip())
     variable_levels = (
         [v.strip() for v in args.variable_levels.split(",") if v.strip()]
         if args.variable_levels
@@ -735,6 +945,7 @@ def main(argv: list[str] | None = None) -> int:
             fxx_window=fxx_window,
             interval_hours=args.interval_hours,
             variable_levels=variable_levels,
+            sources=sources,
             quicklook=not args.no_quicklook,
             obs_check=args.obs_check,
             herbie_save_dir=args.herbie_save_dir,

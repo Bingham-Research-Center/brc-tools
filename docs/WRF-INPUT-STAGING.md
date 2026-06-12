@@ -3,10 +3,10 @@
 **Status:** first proof complete; **NOT yet validated through WRF/WPS.** Work lives on branch
 `feat/wrf-input-staging` (do not merge to `main` until `real.exe` succeeds — see Microtask 30).
 
-**⚠️ Branch is behind `origin/main`.** This branch was cut from a `main` ~18 commits behind
-`origin/main`; upstream has already **slimmed `CLAUDE.md`** and added a `brc_tools/api/` package.
-Reconciling — together with the user's in-flight `WISHLIST-TASKS.md` / `docs/CHPC-REFERENCE.md` edits —
-is a **user-owned step**: do it before merging to `main`, and prefer the upstream slimmed `CLAUDE.md`.
+**Branch reconciled with `origin/main`.** A merge commit on `feat/wrf-input-staging` folds in
+upstream's slimmed `CLAUDE.md`, the `brc_tools/api/` package, and the `in_progress/` cleanup; the
+WRF files and `lookups.toml` did not collide. The in-flight `WISHLIST-TASKS.md` /
+`docs/CHPC-REFERENCE.md` edits are committed. (Not pushed — awaiting review.)
 
 **Goal of this track:** produce, from NWP data, the GRIB inputs WRF/WPS actually want for a Uinta
 Basin case (test case: **2013-01-31 12Z → 2013-02-02 00Z**, one domain, ~4 km), stage them to
@@ -25,7 +25,7 @@ manifest**; the sibling **brc-wrf** repo owns **ungrib → metgrid → real** an
 
 | File | Role |
 |---|---|
-| `brc_tools/nwp/wrf_staging.py` | `stage_reforecast` / `stage_case` / `build_manifest`; downloads with `Herbie.download()` to **retain** raw GRIB (never `NWPSource.fetch()`, which deletes it), moves into the canonical layout, writes a provenance manifest. |
+| `brc_tools/nwp/wrf_staging.py` | `stage_reforecast` / `stage_nam_analysis` / `stage_case` / `build_manifest`; reforecast via `Herbie.download()` (retains raw GRIB, never `NWPSource.fetch()`), NAM analysis via a direct auth-free NCEI HTTP GET; both move into the canonical layout + provenance manifest. |
 | `scripts/stage_wrf_inputs.py` | thin CLI wrapper. |
 | `brc_tools/nwp/wrf_quicklook.py` | cfgrib reopen → crop → `plot_planview` sanity maps; opt-in obs overlay. |
 | `tests/test_wrf_staging.py` | 13 mocked tests + 1 opt-in live (`RUN_LIVE_HERBIE=1`). |
@@ -37,19 +37,25 @@ manifest**; the sibling **brc-wrf** repo owns **ungrib → metgrid → real** an
 **per-variable file layout** (one file = one variable across all lead times), pressure fields are
 **split at 700 hPa** (`{var}_pres` ≤700 hPa, `{var}_pres_abv700mb` >700 hPa — need **both**),
 humidity is **specific** (`spfh_*`, no `rh_pres`/`rh_2m`), 10 m winds are `ugrd_hgt`/`vgrd_hgt`, and
-there is **no land-sea mask / no snow depth**. → the land-mask gap is closed by **fusing a GFS/FNL
-analysis** as a second ungrib stream (multi-`fg_name` metgrid).
+there is **no land-sea mask / no snow depth**. → the gap is filled by an **auth-free NAM 12 km
+analysis** (NCEI `namanl_218`, `stage_nam_analysis`) — used either as a standalone single-stream
+forcing or as a second ungrib stream (multi-`fg_name` metgrid). **No NCAR RDA / ds083.2 / auth.**
 
 **Output layout:**
 ```
 /scratch/general/vast/$USER/wrf_inputs/jan2013_basin_gefs/
-  gefs_reforecast/c00/<variable_level>_2013013100_c00.grib2   # primary forcing
-  gfs_fnl/                                                     # filler (TODO — stub)
+  gefs_reforecast/c00/<variable_level>_2013013100_c00.grib2   # ensemble forcing (two-stream path)
+  nam_analysis/namanl_218_<YYYYMMDD>_<HHMM>_000.grb           # NAM analysis (forcing OR filler)
   manifest_jan2013_basin_gefs.json
 ```
 
 **Quick start (small smoke; see §5 for where to run big stages):**
 ```bash
+# NAM analysis — the validated single-stream forcing (auth-free NCEI, no RDA):
+python scripts/stage_wrf_inputs.py --case jan2013_basin_gefs \
+  --init-time "2013-01-31 00Z" --source nam_analysis --fxx-window 12,48
+
+# GEFS reforecast smoke (2 vars, control member, lead-subset to f12..f48):
 python scripts/stage_wrf_inputs.py --case jan2013_basin_gefs \
   --init-time "2013-01-31 00Z" --members 0 --variable-levels tmp_2m,weasd_sfc \
   --fxx-window 12,48 --lead-subset      # --lead-subset = only f12..f48, ~6x smaller
@@ -59,7 +65,8 @@ python scripts/stage_wrf_inputs.py --case jan2013_basin_gefs \
 
 ## 2. What's proven (verification log)
 
-- **`pytest tests/` → 74 passed, 1 skipped** (live test gated by `RUN_LIVE_HERBIE`). No regressions.
+- **`pytest tests/` → 82 passed, 2 skipped** (live tests gated by `RUN_LIVE_HERBIE` / `RUN_LIVE_NCEI`). No regressions.
+- **NAM analysis staging** (`stage_nam_analysis`) implemented + unit-tested (mocked HTTP: layout, 6-hourly cycle enumeration, isolated-gap skip, all-missing raise, `source="nam_analysis"` manifest). The control-cycle NCEI URL is **confirmed live** (HTTP 200, `GRIB` magic). Remaining proofs: the full live download (`RUN_LIVE_NCEI`) and the end-to-end WPS/`real.exe` run (brc-wrf side).
 - **Live downloads** on notchpeak1 → scratch, end-to-end (download → move → manifest → quicklook):
   | file | size | lead times |
   |---|---|---|
@@ -82,12 +89,18 @@ the case only needs f12→f48 (~84 % wasted) — see Microtask 2 (lead-time subs
 
 ## 3. Known gaps / blockers
 
-1. **WPS-field adequacy unverified (the real blocker).** Reforecast lacks a land-sea mask; soil is
-   `bgrnd`-layer; no `snod`. A reforecast-only metgrid will miss `LANDSEA` etc. and `real.exe` will
-   abort. Fix = **two-stream ungrib + GFS/FNL fusion** (lives in brc-wrf).
-2. **FNL filler is a stub.** `stage_fnl_filler()` raises `NotImplementedError`; 2013 FNL = **NCAR RDA
-   ds083.2** (RDA auth, not Herbie).
-3. **Full stage is multi-GB** (~4 GB whole-bucket) → use `--lead-subset` (~650 MB, **implemented**) + a DTN (§5).
+1. **WPS-field adequacy still unverified, but no longer RDA-gated.** Reforecast lacks a land-sea
+   mask, SST, skin temp, and `snod`, and its soil is `bgrnd`-layer — so a reforecast-only metgrid
+   would miss `LANDSEA` etc. and `real.exe` would abort. **Fix (implemented, brc-tools side):** an
+   **auth-free NAM 12 km analysis** (`stage_nam_analysis`, NCEI `namanl_218`) carrying the full WRF
+   field set. NAM is either the **standalone forcing** (single-stream, `Vtable.NAM` — the validated
+   Feb-2013 recipe) or the reforecast's **second metgrid stream**. Final adequacy check = `real.exe`
+   (brc-wrf side).
+2. ~~FNL filler stub / NCAR RDA ds083.2~~ **DROPPED.** Herbie's `nam.py` has no NCEI-historical
+   source, so NAM-2013 is a direct NCEI HTTP GET (`stage_nam_analysis`) — **no RDA account, no auth**.
+   NAM also carries standard 4-layer WRF soil, retiring the reforecast `bgrnd` worry (old Microtask 9).
+3. **Full reforecast stage is multi-GB** (~4 GB whole-bucket) → use `--lead-subset` (~650 MB,
+   **implemented**) + a DTN (§5). One NAM analysis set for the case window is ~7 files ≈ 0.8 GB.
 4. **`obs_sanity_overlay` is wired but untested**; 2013 basin obs are sparse anyway.
 5. **Download node tension:** login nodes have internet but shouldn't do heavy I/O; compute/interactive
    nodes may lack internet (proxy). → use a **DTN** (§5).
@@ -97,11 +110,11 @@ the case only needs f12→f48 (~84 % wasted) — see Microtask 2 (lead-time subs
 ## 4. Microtask backlog
 
 Tags: **[AI]** an agent can do solo · **[H]** needs a human (accounts, judgement, HPC runs) · **[AI+H]**
-pair. Rough critical path: **2 → 23 → 1 → 15–19** (subset downloads, stage full set on DTN, build FNL
-filler, then prove through WPS/real on the brc-wrf side).
+pair. Rough critical path: **2 → 1 → 23 → 15–19** (subset downloads, stage NAM analysis, stage the
+full set on a DTN, then prove through WPS/real on the brc-wrf side).
 
 ### A. brc-tools staging (this repo)
-- [ ] **1. [AI+H]** Implement `stage_fnl_filler()` — GFS/FNL from NCAR RDA ds083.2 (RDA token/globus/wget), stage to `<case>/gfs_fnl/`, append `source="gfs_fnl"` manifest entries. *(H: needs an RDA account.)*
+- [x] **1. [AI] ✅ DONE** — `stage_nam_analysis()`: auth-free NAM 12 km analysis (NCEI `namanl_218`) staged to `<case>/nam_analysis/` with `source="nam_analysis"` manifest entries. Direct HTTP GET, **no NCAR RDA** (Herbie has no NCEI-historical NAM source). Mocked + opt-in-live (`RUN_LIVE_NCEI`) tests; `--source nam_analysis` CLI.
 - [x] **2. [AI] ✅ DONE** — Herbie `search=` lead-time subsetting (`--lead-subset`): only f12–f48 download. Proven `tmp_2m` 58 MB→9.7 MB (6×); full set ~4 GB→~650 MB.
 - [ ] **3. [AI]** Add `--dry-run` / `--plan` that lists every S3 object + total bytes before downloading (so users gauge load before committing a DTN job).
 - [ ] **4. [AI]** Add a token-preflight: list the S3 prefix for an init and diff against `wps_variable_levels` (catches dataset drift across years 2000–2019).
@@ -109,21 +122,21 @@ filler, then prove through WPS/real on the brc-wrf side).
 - [ ] **6. [AI]** Have `_record_existing` re-derive `lead_times` from a cached `.idx` if present (avoid degraded skip-manifests), or document the limitation in the manifest itself.
 - [ ] **7. [AI]** Multi-member staging proof (c00–p04) + per-member layout/manifest aggregation.
 - [ ] **8. [AI]** Manifest integrity util: re-read manifest, re-hash each staged file, assert `sha256` match before WPS consumes them.
-- [ ] **9. [AI+H]** Confirm `tsoil_bgrnd`/`soilw_bgrnd` (4 GRIB soil layers) map cleanly to WRF soil; if not, plan FNL-soil fallback.
+- [x] **9. [AI] ✅ MOOT** — soil now comes from NAM analysis (standard 4-layer 0-10/10-40/40-100/100-200 cm); the reforecast `bgrnd` mapping question only matters if a reforecast-soil run is attempted later.
 - [ ] **10. [AI]** Add an operational `gefs` (post-2017) staging path reusing the same machinery, for recent cases.
 - [ ] **11. [AI]** Record total bytes + elapsed per run into the manifest `provenance` (feeds benchmarking).
 - [ ] **12. [AI]** Handle a window that crosses the 240 h bucket boundary (currently warns + stages one bucket only).
 - [ ] **13. [AI]** Pin `wps_variable_levels` per data-year if the reforecast token set differs across 2000–2019.
 
 ### B. brc-wrf side (WPS/WRF validation — the proof)
-- [ ] **15. [AI+H]** Build/confirm a **Vtable** for GEFSv12 reforecast (NCEP GRIB2 → WPS), covering the `_pres`+`_abv700mb` split and `bgrnd` soil.
-- [ ] **16. [H]** `namelist.wps`: two ungrib streams (GEFS Vtable, FNL `Vtable.GFS`), `&metgrid fg_name='GEFS','FNL'`.
+- [ ] **15. [H]** Single-stream NAM first: symlink `Vtable.NAM`, ungrib the staged `nam_analysis/` dir, metgrid `fg_name='NAM'` — the validated Feb-2013 recipe. Fastest path to a `real.exe` run.
+- [ ] **16. [AI+H]** (Two-stream, later) Build a **Vtable** for GEFSv12 reforecast (NCEP GRIB2, `_pres`+`_abv700mb` split, `bgrnd` soil) and run `&metgrid fg_name='GEFS','NAM'` (NAM as filler), if ensemble-reforecast forcing is wanted.
 - [ ] **17. [H]** ungrib the staged reforecast dir; confirm intermediate files hold all expected fields.
-- [ ] **18. [H]** ungrib FNL; metgrid both; confirm `met_em*` has `LANDSEA`, `SOILHGT`, `SKINTEMP`/`SST`, 4 soil layers.
-- [ ] **19. [H]** `real.exe` dry-run (1 dom ~4 km); confirm `wrfinput_d01` + `wrfbdy_d01`, **no "missing mandatory field."** If `bgrnd` soil won't map, take soil entirely from FNL.
+- [ ] **18. [H]** ungrib NAM (`Vtable.NAM`); metgrid; confirm `met_em*` has `LANDSEA`, `SOILHGT`, `SKINTEMP`/`SST`, 4 soil layers.
+- [ ] **19. [H]** `real.exe` dry-run (1 dom ~4 km); confirm `wrfinput_d01` + `wrfbdy_d01`, **no "missing mandatory field."** NAM supplies all mandatory surface/soil fields directly.
 - [ ] **20. [H]** Set `interval_seconds` to the staged cadence (3 h = 10800) and `num_metgrid_levels` / `num_metgrid_soil_levels` to match the actual files.
 - [ ] **21. [H]** Confirm geogrid + `geog_data_path` (`/uufs/.../lawson-group6/WPS_GEOG/`) and the 4 km Basin domain in `namelist.wps`.
-- [ ] **22. [AI+H]** Document which IC/LBC fields came from reforecast vs FNL (forcing provenance).
+- [ ] **22. [AI+H]** Document which IC/LBC fields came from NAM vs (optional) reforecast (forcing provenance).
 
 ### C. CHPC execution / benchmarking
 - [ ] **23. [H]** Run the **full** stage as a `notchpeak-dtn` job (§5 template); confirm the DTN reaches AWS.
@@ -201,9 +214,10 @@ Everything in §2 was run on **notchpeak1 (login node)**. Honest audit:
 
 ## 7. Definition of done ("proof it works")
 
-1. Full single-member WPS set staged (DTN), manifest integrity-checked.
-2. FNL filler staged into `<case>/gfs_fnl/`.
-3. brc-wrf: ungrib×2 → metgrid → `met_em*` with `LANDSEA` + soil + skin temp.
-4. `real.exe` produces `wrfinput_d01` + `wrfbdy_d01` with **no missing mandatory field**.
-5. `wrf.exe` reaches **SUCCESS COMPLETE WRF**; `wrfout*` archived to `lawson-group6`.
-6. Only **then** merge `feat/wrf-input-staging` → `main`.
+1. NAM analysis set staged (`<case>/nam_analysis/`), manifest integrity-checked. *(Optional: full
+   reforecast set on a DTN for the two-stream path.)*
+2. brc-wrf: ungrib (`Vtable.NAM`) → metgrid (`fg_name='NAM'`) → `met_em*` with `LANDSEA` + soil +
+   skin temp. *(Two-stream `fg_name='GEFS','NAM'` only if reforecast forcing is pursued.)*
+3. `real.exe` produces `wrfinput_d01` + `wrfbdy_d01` with **no missing mandatory field**.
+4. `wrf.exe` reaches **SUCCESS COMPLETE WRF**; `wrfout*` archived to `lawson-group6`.
+5. Only **then** merge `feat/wrf-input-staging` → `main`.

@@ -91,8 +91,8 @@ fxx_bucket_breakpoint = 240                 # fxx <= 240 -> "Days:1-10", else "D
 # Pressure fields are SPLIT at 700 hPa: "{var}_pres" holds <=700 hPa, "{var}_pres_abv700mb"
 # holds >700 hPa -- BOTH are needed for the full column. Humidity on pressure/2m is SPECIFIC
 # humidity (spfh_*); there is no rh_pres/rh_2m. 10 m winds are ugrd_hgt/vgrd_hgt (height level).
-# NOTE: the reforecast has NO land-sea mask and NO snow depth (snod) -> a GFS/FNL filler source
-# is required for a clean WPS/real run (see wrf_staging.stage_fnl_filler and the handoff gaps).
+# NOTE: the reforecast has NO land-sea mask and NO snow depth (snod) -> an auth-free NAM analysis
+# filler/forcing supplies them (see wrf_staging.stage_nam_analysis and [models.nam_analysis]).
 wps_variable_levels = [
   # pressure-level 3-D (both 700 hPa halves)
   "hgt_pres", "hgt_pres_abv700mb",
@@ -107,6 +107,22 @@ wps_variable_levels = [
   # soil (4 layers each) + snow water equivalent
   "tsoil_bgrnd", "soilw_bgrnd", "weasd_sfc",
 ]
+
+[models.nam_analysis]
+# NAM 12 km analysis (grid 218) from the NCEI historical archive — the auth-free
+# WRF/WPS forcing the validated Feb-2013 Basin run uses (Vtable.NAM, fg_name='NAM').
+# Replaces the dropped NCAR-RDA ds083.2 FNL filler: NAM analysis carries the full
+# field set the GEFS reforecast lacks (land-sea mask, SST, skin temp, 4-layer soil,
+# snow), so it works standalone OR as the reforecast's second metgrid stream. One
+# whole GRIB per analysis cycle (00/06/12/18Z); staged by stage_nam_analysis via a
+# direct HTTP GET (NOT Herbie — Herbie's nam.py has no NCEI historical source).
+description       = "NAM 12 km analysis (grid 218), NCEI historical archive"
+default_product   = "namanl_218"
+cadence_hours     = 6                       # analysis cycles at 00/06/12/18Z
+grid              = "218"                    # 12 km CONUS Lambert-conformal
+# {yyyymm}/{yyyymmdd}/{hhmm} filled per cycle; .grb (grib1) for the pre-2017 archive.
+filename_template = "namanl_218_{yyyymmdd}_{hhmm}_000.grb"
+url_template      = "https://www.ncei.noaa.gov/data/north-american-mesoscale-model/access/historical/analysis/{yyyymm}/{yyyymmdd}/{filename}"
 
 # ── Regions ─────────────────────────────────────────────────────────────────
 
