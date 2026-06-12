@@ -57,6 +57,9 @@ include = ["brc_tools*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "live: hits real Herbie/S3/Synoptic network; opt-in via RUN_LIVE_HERBIE=1",
+]
 
 [tool.ruff]
 line-length = 88

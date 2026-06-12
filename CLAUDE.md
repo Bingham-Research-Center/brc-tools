@@ -10,6 +10,9 @@ pushes JSON to the BasinWX website. Python package: **`brc_tools`**
 - Case study pipeline: natural language → Python script → diagnostic figures.
 - Issue **#10** tracks HRRR/RRFS → BasinWX. Strategy: `docs/nwp/README.md`.
 - HRRR 15-min sub-hourly and ensemble workflows = future extensions.
+- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GEFSv12-Reforecast
+  GRIB to scratch for WRF/WPS. First proof done, not yet WRF-validated. Full handoff +
+  microtasks + CHPC/SLURM: **`docs/WRF-INPUT-STAGING.md`**.
 - Prioritised backlog: `WISHLIST-TASKS.md` (next: integration tests, then HRRR operational pipeline).
 
 ## Repo map
@@ -18,6 +21,7 @@ brc_tools/        installable package
   nwp/            NWPSource (HRRR/GEFS/RRFS via Herbie) + lookups.toml
                   + derived.py (theta-e, wind, gradients) + alignment.py
                   + case_study.py (shared helpers for case study scripts)
+                  + wrf_staging.py (GEFS-Reforecast GRIB→WPS staging) + wrf_quicklook.py
   obs/            ObsSource (SynopticPy wrapper, shared alias namespace)
                   + scanner.py (event detection: scan_events, detect_foehn, etc.)
   verify/         deterministic metrics (RMSE, bias, MAE, paired_scores)
@@ -139,7 +143,7 @@ fig = plot_planview_evolution(ds, "theta_e_2m", waypoints=wp, cmap="RdYlBu_r")
 | `annotate(fig, text)` | None | Attribution text |
 
 ### Available lookups (`brc_tools/nwp/lookups.toml`)
-- **Models**: hrrr, gefs, rrfs
+- **Models**: hrrr, gefs, rrfs, gefs_reforecast (GEFSv12 Reforecast 2000–2019, daily 00Z, 5 members; WRF-staging only — per-variable GRIB, not `NWPSource.fetch`)
 - **Regions**: uinta_basin, uinta_basin_wide, utah, conus
 - **Waypoint groups**: `foehn_path` (6 stn W→E), `us40_dense` (14 stn), `basin_full`, `basin_aq`, `basin_west`, `basin_east`
 - **Surface aliases**: temp_2m, dewpoint_2m, wind_u_10m, wind_v_10m, wind_speed_10m (derived), wind_dir_10m (derived), mslp, pbl_height, rh_2m, precip_1hr, snow_depth, visibility, cape_surface, cin_surface, wind_gust_10m, cloud_cover_total
@@ -213,12 +217,16 @@ pytest tests/
 - `docs/nwp/` — HRRR/RRFS roadmap and branch notes
 - `docs/CASE-STUDY-GUIDE.md` — how to write a case study
 - `docs/API-REFERENCE.md` — full API reference
+- `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `WISHLIST-TASKS.md` — backlog
 
 ## Related repos
 - `ubair-website` — Node.js site receiving uploads (data contract)
 - `clyfar` — ozone forecast model; imports `brc_tools.download.push_data`
+- `brc-knowledge` — **canonical** for cross-cutting CHPC infra (storage paths, quotas, partitions, sbatch templates, GPU access). Live at `~/gits/brc-knowledge/scholarium/reference-base/resources/chpc-team-resource-inventory.md`. Update there, not in this repo's `docs/CHPC-REFERENCE.md`, which is now trimmed to brc-tools-specific operational notes.
 - `preprint-clyfar-v0p9` — LaTeX manuscript
+
+**CHPC-side vs Linode-side paths:** the cron block, push-data anchor, and `~/.config/ubair-website/website_url` above are all CHPC-side (uploader). The Linode/Akamai receiver (`basinwx.com` / `basinwx.dev`) has a different layout and `~` resolves elsewhere. A cold-start agent on the Linode side cannot interpret these `~/...` paths the same way.
 
 Governed by `.github/CODEOWNERS`; PRs require review from @johnrobertlawson.
 Personal preferences go in `CLAUDE.local.md` (gitignored).
