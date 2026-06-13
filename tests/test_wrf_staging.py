@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import socket
 from pathlib import Path
 
 import pandas as pd
@@ -20,13 +21,20 @@ from brc_tools.nwp.wrf_staging import (
     StagedFile,
     _canonical_staging_path,
     _fxx_bucket,
+    _install_ipv4_only,
+    _interval_hours_for_sources,
+    _ipv4_only_requested,
     _lead_search_regex,
     _member_token,
     _nam_cycle_times,
     _sha256,
+    build_contract,
     build_manifest,
+    plan_case,
     stage_nam_analysis,
     stage_reforecast,
+    verify_manifest,
+    write_manifest,
 )
 
 _FULL_LEADS = list(range(3, 61, 3))  # 3..60 h, mimics a Days:1-10 inventory slice
@@ -302,14 +310,16 @@ class FakeResponse:
 
 
 class FakeGet:
-    """Records requested URLs; 404s any URL containing a registered ``missing`` token."""
+    """Records requested URLs/timeouts; 404s any URL containing a ``missing`` token."""
 
     def __init__(self):
         self.urls = []
+        self.timeouts = []
         self.missing = set()
 
     def __call__(self, url, stream=False, timeout=None):
         self.urls.append(url)
+        self.timeouts.append(timeout)
         code = 404 if any(m in url for m in self.missing) else 200
         return FakeResponse(status_code=code)
 
@@ -414,6 +424,179 @@ def test_write_manifest_roundtrips(tmp_path):
     assert path.name == "manifest_c.json"
     reloaded = json.loads(path.read_text())
     assert reloaded["manifest_kind"] == "wrf_input_staging"
+
+
+# ── IPv4-only + timeout hardening ────────────────────────────────────────────
+
+
+@pytest.fixture
+def restore_getaddrinfo():
+    """Snapshot/restore ``socket.getaddrinfo`` around an IPv4-only install."""
+    original = socket.getaddrinfo
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = original
+
+
+def _fake_getaddrinfo_mixed(host, port, family=0, *a, **k):
+    return [
+        (socket.AF_INET6, None, None, "", ("::1", port, 0, 0)),
+        (socket.AF_INET, None, None, "", ("127.0.0.1", port)),
+    ]
+
+
+def test_ipv4_only_requested_env(monkeypatch):
+    monkeypatch.delenv("BRC_TOOLS_HTTP_IPV4_ONLY", raising=False)
+    assert _ipv4_only_requested() is False
+    monkeypatch.setenv("BRC_TOOLS_HTTP_IPV4_ONLY", "1")
+    assert _ipv4_only_requested() is True
+    monkeypatch.setenv("BRC_TOOLS_HTTP_IPV4_ONLY", "0")
+    assert _ipv4_only_requested() is False
+
+
+def test_install_ipv4_only_filters_and_is_idempotent(restore_getaddrinfo):
+    socket.getaddrinfo = _fake_getaddrinfo_mixed
+    original = _install_ipv4_only()
+    assert original is _fake_getaddrinfo_mixed
+    families = {r[0] for r in socket.getaddrinfo("ncei.noaa.gov", 443)}
+    assert families == {socket.AF_INET}  # AF_INET6 entries dropped
+    assert _install_ipv4_only() is None  # already tagged -> no-op
+
+
+def test_nam_passes_connect_read_timeout_tuple(tmp_path, fake_nam_http):
+    stage_nam_analysis(
+        init_time="2013-01-31 00Z", fxx_window=(12, 12),
+        output_root=tmp_path, case="t",
+        connect_timeout=7.0, read_timeout=88.0,
+    )
+    assert fake_nam_http.timeouts
+    assert all(t == (7.0, 88.0) for t in fake_nam_http.timeouts)
+
+
+# ── plan / dry-run (offline) ─────────────────────────────────────────────────
+
+
+def test_plan_case_nam_offline(tmp_path):
+    plan = plan_case(
+        case="t", init_time="2013-01-31 00Z", output_root=tmp_path,
+        fxx_window=(12, 48), sources=("nam_analysis",),
+    )
+    assert len(plan) == 7  # 6-hourly cycles, same as stage_nam_analysis
+    assert all(e["source"] == "nam_analysis" for e in plan)
+    assert all(e["url"].startswith("https://www.ncei.noaa.gov/") for e in plan)
+    assert all(e["est_bytes"] for e in plan)
+    assert plan[0]["local_path"].endswith("_000.grb")
+
+
+def test_plan_case_reforecast_offline(tmp_path):
+    plan = plan_case(
+        case="t", init_time="2013-01-31 00Z", output_root=tmp_path,
+        members=(0,), variable_levels=["tmp_2m", "weasd_sfc"],
+        sources=("gefs_reforecast",),
+    )
+    assert len(plan) == 2
+    assert all(e["member"] == "c00" for e in plan)
+    assert all(
+        e["url"].startswith("https://noaa-gefs-retrospective.s3.amazonaws.com/")
+        for e in plan
+    )
+    assert all(e["est_bytes"] is None for e in plan)  # reforecast size unknown offline
+
+
+# ── manifest integrity ───────────────────────────────────────────────────────
+
+
+def _nam_staged(p: Path) -> StagedFile:
+    return StagedFile(
+        source="nam_analysis", herbie_model="", member="", member_int=0,
+        init_time="2013-01-31T12:00:00Z", variable_level="all", fxx_bucket="analysis",
+        lead_times=[0], product="namanl_218", local_path=str(p), remote_url="https://x",
+        size_bytes=p.stat().st_size, sha256=_sha256(p), created_at="2026-06-13T00:00:00Z",
+    )
+
+
+def test_verify_manifest_pass_and_detects_corruption(tmp_path):
+    f1 = tmp_path / "a.grib2"; f1.write_bytes(_VALID_GRIB)
+    f2 = tmp_path / "b.grib2"; f2.write_bytes(_VALID_GRIB + b"x")
+    m = build_manifest(
+        case="c", region="uinta_basin_wide",
+        requested_window=("2013-01-31T12:00:00Z", "2013-02-02T00:00:00Z"),
+        interval_hours=6, sources=["nam_analysis"],
+        staged=[_nam_staged(f1), _nam_staged(f2)],
+    )
+    mpath = write_manifest(m, tmp_path)
+    report = verify_manifest(mpath)
+    assert report["ok"] and report["n_ok"] == 2
+
+    f1.unlink()                          # -> missing
+    f2.write_bytes(_VALID_GRIB + b"DIFFERENT")  # -> size/sha mismatch
+    report = verify_manifest(mpath)
+    assert not report["ok"] and report["n_ok"] == 0
+    problems = {Path(r["local_path"]).name: r["problem"] for r in report["results"]}
+    assert problems["a.grib2"] == "missing"
+    assert "size" in problems["b.grib2"] or "sha256" in problems["b.grib2"]
+
+
+# ── case contract + interval derivation ──────────────────────────────────────
+
+
+def test_interval_hours_for_sources():
+    lu = wrf_staging.load_lookups()
+    assert _interval_hours_for_sources(("nam_analysis",), lu) == 6
+    assert _interval_hours_for_sources(("gefs_reforecast",), lu) == 3
+    assert _interval_hours_for_sources(("gefs_reforecast", "nam_analysis"), lu) == 3
+
+
+def test_build_contract_nam_only():
+    m = build_manifest(
+        case="jan2013_basin_gefs", region="uinta_basin_wide",
+        requested_window=("2013-01-31T12:00:00Z", "2013-02-02T00:00:00Z"),
+        interval_hours=6, sources=["nam_analysis"],
+        staged=[_nam_staged_stub("nam_analysis")],
+    )
+    c = build_contract(m)
+    assert c["wps_fg_name"] == ["NAM"]
+    assert c["interval_seconds"] == 21600 and c["interval_hours"] == 6
+    assert c["source_file_counts"] == {"nam_analysis": 1}
+    assert c["cadence_hours"]["nam_analysis"] == 6
+
+
+def test_build_contract_two_stream():
+    m = build_manifest(
+        case="c", region="uinta_basin_wide",
+        requested_window=("2013-01-31T12:00:00Z", "2013-02-02T00:00:00Z"),
+        interval_hours=3, sources=["gefs_reforecast", "nam_analysis"],
+        staged=[_nam_staged_stub("gefs_reforecast"), _nam_staged_stub("nam_analysis")],
+    )
+    c = build_contract(m)
+    assert c["wps_fg_name"] == ["GEFS", "NAM"]
+    assert c["interval_seconds"] == 10800
+    assert c["source_file_counts"] == {"gefs_reforecast": 1, "nam_analysis": 1}
+
+
+def test_stage_case_writes_contract_and_derived_interval(tmp_path, fake_nam_http):
+    import json
+
+    wrf_staging.stage_case(
+        case="t", init_time="2013-01-31 00Z", region="uinta_basin_wide",
+        output_root=tmp_path, fxx_window=(12, 12), sources=("nam_analysis",),
+        quicklook=False,
+    )
+    contract = json.loads((tmp_path / "t" / "contract_t.json").read_text())
+    assert contract["wps_fg_name"] == ["NAM"] and contract["interval_seconds"] == 21600
+    manifest = json.loads((tmp_path / "t" / "manifest_t.json").read_text())
+    assert manifest["case"]["interval_hours"] == 6  # derived, not the blind default 3
+
+
+def _nam_staged_stub(source: str) -> StagedFile:
+    """Minimal StagedFile (no real file) for contract-shape tests."""
+    return StagedFile(
+        source=source, herbie_model="", member="", member_int=0,
+        init_time="2013-01-31T12:00:00Z", variable_level="all", fxx_bucket="analysis",
+        lead_times=[0], product="x", local_path="/x/f", remote_url="h",
+        size_bytes=1, sha256="a", created_at="2026-06-13T00:00:00Z",
+    )
 
 
 # ── opt-in live smoke ────────────────────────────────────────────────────────

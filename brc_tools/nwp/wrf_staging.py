@@ -35,10 +35,12 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import json
 import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -65,6 +67,53 @@ DEFAULT_SCRATCH_ROOT = Path(
 )
 TOOL_NAME = "brc-tools"
 MANIFEST_SCHEMA_VERSION = 1
+CONTRACT_SCHEMA_VERSION = 1
+
+# Split HTTP timeouts for direct GETs: a short connect bound (so a wedged socket
+# fails fast instead of blocking on the default scalar) + a longer read bound for
+# the multi-hundred-MB GRIB body. See ``_http_download_grib``.
+DEFAULT_HTTP_CONNECT_TIMEOUT = 10.0
+DEFAULT_HTTP_READ_TIMEOUT = 300.0
+
+# Offline byte estimate for a single NAM 12 km analysis cycle (~115 MB observed),
+# used by ``plan_case`` to gauge load before committing a DTN job.
+NAM_EST_BYTES_PER_CYCLE = 120_000_000
+
+_IPV4_ENV = "BRC_TOOLS_HTTP_IPV4_ONLY"
+
+
+def _ipv4_only_requested() -> bool:
+    """True if ``BRC_TOOLS_HTTP_IPV4_ONLY`` is set to a truthy value."""
+    return os.environ.get(_IPV4_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _install_ipv4_only():
+    """Force every socket lookup in this process to resolve IPv4 (AF_INET) only.
+
+    Works around a CHPC DTN hang where outbound IPv6 to NCEI/S3 sits in SYN-SENT
+    indefinitely (observed on ``dtn05`` killing job ``13471949``; the IPv4-only
+    one-off ``13472014`` completed). Patching ``socket.getaddrinfo`` at the socket
+    layer is mechanism-agnostic — it covers Herbie's S3 download *and* the direct
+    ``requests`` NAM GET regardless of which HTTP stack each uses.
+
+    Idempotent (tagged so a second call is a no-op). Returns the original
+    ``getaddrinfo`` so callers/tests can restore it, or ``None`` if already
+    installed. Falls back to the full result set for hosts with no IPv4 address,
+    so it never breaks an IPv6-only endpoint.
+    """
+    if getattr(socket.getaddrinfo, "_brc_ipv4_only", False):
+        return None
+    original = socket.getaddrinfo
+
+    def _ipv4_getaddrinfo(host, port, family=0, *args, **kwargs):
+        results = original(host, port, family, *args, **kwargs)
+        ipv4 = [r for r in results if r[0] == socket.AF_INET]
+        return ipv4 or results
+
+    _ipv4_getaddrinfo._brc_ipv4_only = True
+    socket.getaddrinfo = _ipv4_getaddrinfo
+    LOG.info("HTTP IPv4-only mode active (socket.getaddrinfo filtered to AF_INET).")
+    return original
 
 
 @dataclass
@@ -537,14 +586,30 @@ def _nam_cycle_times(
 
 
 def _http_download_grib(
-    url: str, dest: Path, *, timeout: float, retries: int, backoff: float
+    url: str,
+    dest: Path,
+    *,
+    connect_timeout: float,
+    read_timeout: float,
+    retries: int,
+    backoff: float,
 ) -> bool:
     """Stream a GRIB from ``url`` to ``dest`` (auth-free GET).
+
+    ``connect_timeout``/``read_timeout`` map to the ``requests`` ``(connect, read)``
+    timeout tuple: a short connect bound so a wedged socket (e.g. the CHPC DTN
+    IPv6 hang) fails fast and retries, plus a longer read bound for the GRIB body.
 
     Returns ``True`` on success, ``False`` if the remote file is missing (404 —
     NCEI has isolated gaps, so the caller skips that cycle). Raises after
     ``retries`` attempts on a persistent non-404 error (a real outage, not a gap).
     """
+    timeout = (connect_timeout, read_timeout)
+    LOG.info(
+        "NAM GET %s (connect=%.0fs read=%.0fs, ipv4_only=%s)",
+        url, connect_timeout, read_timeout,
+        bool(getattr(socket.getaddrinfo, "_brc_ipv4_only", False)),
+    )
     tmp = dest.with_suffix(dest.suffix + ".part")
     last_exc = None
     for attempt in range(1, retries + 1):
@@ -606,7 +671,8 @@ def stage_nam_analysis(
     pad_cycles: int = 0,
     overwrite: bool = False,
     validate: bool = True,
-    timeout: float = 120.0,
+    connect_timeout: float = DEFAULT_HTTP_CONNECT_TIMEOUT,
+    read_timeout: float = DEFAULT_HTTP_READ_TIMEOUT,
     retries: int = 3,
     backoff: float = 5.0,
 ) -> list[StagedFile]:
@@ -663,7 +729,9 @@ def stage_nam_analysis(
 
             dest.parent.mkdir(parents=True, exist_ok=True)
             if not _http_download_grib(
-                url, dest, timeout=timeout, retries=retries, backoff=backoff
+                url, dest,
+                connect_timeout=connect_timeout, read_timeout=read_timeout,
+                retries=retries, backoff=backoff,
             ):
                 continue  # 404 — isolated missing cycle, already logged
 
@@ -744,10 +812,198 @@ def write_manifest(manifest: dict, output_dir: str | Path) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"manifest_{manifest['case']['name']}.json"
     with path.open("w", encoding="utf-8") as handle:
-        import json
-
         json.dump(manifest, handle, indent=2, allow_nan=False)
     return path
+
+
+# ── WPS/WRF case contract ────────────────────────────────────────────────────
+
+
+def _interval_hours_for_sources(sources, lu: dict) -> int:
+    """Metgrid/WRF LBC interval (hours) implied by the forcing source(s).
+
+    NAM-only forcing runs at the NAM analysis cadence (6 h — the validated
+    Feb-2013 recipe). If a reforecast-family source is present it forces the LBCs
+    at the finer reforecast lead cadence (3 h), with NAM as filler. This replaces
+    the blind ``DEFAULT_INTERVAL_HOURS`` that wrongly stamped a NAM-only run as 3 h.
+    """
+    non_nam = [s for s in sources if s != DEFAULT_NAM_SOURCE]
+    if non_nam:
+        return DEFAULT_INTERVAL_HOURS  # reforecast 3-hourly LBC cadence
+    cfg = lu["models"].get(DEFAULT_NAM_SOURCE, {})
+    return int(cfg.get("cadence_hours", DEFAULT_NAM_CADENCE_HOURS))
+
+
+def build_contract(manifest: dict, lu: dict | None = None) -> dict:
+    """Derive a WPS/WRF case contract from a staging manifest.
+
+    Emits only facts brc-tools can authoritatively know from what it staged:
+    per-source file counts, cadence, the valid window, an ``fg_name`` suggestion,
+    and ``interval_seconds`` derived from the forcing source's cadence. WPS/metgrid
+    *outputs* such as ``num_metgrid_levels`` are NOT computed here — they are
+    metgrid's product and live in the docs as proof constants.
+    """
+    if lu is None:
+        lu = load_lookups()
+    case = manifest.get("case", {})
+    sources = list(case.get("sources", []))
+    staged = manifest.get("staged_files", [])
+
+    counts: dict[str, int] = {}
+    for s in staged:
+        counts[s["source"]] = counts.get(s["source"], 0) + 1
+
+    cadence_hours = {}
+    for src in sources:
+        cfg = lu["models"].get(src, {})
+        cadence_hours[src] = (
+            int(cfg.get("cadence_hours", DEFAULT_NAM_CADENCE_HOURS))
+            if src == DEFAULT_NAM_SOURCE
+            else DEFAULT_INTERVAL_HOURS
+        )
+
+    nam = DEFAULT_NAM_SOURCE in sources
+    other = [s for s in sources if s != DEFAULT_NAM_SOURCE]
+    if other and nam:
+        fg_name = ["GEFS", "NAM"]  # two-stream: reforecast forcing + NAM filler
+    elif other:
+        fg_name = ["GEFS"]
+    else:
+        fg_name = ["NAM"]  # validated single-stream forcing
+
+    interval_hours = _interval_hours_for_sources(sources, lu)
+    name = case.get("name")
+    return {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "contract_kind": "wps_wrf_case_contract",
+        "case": name,
+        "region": case.get("region"),
+        "valid_window": case.get("requested_window"),
+        "sources": sources,
+        "source_file_counts": counts,
+        "cadence_hours": cadence_hours,
+        "interval_hours": int(interval_hours),
+        "interval_seconds": int(interval_hours) * 3600,
+        "wps_fg_name": fg_name,
+        "scratch_layout": "<output_root>/<case>/<source>/[<member>/]<file>",
+        "manifest": f"manifest_{name}.json" if name else None,
+        "generated_at": manifest.get("provenance", {}).get("generated_at"),
+    }
+
+
+def write_contract(contract: dict, output_dir: str | Path, case: str) -> Path:
+    """Write the contract JSON into ``output_dir`` and return its path."""
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"contract_{case}.json"
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(contract, handle, indent=2, allow_nan=False)
+    return path
+
+
+# ── plan / dry-run + manifest integrity ──────────────────────────────────────
+
+
+def plan_case(
+    *,
+    case: str = DEFAULT_CASE,
+    init_time: str | dt.datetime = DEFAULT_INIT,
+    members: tuple[int, ...] = (0,),
+    output_root: str | Path = DEFAULT_SCRATCH_ROOT,
+    fxx_window: tuple[int, int] = DEFAULT_FXX_WINDOW,
+    variable_levels: list[str] | None = None,
+    sources: tuple[str, ...] = (DEFAULT_SOURCE,),
+) -> list[dict]:
+    """Enumerate the files a stage would produce — **offline, no network**.
+
+    Returns one dict per expected file (``source``, ``member``, ``filename``,
+    ``url``, ``local_path``, ``est_bytes``) so a user can gauge load and eyeball
+    URLs/paths before committing a DTN job. Reforecast byte sizes are unknown
+    offline (would need an inventory call) and are reported as ``None``.
+    """
+    init_dt = _parse_init_time(init_time)
+    lu = load_lookups()
+    plan: list[dict] = []
+    for src in sources:
+        cfg = lu["models"].get(src, {})
+        if src == DEFAULT_NAM_SOURCE:
+            cadence = int(cfg.get("cadence_hours", DEFAULT_NAM_CADENCE_HOURS))
+            url_template = cfg.get("url_template")
+            filename_template = cfg.get("filename_template")
+            if not url_template or not filename_template:
+                raise ValueError(
+                    f"source {src!r} needs url_template + filename_template in lookups.toml."
+                )
+            for cycle in _nam_cycle_times(init_dt, fxx_window, cadence):
+                fmt = {
+                    "yyyymm": f"{cycle:%Y%m}",
+                    "yyyymmdd": f"{cycle:%Y%m%d}",
+                    "hhmm": f"{cycle:%H%M}",
+                }
+                filename = filename_template.format(**fmt)
+                url = url_template.format(filename=filename, **fmt)
+                dest = _canonical_staging_path(output_root, case, src, "", filename)
+                plan.append({
+                    "source": src, "member": "", "filename": filename,
+                    "url": url, "local_path": str(dest),
+                    "est_bytes": NAM_EST_BYTES_PER_CYCLE,
+                })
+        else:
+            breakpoint_fxx = int(cfg.get("fxx_bucket_breakpoint", 240))
+            tokens = variable_levels or list(cfg.get("wps_variable_levels", []))
+            bucket = _fxx_bucket(int(fxx_window[0]), breakpoint_fxx)
+            for member in members:
+                member_token = _member_token(member)
+                for token in tokens:
+                    filename = _reforecast_filename(token, init_dt, member_token)
+                    url = _reforecast_remote_url(token, init_dt, member_token, bucket)
+                    dest = _canonical_staging_path(
+                        output_root, case, src, member_token, filename
+                    )
+                    plan.append({
+                        "source": src, "member": member_token, "filename": filename,
+                        "url": url, "local_path": str(dest), "est_bytes": None,
+                    })
+    return plan
+
+
+def _print_plan(plan: list[dict]) -> None:
+    """Pretty-print a :func:`plan_case` result with per-source totals."""
+    if not plan:
+        print("plan: nothing to stage.")
+        return
+    known = sum(e["est_bytes"] for e in plan if e["est_bytes"])
+    n_est = sum(1 for e in plan if e["est_bytes"] is None)
+    for e in plan:
+        size = f"~{e['est_bytes'] / 1e6:.0f} MB" if e["est_bytes"] else "size unknown offline"
+        print(f"  [{e['source']:<15}] {e['local_path']}\n      <- {e['url']}  ({size})")
+    print(
+        f"plan: {len(plan)} file(s); est. >= {known / 1e6:.0f} MB"
+        + (f" (+{n_est} reforecast file(s) of unknown offline size)" if n_est else "")
+    )
+
+
+def verify_manifest(manifest_path: str | Path) -> dict:
+    """Re-check every staged file against the manifest before WPS consumes it.
+
+    For each ``staged_files`` entry: confirm the local file exists, its size
+    matches ``size_bytes``, and its recomputed SHA-256 matches ``sha256``.
+    Returns ``{ok, n_files, n_ok, results:[{local_path, ok, problem}]}``.
+    """
+    manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    results = []
+    for entry in manifest.get("staged_files", []):
+        lp = Path(entry["local_path"])
+        problem = None
+        if not lp.exists():
+            problem = "missing"
+        elif lp.stat().st_size != entry.get("size_bytes"):
+            problem = f"size {lp.stat().st_size} != manifest {entry.get('size_bytes')}"
+        elif _sha256(lp) != entry.get("sha256"):
+            problem = "sha256 mismatch"
+        results.append({"local_path": str(lp), "ok": problem is None, "problem": problem})
+    n_ok = sum(1 for r in results if r["ok"])
+    return {"ok": n_ok == len(results), "n_files": len(results), "n_ok": n_ok, "results": results}
 
 
 # ── orchestrator ────────────────────────────────────────────────────────────
@@ -761,10 +1017,12 @@ def stage_case(
     members: tuple[int, ...] = (0,),
     output_root: str | Path = DEFAULT_SCRATCH_ROOT,
     fxx_window: tuple[int, int] = DEFAULT_FXX_WINDOW,
-    interval_hours: int = DEFAULT_INTERVAL_HOURS,
+    interval_hours: int | None = None,
     variable_levels: list[str] | None = None,
     source: str = DEFAULT_SOURCE,
     sources: tuple[str, ...] | None = None,
+    connect_timeout: float = DEFAULT_HTTP_CONNECT_TIMEOUT,
+    read_timeout: float = DEFAULT_HTTP_READ_TIMEOUT,
     quicklook: bool = True,
     obs_check: bool = False,
     **stage_kwargs,
@@ -774,15 +1032,20 @@ def stage_case(
     ``sources`` (e.g. ``("gefs_reforecast", "nam_analysis")``) overrides the
     singular ``source``; ``nam_analysis`` is staged via :func:`stage_nam_analysis`
     (one whole file per analysis cycle), any other source via
-    :func:`stage_reforecast` (per member). Returns the manifest path.
+    :func:`stage_reforecast` (per member). ``interval_hours`` defaults to the
+    forcing source's cadence (NAM-only → 6 h, reforecast → 3 h) when not given.
+    Also writes a ``contract_<case>.json`` sidecar. Returns the manifest path.
     """
     init_dt = _parse_init_time(init_time)
+    lu = load_lookups()
     window = (
         _isoformat_utc(init_dt + dt.timedelta(hours=int(fxx_window[0]))),
         _isoformat_utc(init_dt + dt.timedelta(hours=int(fxx_window[1]))),
     )
 
     src_list = tuple(sources) if sources else (source,)
+    if interval_hours is None:
+        interval_hours = _interval_hours_for_sources(src_list, lu)
 
     staged: list[StagedFile] = []
     for src in src_list:
@@ -795,6 +1058,8 @@ def stage_case(
                     case=case,
                     source=src,
                     overwrite=stage_kwargs.get("overwrite", False),
+                    connect_timeout=connect_timeout,
+                    read_timeout=read_timeout,
                 )
             )
         else:
@@ -823,6 +1088,9 @@ def stage_case(
     case_dir = Path(output_root) / case
     manifest_path = write_manifest(manifest, case_dir)
     LOG.info("wrote manifest %s (%d files)", manifest_path, len(staged))
+
+    contract_path = write_contract(build_contract(manifest, lu), case_dir, case)
+    LOG.info("wrote contract %s", contract_path)
 
     if quicklook and staged:
         _run_quicklook(staged, region=region, case=case)
@@ -899,13 +1167,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--fxx-window", default="12,48", help="Lead-time window 'start,end' (manifest/bucket only)."
     )
-    parser.add_argument("--interval-hours", type=int, default=DEFAULT_INTERVAL_HOURS, help="LBC interval (metadata).")
+    parser.add_argument(
+        "--interval-hours", type=int, default=None,
+        help="LBC interval metadata (default: derived from the forcing cadence — NAM 6 h, reforecast 3 h).",
+    )
     parser.add_argument("--herbie-save-dir", default=None, help="Herbie working cache before the move.")
     parser.add_argument("--keep-herbie-cache", action="store_true", help="Copy instead of move out of cache.")
     parser.add_argument("--overwrite", action="store_true", help="Re-download even if already staged.")
     parser.add_argument(
         "--lead-subset", action="store_true",
         help="Download only lead times in --fxx-window (byte-range), not the whole f3-f240 bucket.",
+    )
+    parser.add_argument(
+        "--http-ipv4-only", action="store_true",
+        help=f"Force IPv4 for all downloads (CHPC DTN IPv6-hang workaround; also via {_IPV4_ENV}=1).",
+    )
+    parser.add_argument(
+        "--connect-timeout", type=float, default=DEFAULT_HTTP_CONNECT_TIMEOUT,
+        help=f"HTTP connect timeout (s) for direct NAM GETs (default {DEFAULT_HTTP_CONNECT_TIMEOUT}).",
+    )
+    parser.add_argument(
+        "--read-timeout", type=float, default=DEFAULT_HTTP_READ_TIMEOUT,
+        help=f"HTTP read timeout (s) for direct NAM GETs (default {DEFAULT_HTTP_READ_TIMEOUT}).",
+    )
+    parser.add_argument(
+        "--plan", "--dry-run", dest="plan", action="store_true",
+        help="List expected files/URLs/paths and total bytes, then exit (no download).",
+    )
+    parser.add_argument(
+        "--verify-manifest", default=None, metavar="PATH",
+        help="Re-hash staged files against a manifest JSON and exit (integrity check).",
     )
     parser.add_argument("--no-quicklook", action="store_true", help="Skip quicklook figures.")
     parser.add_argument("--obs-check", action="store_true", help="Attempt SynopticPy obs overlay (opt-in).")
@@ -925,6 +1216,18 @@ def main(argv: list[str] | None = None) -> int:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     args = parse_args(argv)
+
+    if args.verify_manifest:
+        report = verify_manifest(args.verify_manifest)
+        for r in report["results"]:
+            mark = "OK  " if r["ok"] else "FAIL"
+            print(f"  [{mark}] {r['local_path']}" + (f"  ({r['problem']})" if r["problem"] else ""))
+        print(f"verify: {report['n_ok']}/{report['n_files']} OK")
+        return 0 if report["ok"] else 1
+
+    if args.http_ipv4_only or _ipv4_only_requested():
+        _install_ipv4_only()
+
     members = tuple(_parse_int_csv(args.members))
     sources = tuple(s.strip() for s in args.source.split(",") if s.strip())
     variable_levels = (
@@ -934,6 +1237,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     fxx_parts = _parse_int_csv(args.fxx_window)
     fxx_window = (fxx_parts[0], fxx_parts[-1]) if fxx_parts else DEFAULT_FXX_WINDOW
+
+    if args.plan:
+        plan = plan_case(
+            case=args.case,
+            init_time=args.init_time,
+            members=members,
+            output_root=args.output_dir,
+            fxx_window=fxx_window,
+            variable_levels=variable_levels,
+            sources=sources,
+        )
+        _print_plan(plan)
+        return 0
 
     try:
         manifest_path = stage_case(
@@ -946,6 +1262,8 @@ def main(argv: list[str] | None = None) -> int:
             interval_hours=args.interval_hours,
             variable_levels=variable_levels,
             sources=sources,
+            connect_timeout=args.connect_timeout,
+            read_timeout=args.read_timeout,
             quicklook=not args.no_quicklook,
             obs_check=args.obs_check,
             herbie_save_dir=args.herbie_save_dir,
