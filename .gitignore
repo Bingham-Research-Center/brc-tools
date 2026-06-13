@@ -63,6 +63,10 @@ figures/
 *.log
 logs/
 
+# DTN / SLURM staging job logs (stage_<jobid>.out / .err — reproducible, not source)
+stage_*.out
+stage_*.err
+
 # Cache
 .cache/
 *.cache

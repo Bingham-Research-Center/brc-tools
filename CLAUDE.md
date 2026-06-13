@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. First proof done, not yet WRF-validated. Handoff + microtasks + CHPC/SLURM: `docs/WRF-INPUT-STAGING.md`.
+- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin); merge gate met, GEFS two-stream still optional. Handoff + microtasks + CHPC/SLURM: `docs/WRF-INPUT-STAGING.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
