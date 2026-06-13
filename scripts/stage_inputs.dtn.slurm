@@ -30,6 +30,12 @@ OUT=/scratch/general/vast/$USER/wrf_inputs
 cd "$REPO"
 echo "=== stage start $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ==="
 
+# CHPC DTNs can hang on outbound IPv6: job 13471949 wedged in SYN-SENT to an NCEI
+# IPv6 address on :443 and made no progress; the IPv4-only retry (13472014) finished.
+# Force IPv4 for every download (Herbie/S3 + the direct NCEI NAM GET). See
+# wrf_staging._install_ipv4_only and docs/WRF-INPUT-STAGING.md §2.
+export BRC_TOOLS_HTTP_IPV4_ONLY=1
+
 # Stage TWO sources into one case + one manifest:
 #  - nam_analysis    : auth-free NAM 12 km analysis (NCEI, no NCAR RDA) -- the validated
 #                      single-stream WRF forcing (Vtable.NAM). ~7 files, ~0.8 GB. THE runnable path.
