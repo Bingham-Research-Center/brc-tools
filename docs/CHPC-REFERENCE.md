@@ -1,30 +1,92 @@
-# CHPC Reference - Lawson Research Group
+# CHPC Reference — brc-tools-specific deployment notes
 
-**Canonical source for CHPC deployment across all BRC projects.**
-Other repos should reference this file, not duplicate it.
+**Authoritative CHPC infrastructure reference (storage, partitions, sbatch
+patterns, hardware, quotas, GPU access):** `~/gits/brc-knowledge/scholarium/reference-base/resources/chpc-team-resource-inventory.md`.
+Do not duplicate facts from brc-knowledge here — update brc-knowledge instead.
+
+CHPC file storage policies: <https://www.chpc.utah.edu/documentation/policies/3.1FileStoragePolicies.php>.
+
+This file holds only what is brc-tools-specific: cron jobs, env vars,
+conda envs, upload pitfalls. **Paths below assume a CHPC node** — they
+begin with `/uufs/chpc.utah.edu/...` or `/scratch/general/...` and `~`
+resolves to `/uufs/chpc.utah.edu/common/home/u0737349`. The Linode/Akamai
+receiver (`basinwx.com` / `basinwx.dev`) has a different layout; a
+cold-start agent on the Linode side will see `~` resolve elsewhere.
 
 ---
 
-## Group Resources
+## Quick orientation (cold-start agent)
 
-| Resource | Name | Details |
-|----------|------|---------|
-| **Account** | `lawson` | PI: John Lawson (u0737349) |
-| **Partition (NP)** | `lawson-np` | 2 owner nodes on Notchpeak |
-| **Partition (KP)** | `lawson-kp` | 4 owner nodes on Kingspeak |
-| **OS** | Rocky Linux 8.10 | Verified Nov 2025 |
+```bash
+hostname; env | grep -E '^SLURM_' | head -5     # which node? login or compute? salloc?
+mydiskquota                                      # home + scratch quotas
+df -hT /uufs/chpc.utah.edu/common/home/lawson-group{4,5,6} 2>&1   # group volumes mounted?
+```
 
-### Storage Allocations
+If `df` returns "Too many levels of symbolic links" for a `lawson-group*`
+mount, that volume is not available on this node — do not stage data
+there. Re-check from a different node or contact CHPC. Last live check
+on notch392 (2026-05-13): group6 OK; group4 and group5 broken.
 
-| Path/Name | Type | Capacity | Use |
-|-----------|------|----------|-----|
-| `lawson-group5` | Cottonwood 09-10 | 16.1 TiB | Persistent datasets |
-| `lawson-group6` | Cottonwood 13-14 | 16.3 TiB | Persistent datasets |
-| `lawson-group4` | Cottonwood 09-10 | 5.2 TiB | Persistent datasets |
-| `/home/lawson` | Vast | 7.3 GiB | Code, configs only |
-| `/scratch/general/vast/` | Scratch | Shared | Temporary data, caches |
+---
 
-### Team Members
+## Conda environments
+
+```bash
+# Miniforge (installed at ~/software/pkg/miniforge3/)
+source ~/software/pkg/miniforge3/etc/profile.d/conda.sh
+
+conda activate clyfar-nov2025    # Clyfar forecasting; has SynopticPy, polars, herbie
+conda activate brc-tools         # General brc-tools work
+```
+
+## Environment exports
+
+```bash
+export PYTHONPATH="$PYTHONPATH:~/gits/clyfar"
+export POLARS_ALLOW_FORKING_THREAD=1
+export DATA_UPLOAD_API_KEY="<32-char-hex>"   # required for BasinWX uploads
+```
+
+## Cron jobs (active production)
+
+`~/.bashrc`, `~/gits/`, `~/logs/` are CHPC-side paths in the lines below.
+
+```bash
+# Observations — every 10 min. Must run from notchpeak1 (login node);
+# compute nodes can't reach external APIs. See [[ops_cron_host]] memory.
+*/10 * * * * source ~/.bashrc && conda activate brc-tools && \
+  python ~/gits/brc-tools/brc_tools/download/get_map_obs.py >> ~/logs/obs.log 2>&1
+
+# Clyfar forecasts — 4× daily via Slurm (3 h after each GEFS run)
+30 3,9,15,21 * * * cd ~/gits/clyfar && ./scripts/submit_clyfar.sh \
+  >> ~/logs/clyfar_submit.log 2>&1
+```
+
+## HRRR surface layer export (BasinWX)
+
+CLI: `scripts/export_hrrr_surface_layers.py`. Use `--server-url` to
+override the config-file URL — this is what lets dev/prod cron entries
+diverge.
+
+```bash
+30 * * * * source ~/.bashrc && conda activate brc-tools && cd ~/gits/brc-tools && \
+  python scripts/export_hrrr_surface_layers.py --upload \
+  --server-url https://basinwx.dev >> ~/logs/hrrr_upload_dev.log 2>&1
+```
+
+Swap to `--server-url https://www.basinwx.com` for production.
+
+## brc-tools-specific pitfalls
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| Upload fails | Wrong hostname | Uploader must run from `*.chpc.utah.edu`; the ubair-website server enforces this via `x-client-hostname` header |
+| `ModuleNotFoundError: brc_tools` | PYTHONPATH unset or wrong env | Activate the env and re-source `~/.bashrc` |
+| Conda not found | Shell not initialised | `source ~/software/pkg/miniforge3/etc/profile.d/conda.sh` |
+| `df` reports "Too many levels of symbolic links" on a group volume | autofs fault on this node | Try a different node; volume may still be intact elsewhere |
+
+## Team members (CHPC access)
 
 | Name | uNID | Role |
 |------|------|------|
@@ -36,159 +98,15 @@ Other repos should reference this file, not duplicate it.
 | Elspeth Montague | u6060938 | Researcher |
 | Trang Tran | u6002243 | Researcher |
 
----
+## Project-specific docs
 
-## Partition Selection
-
-**Priority order:**
-1. `lawson-np` - Owner nodes, no queue, your hardware
-2. `lawson-kp` - Owner nodes, alternative cluster
-3. `notchpeak-shared` - Shared, when owner nodes down
-
-**Owner nodes:** No utilization restrictions, but efficiency warnings still sent. These are advisory only for owner partitions.
-
----
-
-## salloc Templates
-
-### Standard Interactive (I/O-bound work)
-```bash
-salloc -n 4 -N 1 --mem=16G -t 2:00:00 -p lawson-np -A lawson-np
-```
-Use for: Clyfar forecasts, data downloads, light processing
-
-### Heavy Compute (CPU-intensive)
-```bash
-salloc -n 16 -N 1 --mem=64G -t 4:00:00 -p lawson-np -A lawson-np
-```
-Use for: Full ensemble runs, training, large data processing
-
-### Fallback (owner nodes busy)
-```bash
-salloc -n 4 -N 1 --mem=16G -t 2:00:00 -p notchpeak-shared -A notchpeak-shared-short
-```
-
-### Quick Debug
-```bash
-salloc -n 2 -N 1 --mem=8G -t 0:30:00 -p lawson-np -A lawson-np
-```
-
----
-
-## Environment Setup
-
-### Conda (Miniforge recommended)
-```bash
-# Location
-~/software/pkg/miniforge3/
-
-# Activate base
-source ~/software/pkg/miniforge3/etc/profile.d/conda.sh
-
-# Project environments
-conda activate clyfar-nov2025    # Clyfar forecasting
-conda activate brc-tools         # General BRC work
-```
-
-### Common Exports
-```bash
-export PYTHONPATH="$PYTHONPATH:~/gits/clyfar"
-export POLARS_ALLOW_FORKING_THREAD=1
-```
-
-### API Keys
-```bash
-# Required for uploads
-export DATA_UPLOAD_API_KEY="<32-char-hex>"
-
-# Store in ~/.bashrc or load from secure location
-```
-
----
-
-## Directory Structure
-
-```
-~/gits/
-├── clyfar/          # Ozone forecast model
-├── brc-tools/       # Shared Python utilities
-└── ubair-website/   # (usually not on CHPC)
-
-/scratch/general/vast/
-├── clyfar_test/     # Test outputs
-│   ├── v0p9/        # Version-specific runs
-│   └── figs/        # Generated figures
-└── herbie_cache/    # NWP download cache
-```
-
----
-
-## Cron Jobs
-
-### Active Production
-```bash
-# Observations - every 10 minutes
-*/10 * * * * source ~/.bashrc && conda activate brc-tools && python ~/gits/brc-tools/brc_tools/download/get_map_obs.py >> ~/logs/obs.log 2>&1
-```
-
-### Clyfar Forecasts (4× daily via Slurm)
-```bash
-# Submit Slurm job at 3hr after each GEFS run
-30 3,9,15,21 * * * cd ~/gits/clyfar && ./scripts/submit_clyfar.sh >> ~/logs/clyfar_submit.log 2>&1
-```
-
-### HRRR surface layers → BasinWX (not yet deployed)
-
-Exporter: `brc_tools/nwp/basinwx.py`. CLI wrapper:
-`scripts/export_hrrr_surface_layers.py`. Use `--server-url` to override
-the config-file URL so dev and prod cron entries are independent.
-
-**Prerequisites on the CHPC runner** (`brc_tools/download/push_data.py`
-reads these):
-
-- `DATA_UPLOAD_API_KEY` env var (32-char hex). Same value as the
-  website's `.env`. Set in `~/.bashrc` or load from secure store.
-- `~/.config/ubair-website/website_url` — single-line file with the
-  default server URL (overridden by `--server-url`).
-- Runner FQDN must end with `.chpc.utah.edu` (server validates
-  `x-client-hostname`).
-- Conda env: `brc-tools` with `pip install -e .` in `~/gits/brc-tools`.
-
-**Manual smoke test** (before wiring cron):
-```bash
-# Dry run, no upload
-python scripts/export_hrrr_surface_layers.py --run-count 1 --max-fxx 6
-
-# Upload to dev
-python scripts/export_hrrr_surface_layers.py --run-count 1 --max-fxx 6 \
-  --upload --server-url https://basinwx.dev
-```
-
-**Crontab (dev, hourly at HH:30 — HRRR latency is ~2 h):**
-```bash
-30 * * * * source ~/.bashrc && conda activate brc-tools && cd ~/gits/brc-tools && \
-  python scripts/export_hrrr_surface_layers.py --upload \
-    --server-url https://basinwx.dev \
-    >> ~/logs/hrrr_upload_dev.log 2>&1
-```
-
-Production: swap `--server-url https://www.basinwx.com`. Expected payload
-per cycle is ~2 MB (3 runs × ~600 KB + index); the website caps uploads
-at 10 MB.
-
----
-
-## Common Pitfalls
-
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| Low CPU warning | Over-allocated resources | Use `-n 4` not `-n 8` for I/O work |
-| Module not found | PYTHONPATH not set | `export PYTHONPATH="$PYTHONPATH:~/gits/clyfar"` |
-| Conda not found | Shell not initialized | `source ~/software/pkg/miniforge3/etc/profile.d/conda.sh` |
-| Upload fails | Wrong hostname | Must run from *.chpc.utah.edu |
-| Solver hangs | Conda conflict | Use `mamba` instead of `conda` |
-
----
+| Project | Doc | Content |
+|---------|-----|---------|
+| clyfar | `CHPC-QUICKREF.md` | Clyfar-specific salloc, env |
+| clyfar | `CHPC_DEPLOYMENT_CHECKLIST.md` | Deployment phases |
+| clyfar | `scripts/storage_inventory.sh` | Audit Clyfar storage usage (read-only or `--clean`) |
+| clyfar | `scripts/report_disk_usage.sh` | Surface large files for cleanup |
+| ubair-website | `CHPC-IMPLEMENTATION.md` | Website upload setup |
 
 ## Links
 
@@ -198,15 +116,5 @@ at 10 MB.
 
 ---
 
-## Project-Specific Docs
-
-| Project | Doc | Content |
-|---------|-----|---------|
-| clyfar | `CHPC-QUICKREF.md` | Clyfar-specific salloc, env |
-| clyfar | `CHPC_DEPLOYMENT_CHECKLIST.md` | Deployment phases |
-| ubair-website | `CHPC-IMPLEMENTATION.md` | Website upload setup |
-
----
-
-**Last Updated:** 2025-11-25
-**Maintainer:** John Lawson
+**Last Updated:** 2026-05-13 — trimmed; canonical CHPC infra now lives in brc-knowledge.
+**Maintainer:** John Lawson.

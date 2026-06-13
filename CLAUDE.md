@@ -8,12 +8,13 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
+- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin); merge gate met, GEFS two-stream still optional. Handoff + microtasks + CHPC/SLURM: `docs/WRF-INPUT-STAGING.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
 ```
 brc_tools/        installable package
-  nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study helpers
+  nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB)
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
   visualize/      planview maps, timeseries panels
@@ -34,6 +35,7 @@ figures/          generated output (gitignored)
 - `docs/ENVIRONMENT-SETUP.md` — conda / venv setup
 - `docs/CROSS-REPO-SYNC.md` — sync protocol with clyfar / ubair-website / preprint
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy and phase tracker
+- `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and

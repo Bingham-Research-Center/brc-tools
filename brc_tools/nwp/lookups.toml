@@ -68,6 +68,62 @@ prslev  = { description = "Pressure + surface", herbie_name = "prslev"  }
 natlev  = { description = "Native level",       herbie_name = "natlev"  }
 testbed = { description = "RRFS testbed",       herbie_name = "testbed" }
 
+[models.gefs_reforecast]
+# GEFSv12 Reforecast (Herbie model "gefs_reforecast"): the only Herbie-retrievable
+# GEFS-family source covering historical dates (operational "gefs" only reaches 2017).
+# Used for WRF-input staging (see brc_tools/nwp/wrf_staging.py), NOT NWPSource.fetch().
+# Per-variable file layout: one file = one variable across all lead times in a bucket.
+herbie_model          = "gefs_reforecast"
+description           = "GEFSv12 Reforecast (2000-2019), daily 00Z, 5 members"
+init_cadence_hours    = 24                  # daily 00Z only
+default_product       = "GEFSv12/reforecast"
+default_max_fxx       = 384
+member_required        = true
+default_member        = 0                   # integer; 0 -> c00 (control), 1-4 -> p01-p04
+members               = [0, 1, 2, 3, 4]
+grid                  = "latlon"
+crop_method           = "lonlat_shift_then_sel"   # native lon 0..360 (quicklook only)
+nearest_point_method  = "ds_sel_nearest"
+fxx_bucket_breakpoint = 240                 # fxx <= 240 -> "Days:1-10", else "Days:10-16"
+
+# Curated per-variable tokens to stage for WPS, confirmed against the real S3 listing
+# (s3://noaa-gefs-retrospective/GEFSv12/reforecast/2013/2013013100/c00/Days:1-10/).
+# Pressure fields are SPLIT at 700 hPa: "{var}_pres" holds <=700 hPa, "{var}_pres_abv700mb"
+# holds >700 hPa -- BOTH are needed for the full column. Humidity on pressure/2m is SPECIFIC
+# humidity (spfh_*); there is no rh_pres/rh_2m. 10 m winds are ugrd_hgt/vgrd_hgt (height level).
+# NOTE: the reforecast has NO land-sea mask and NO snow depth (snod) -> an auth-free NAM analysis
+# filler/forcing supplies them (see wrf_staging.stage_nam_analysis and [models.nam_analysis]).
+wps_variable_levels = [
+  # pressure-level 3-D (both 700 hPa halves)
+  "hgt_pres", "hgt_pres_abv700mb",
+  "tmp_pres", "tmp_pres_abv700mb",
+  "ugrd_pres", "ugrd_pres_abv700mb",
+  "vgrd_pres", "vgrd_pres_abv700mb",
+  "spfh_pres", "spfh_pres_abv700mb",
+  # mean-sea-level / surface
+  "pres_msl", "pres_sfc", "hgt_sfc",
+  # near-surface
+  "tmp_2m", "spfh_2m", "tmp_sfc", "ugrd_hgt", "vgrd_hgt",
+  # soil (4 layers each) + snow water equivalent
+  "tsoil_bgrnd", "soilw_bgrnd", "weasd_sfc",
+]
+
+[models.nam_analysis]
+# NAM 12 km analysis (grid 218) from the NCEI historical archive — the auth-free
+# WRF/WPS forcing the validated Feb-2013 Basin run uses (Vtable.NAM, fg_name='NAM').
+# Replaces the dropped NCAR-RDA ds083.2 FNL filler: NAM analysis carries the full
+# field set the GEFS reforecast lacks (land-sea mask, SST, skin temp, 4-layer soil,
+# snow), so it works standalone OR as the reforecast's second metgrid stream. One
+# whole GRIB per analysis cycle (00/06/12/18Z); staged by stage_nam_analysis via a
+# direct HTTP GET (NOT Herbie — Herbie's nam.py has no NCEI historical source).
+description       = "NAM 12 km analysis (grid 218), NCEI historical archive"
+default_product   = "namanl_218"
+cadence_hours     = 6                       # analysis cycles at 00/06/12/18Z
+grid              = "218"                    # 12 km CONUS Lambert-conformal
+# {yyyymm}/{yyyymmdd}/{hhmm} filled per cycle; .grb (grib1) for the pre-2017 archive.
+filename_template = "namanl_218_{yyyymmdd}_{hhmm}_000.grb"
+url_template      = "https://www.ncei.noaa.gov/data/north-american-mesoscale-model/access/historical/analysis/{yyyymm}/{yyyymmdd}/{filename}"
+
 # ── Regions ─────────────────────────────────────────────────────────────────
 
 [regions.uinta_basin]
