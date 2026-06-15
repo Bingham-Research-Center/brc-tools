@@ -9,4 +9,6 @@ Project documentation. Topical files only — agent context lives in
 - **CHPC-REFERENCE.md** — canonical CHPC account, partitions, salloc, cron (incl. HRRR upload).
 - **CROSS-REPO-SYNC.md** — protocol for keeping the four sibling repos aligned.
 - **ENVIRONMENT-SETUP.md** — venv/conda setup for new team members.
+- **WRF-INPUT-STAGING.md** — WRF/WPS GRIB staging handoff, proof evidence, and microtasks.
+- **WRF-STAGING-STATE-PLAYBOOK.md** — plain-language milestone/state packet for the WRF staging side.
 - **nwp/** — HRRR/RRFS roadmap (current operational focus).
