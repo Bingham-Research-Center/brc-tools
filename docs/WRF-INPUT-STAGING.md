@@ -1,5 +1,8 @@
 # WRF-Input GRIB Staging — Handoff
 
+> **State:** NAM-only is proven end-to-end (WPS → `real.exe` → `wrf.exe`). GEFS+NAM two-stream is **not** proven.
+> **brc-wrf side:** `../brc-wrf/brc-docs/BRC-WRF-STATE-PLAYBOOK.md` · `../brc-wrf/brc-docs/BRC-WRF-FIRST-CASE.md` (paths from repo root; both repos checked out as siblings).
+
 **Status:** ✅ **end-to-end validated** (2026-06-13). NAM-only staging drove WPS → `real.exe` →
 `wrf.exe` to `SUCCESS COMPLETE WRF` for the Jan-2013 Basin case on `notch392` (full evidence in
 §2). The merge gate (Microtask 30, "merge only after a successful `real.exe`") is now **met** —
@@ -86,6 +89,11 @@ The brc-wrf runtime proof closed the loop. Staged from brc-tools `33849121…`
 - **`wrf.exe`:** Slurm step `13472096.0` completed `0:0` on `notch392` (56 tasks);
   `rsl.out.0000` → `d01 2013-02-02_00:00:00 wrf: SUCCESS COMPLETE WRF`; 37 hourly `wrfout`/domain.
 - **Archive:** `lawson-group6/jrlawson/wrf_archive/jan2013_basin_gefs/run_20260613T044846Z` (194 files, 2.2 G).
+
+> ⚠️ **Don't read NAM-only WPS truth off this mixed-source manifest.** It lists `nam_analysis`
+> (7 files) **and** partial `gefs_reforecast` (21), but WPS consumed **NAM-only**. For what WPS
+> actually ingested, trust the contract / source intent (`wps_fg_name`, `sources`) — not the
+> manifest file list.
 
 **Interpretation:** NAM-only staging is sufficient for the validated 12/4 km Basin case. The GEFS
 reforecast stream stays useful for the optional ensemble/two-stream path, **not** a prerequisite for
@@ -177,8 +185,8 @@ full set on a DTN, then prove through WPS/real on the brc-wrf side).
 - [ ] **23. [H]** Run the **full** stage as a `notchpeak-dtn` job (§5 template); confirm the DTN reaches AWS.
 - [ ] **24. [H]** Verify whether `lawson-np` compute/interactive nodes can reach AWS (proxy?). Ask helpdesk@chpc.utah.edu; record the answer in brc-knowledge.
 - [x] **25. [H] ✅ DONE** — WRF ran on `notch392` (56 tasks, step `13472096.0`) to `SUCCESS COMPLETE WRF`, 37 hourly `wrfout`/domain (§2). Formal scaling/timing sweep (26) still open.
-- [ ] **26. [AI+H]** Scaling benchmark: sweep `--ntasks` (e.g. 16/28/56), record wall-time per sim-hour, find the knee (Basin domains stop scaling after ~dozens of ranks — wrf-on-chpc §8).
-- [ ] **27. [H]** Memory benchmark: confirm actual peak (~50 GiB for 12/4 km) vs `--mem`; right-size.
+- [ ] **26. [brc-wrf]** Scaling benchmark — **WRF-run tuning, owned by `brc-wrf`** (tracked here only for continuity): sweep `--ntasks` (e.g. 16/28/56), record wall-time per sim-hour, find the knee (Basin domains stop scaling after ~dozens of ranks — wrf-on-chpc §8).
+- [ ] **27. [brc-wrf]** Memory benchmark — **WRF-run tuning, owned by `brc-wrf`**: confirm actual peak (~50 GiB for 12/4 km) vs `--mem`; right-size.
 - [x] **28. [H] ✅ DONE** — archived to `lawson-group6/jrlawson/wrf_archive/jan2013_basin_gefs/run_20260613T044846Z` (194 files, 2.2 G), incl. the `rsl.out.0000` success marker. See §5d for the colon-filename rsync gotcha hit during this archive.
 
 ### D. Cross-cutting / hygiene
@@ -207,20 +215,16 @@ It pins `account=dtn / partition=notchpeak-dtn / qos=notchpeak-dtn`, calls the e
 `/scratch/general/vast/$USER/wrf_inputs/jan2013_basin_gefs/`. Quicklook is off on the DTN (no
 matplotlib/cartopy) — render figures separately on a login node from the staged files if wanted.
 
-### 5b. Running WRF — use **notch392** via the validated script
+### 5b. Running WRF — owned by `brc-wrf`
 
-Do **not** reinvent the run script. Submit the validated one:
-```bash
-sbatch ~/gits/brc-knowledge/scholarium/reference-base/resources/run_wrf_feb05.slurm
-```
-It pins `notch392` (56 cores, ~1 TB RAM, ConnectX-6), `lawson-np`, `--mem=180G`, `--time=6:00:00`,
-the validated module stack, and the **mandatory** launcher `srun --mpi=pmi2 -n "$SLURM_NTASKS" ./wrf.exe`
-(bare `mpirun`/`srun -n` are wrong on Intel MPI 2021.1.1). It also archives `wrfout*` to `lawson-group6`.
+brc-tools does **not** own WRF-run Slurm profiles. For the run script, the
+node/task/memory profile, the launcher, and any benchmarking sweep, see `brc-wrf`
++ `brc-knowledge` (paths from repo root; both repos checked out as siblings):
+`../brc-wrf/brc-docs/BRC-WRF-FIRST-CASE.md` and the validated `run_wrf_feb05.slurm`
+it references.
 
-**Benchmarking sweep** (to "maximise resources"): copy that script per config and vary:
-- `--ntasks` ∈ {16, 28, 56} (keep `--nodes=1`; record wall-time per simulated hour → find the scaling knee).
-- `--mem`: start `180G`; use `--mem=900G` to reserve the whole big-memory node (owned, sole-user → harmless).
-- Keep `--nodelist=notch392` for apples-to-apples; the scaling table is in `wrf-on-chpc-quickstart.md` §8.
+(The DTN **staging** job in §5a is a different thing — that one *is* brc-tools',
+because staging GRIB is our lane; running the model is not.)
 
 ### 5c. Storage & retention
 `/scratch/general/vast/$USER` (50 TiB quota, **60-day atime purge**) for active inputs/runs; promote
@@ -305,6 +309,12 @@ and the manifest filename.
 > `interval_hours=3`. The run itself used the correct 6 h NAM cadence (`interval_seconds=21600`,
 > per WPS); a fresh stage now stamps `interval_hours=6`. Diffing the old manifest against a new one
 > will show this single expected discrepancy.
+>
+> **Vocabulary reconcile (brc-tools ↔ brc-wrf):** what this repo calls a "pre-contract manifest"
+> (above) is the same artifact `brc-wrf` calls a *reconstructed legacy NAM-only contract*
+> (`../brc-wrf/brc-cases/jan2013_basin_nam.contract.json`). The old scratch predates the
+> `contract_<case>.json` sidecar, so `brc-wrf` carries a reconstructed NAM-only contract for strict
+> validation, while a fresh brc-tools stage emits the real sidecar.
 
 **Proof constants for the validated Jan-2013 Basin run (metgrid/real outputs — not auto-emitted):**
 
