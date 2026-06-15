@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin); GEFS two-stream still optional. Status: `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detailed handoff: `docs/WRF-INPUT-STAGING.md`. If arriving from `brc-wrf`, read `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin); GEFS two-stream still optional. Status: `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detailed handoff: `docs/WRF-INPUT-STAGING.md`. If arriving from `brc-wrf`, read `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`; handing the run side back to `brc-wrf`, use `docs/HANDOFF-TO-BRC-WRF.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -41,6 +41,7 @@ figures/          generated output (gitignored)
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — terse WRF staging state and reading packet
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (NOT proven)
+- `docs/HANDOFF-TO-BRC-WRF.md` — paste-prompt to hand the WRF run side to a brc-wrf session
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and

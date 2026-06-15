@@ -14,4 +14,5 @@ Project documentation. Topical files only — agent context lives in
 - **WRF-INPUT-STAGING.md** — WRF/WPS GRIB staging handoff, proof evidence, and microtasks.
 - **WRF-STAGING-STATE-PLAYBOOK.md** — plain-language milestone/state packet for the WRF staging side.
 - **WRF-GEFS-NAM-FIELD-MAP.md** — DRAFT GEFS/NAM two-stream field-map (not proven).
+- **HANDOFF-TO-BRC-WRF.md** — paste-prompt to hand the WRF run side to a brc-wrf session.
 - **nwp/** — HRRR/RRFS roadmap (current operational focus).
