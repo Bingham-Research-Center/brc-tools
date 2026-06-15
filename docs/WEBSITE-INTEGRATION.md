@@ -5,6 +5,11 @@ The data contract between brc-tools (producer) and the `ubair-website` receiver
 boxes are downstream consumers that receive POSTs (they don't pull). Match the
 schemas here and the website lights up automatically.
 
+> **Cross-machine invariant** (canonical: CLAUDE.md Conventions → "No path crosses
+> machines"): CHPC (producer) and the Linode hub (receiver) share **no filesystem**.
+> The *only* interface is the URL contract below — never a shared path. Paths on
+> each side are local to that side.
+
 > **Canonical schema source** is the website repo's `DATA_MANIFEST.json`
 > (e.g. `hrrr_surface_layers` at `DATA_MANIFEST.json:487`). When in doubt, read it
 > there — don't invent fields. The library entry point is

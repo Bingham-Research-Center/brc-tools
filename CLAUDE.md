@@ -56,7 +56,8 @@ with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
 a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 
 ## Conventions
-- **UTC internally, always.** `datetime.timezone.utc`, never pytz.
+- **UTC internally, always.** `datetime.timezone.utc`, never pytz. (Servers sit in different local zones — UTC is the portable invariant; convert to Mountain only at display.)
+- **No path crosses machines.** CHPC and the Linode/Akamai website hub share **no filesystem**; absolute paths (`/uufs`, `/scratch`, `~`) are machine-local (CHPC-only here). The cross-machine seam is the **HTTP URL contract** (`BASINWX_API_URLS` / `~/.config/ubair-website/website_url`), never a shared path; in-repo doc/code references use **relative** paths. Same discipline as UTC: commit the portable invariant (UTC / URL / relative), never the machine-specific form. **Cold-start check:** if a doc or script hands an absolute path to the *other* server, that's a bug.
 - **Polars** preferred over pandas for new code.
 - **American English** in code identifiers (British prose is fine).
 - **Imports**: stdlib → third-party → local.
