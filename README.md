@@ -2,6 +2,7 @@
 
 > AI agents: see [`CLAUDE.md`](CLAUDE.md) for project context.
 > Documentation index: [`docs/`](docs/). Current focus: HRRR/RRFS ingest in [`docs/nwp/`](docs/nwp/).
+> New here (and not a meteorologist)? Start with [`docs/walkthroughs/`](docs/walkthroughs/) — one short copy-paste page per tool, plus a glossary.
 
 Shared Python utilities for atmospheric data operations at the Bingham
 Research Center. Pulls weather observations (SynopticPy) and NWP model
@@ -75,6 +76,12 @@ it directly**. New brc-tools code should use `send_json_to_all(urls, ...)`
 instead; the legacy function stays intact until `clyfar` migrates (tracked as
 a follow-up, needs a cross-repo PR per
 [`docs/CROSS-REPO-SYNC.md`](docs/CROSS-REPO-SYNC.md)).
+
+## Open threads / TODO
+
+Active backlog and open action items live in [`WISHLIST-TASKS.md`](WISHLIST-TASKS.md)
+(the canonical prioritised backlog). Cross-repo WRF state lives in
+[`docs/WRF-STAGING-STATE-PLAYBOOK.md`](docs/WRF-STAGING-STATE-PLAYBOOK.md).
 
 ## Authors
 

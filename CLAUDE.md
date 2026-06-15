@@ -23,20 +23,24 @@ brc_tools/        installable package
   utils/          lookups, small helpers
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
+  walkthroughs/   plain-language per-tool guides + glossary
 tests/            pytest suite
 figures/          generated output (gitignored)
 ```
 
 ## Doc map (single source of truth per topic)
 - `README.md` — install + minimal quick usage (human onboarding)
+- `docs/walkthroughs/` — plain-language per-tool walk-throughs + shared glossary (new-hire entry point)
 - `docs/API-REFERENCE.md` — full module / function reference
 - `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script (pattern, conventions)
 - `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload)
+- `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
 - `docs/ENVIRONMENT-SETUP.md` — conda / venv setup
 - `docs/CROSS-REPO-SYNC.md` — sync protocol with clyfar / ubair-website / preprint
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy and phase tracker
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — terse WRF staging state and reading packet
+- `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (NOT proven)
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and
