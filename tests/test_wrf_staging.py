@@ -153,10 +153,11 @@ def test_staged_file_schema():
     expected = {
         "source", "herbie_model", "member", "member_int", "init_time",
         "variable_level", "fxx_bucket", "lead_times", "product", "local_path",
-        "remote_url", "size_bytes", "sha256", "created_at",
+        "remote_url", "size_bytes", "sha256", "created_at", "lead_times_source",
     }
     assert set(d) == expected
     assert d["init_time"].endswith("Z") and isinstance(d["member_int"], int)
+    assert d["lead_times_source"] == "inventory"  # default when not given
 
 
 def test_nam_cycle_enumeration():
@@ -206,6 +207,7 @@ def test_stage_reforecast_moves_into_layout(tmp_path, fake_herbie):
         assert dest.parent == tmp_path / "t" / "gefs_reforecast" / "c00"
         assert sf.member == "c00" and sf.member_int == 0
         assert sf.lead_times == _FULL_LEADS  # whole bucket parsed from inventory
+        assert sf.lead_times_source == "inventory"
         assert sf.sha256 and sf.size_bytes == len(_VALID_GRIB)
         assert sf.remote_url and sf.remote_url.endswith(".grib2")
     assert fake_herbie.last_search is None  # whole-file download, no byte-range subset
@@ -232,6 +234,35 @@ def test_stage_reforecast_skips_existing(tmp_path, fake_herbie):
     assert len(staged) == 1
     assert fake_herbie.init_count == 0  # Herbie never constructed
     assert fake_herbie.download_count == 0
+
+
+def test_skip_existing_labels_idx_and_no_idx(tmp_path, fake_herbie):
+    dest = _canonical_staging_path(
+        tmp_path, "t", "gefs_reforecast", "c00", "tmp_2m_2013013100_c00.grib2"
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(_VALID_GRIB)
+
+    kw = dict(
+        init_time="2013-01-31 00Z", variable_levels=["tmp_2m"], member=0,
+        output_root=tmp_path, case="t", herbie_save_dir=tmp_path / "cache",
+    )
+
+    # (a) no co-located idx -> empty lead_times, explicitly labelled "skip-no-idx"
+    staged = stage_reforecast(**kw)
+    assert staged[0].lead_times == []
+    assert staged[0].lead_times_source == "skip-no-idx"
+
+    # (b) a co-located <dest>.idx is parsed offline -> recovered leads, labelled "idx"
+    Path(str(dest) + ".idx").write_text(
+        "1:0:d=2013013100:TMP:2 m above ground:12 hour fcst:ENS=low-res ctl\n"
+        "2:100:d=2013013100:TMP:2 m above ground:24 hour fcst:ENS=low-res ctl\n"
+        "3:200:d=2013013100:TMP:2 m above ground:36 hour fcst:ENS=low-res ctl\n"
+    )
+    staged = stage_reforecast(**kw)
+    assert staged[0].lead_times == [12, 24, 36]
+    assert staged[0].lead_times_source == "idx"
+    assert fake_herbie.download_count == 0  # both runs hit the skip path, no download
 
 
 def test_validate_tokens_raises_on_empty_inventory(tmp_path, fake_herbie):

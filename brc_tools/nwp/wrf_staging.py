@@ -66,7 +66,9 @@ DEFAULT_SCRATCH_ROOT = Path(
     f"/scratch/general/vast/{os.environ.get('USER', 'user')}/wrf_inputs"
 )
 TOOL_NAME = "brc-tools"
-MANIFEST_SCHEMA_VERSION = 1
+# v2: added staged_files[].lead_times_source + provenance.total_bytes/elapsed_seconds.
+# Additive only; brc-wrf reads the contract sidecar, and verify_manifest still reads v1.
+MANIFEST_SCHEMA_VERSION = 2
 CONTRACT_SCHEMA_VERSION = 1
 
 # Split HTTP timeouts for direct GETs: a short connect bound (so a wedged socket
@@ -134,6 +136,11 @@ class StagedFile:
     size_bytes: int
     sha256: str
     created_at: str
+    # Provenance of ``lead_times``: "inventory" (parsed from a live Herbie inventory at
+    # download), "analysis" (NAM single-cycle, always [0]), "idx" (recovered from a
+    # co-located ``<file>.idx`` on the skip-existing path), or "skip-no-idx" (skip path
+    # with no sidecar idx — ``lead_times`` is empty; re-run with overwrite for full fidelity).
+    lead_times_source: str = "inventory"
 
 
 # ── token / path helpers ────────────────────────────────────────────────────
@@ -283,6 +290,22 @@ def _lead_times_from_inventory(inv) -> list[int]:
     if inv is None:
         return []
     hours = {h for h in (_parse_lead(v) for v in _inv_lead_values(inv)) if h is not None}
+    return sorted(hours)
+
+
+def _lead_times_from_idx(idx_path: Path) -> list[int]:
+    """Best-effort sorted integer lead-time list from a co-located GRIB ``.idx`` sidecar.
+
+    The idx is the wgrib-style inventory text written next to a GRIB; each line carries a
+    forecast-time token (e.g. ``...:3 hour fcst:...``) that :func:`_parse_lead` already
+    understands. Returns ``[]`` on any read/parse failure, so the caller falls back to a
+    degraded (but labelled) skip entry rather than raising.
+    """
+    try:
+        text = Path(idx_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    hours = {h for h in (_parse_lead(line) for line in text.splitlines()) if h is not None}
     return sorted(hours)
 
 
@@ -478,6 +501,7 @@ def stage_reforecast(
                     size_bytes=dest.stat().st_size,
                     sha256=_sha256(dest),
                     created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+                    lead_times_source="inventory",
                 )
             )
             LOG.info("staged %s -> %s (%d bytes)", token, dest, dest.stat().st_size)
@@ -490,11 +514,20 @@ def _record_existing(
 ) -> StagedFile:
     """Build a StagedFile for an already-present file without re-downloading.
 
-    ``lead_times`` is left empty because deriving it would require an
-    ``H.inventory()`` network call, which the skip-existing path deliberately
-    avoids; ``remote_url`` is reconstructed deterministically. Use
-    ``overwrite=True`` for a full-fidelity manifest.
+    The skip-existing path deliberately avoids an ``H.inventory()`` network call, so
+    ``lead_times`` is recovered offline only from a co-located ``<dest>.idx`` sidecar
+    *if one is present* (``lead_times_source="idx"``). In normal operation no idx is
+    co-located — staging moves only the GRIB, not its idx — so the entry is recorded
+    empty and labelled ``"skip-no-idx"``; re-run with ``overwrite=True`` for
+    full-fidelity lead times. ``remote_url`` is reconstructed deterministically.
     """
+    idx_path = Path(str(dest) + ".idx")
+    if idx_path.exists():
+        lead_times = _lead_times_from_idx(idx_path)
+        lead_times_source = "idx" if lead_times else "skip-no-idx"
+    else:
+        lead_times = []
+        lead_times_source = "skip-no-idx"
     return StagedFile(
         source=source,
         herbie_model=herbie_model,
@@ -503,13 +536,14 @@ def _record_existing(
         init_time=_isoformat_utc(init_dt),
         variable_level=token,
         fxx_bucket=bucket,
-        lead_times=[],
+        lead_times=lead_times,
         product=str(cfg.get("default_product", "")),
         local_path=str(dest),
         remote_url=_reforecast_remote_url(token, init_dt, member_token, bucket),
         size_bytes=dest.stat().st_size,
         sha256=_sha256(dest),
         created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+        lead_times_source=lead_times_source,
     )
 
 
@@ -657,6 +691,7 @@ def _nam_staged_file(
         size_bytes=dest.stat().st_size,
         sha256=_sha256(dest),
         created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+        lead_times_source="analysis",
     )
 
 
