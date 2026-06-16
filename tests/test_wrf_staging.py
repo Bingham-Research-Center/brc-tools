@@ -439,8 +439,37 @@ def test_build_manifest_shape():
     assert m["case"]["sources"] == ["gefs_reforecast"]
     assert m["provenance"]["generated_at"].endswith("Z")
     assert "git_sha" in m["provenance"] and "tool_version" in m["provenance"]
+    assert m["provenance"]["total_bytes"] == 123  # sum of staged size_bytes
+    assert m["provenance"]["elapsed_seconds"] is None  # not passed -> null
     assert len(m["staged_files"]) == 1
     assert m["staged_files"][0]["variable_level"] == "tmp_2m"
+
+
+def test_manifest_records_total_bytes_and_elapsed():
+    def _sf(size: int) -> StagedFile:
+        return StagedFile(
+            source="nam_analysis", herbie_model="", member="", member_int=0,
+            init_time="2013-01-31T12:00:00Z", variable_level="all", fxx_bucket="analysis",
+            lead_times=[0], product="x", local_path="/x/f", remote_url="h",
+            size_bytes=size, sha256="a", created_at="2026-06-15T00:00:00Z",
+        )
+
+    m = build_manifest(
+        case="c", region="uinta_basin_wide",
+        requested_window=("2013-01-31T12:00:00Z", "2013-02-02T00:00:00Z"),
+        interval_hours=6, sources=["nam_analysis"], staged=[_sf(100), _sf(250)],
+        elapsed_seconds=1.23456,
+    )
+    assert m["provenance"]["total_bytes"] == 350  # footprint = sum of size_bytes
+    assert m["provenance"]["elapsed_seconds"] == 1.235  # rounded to 3 dp
+
+    m0 = build_manifest(
+        case="c", region="uinta_basin_wide",
+        requested_window=("2013-01-31T12:00:00Z", "2013-02-02T00:00:00Z"),
+        interval_hours=6, sources=["nam_analysis"], staged=[],
+    )
+    assert m0["provenance"]["total_bytes"] == 0
+    assert m0["provenance"]["elapsed_seconds"] is None  # unmeasured
 
 
 def test_write_manifest_roundtrips(tmp_path):

@@ -802,8 +802,13 @@ def build_manifest(
     interval_hours: int,
     sources: list[str],
     staged: list[StagedFile],
+    elapsed_seconds: float | None = None,
 ) -> dict:
-    """Compose the staging manifest (case block + provenance + per-file list)."""
+    """Compose the staging manifest (case block + provenance + per-file list).
+
+    ``elapsed_seconds`` is the end-to-end staging wall-time measured by the caller
+    (:func:`stage_case`); ``None`` when the manifest is built outside a timed run.
+    """
     lu = load_lookups()
     region_cfg = lu.get("regions", {}).get(region, {})
     bbox = (
@@ -836,6 +841,15 @@ def build_manifest(
             "git_sha": _git_sha(),
             "herbie_version": _herbie_version(),
             "generated_at": _isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+            "total_bytes": int(sum(s.size_bytes for s in staged)),
+            "elapsed_seconds": (
+                round(float(elapsed_seconds), 3) if elapsed_seconds is not None else None
+            ),
+            "note": (
+                "total_bytes is the on-disk footprint of staged_files (not bytes "
+                "transferred -- skip-existing files inflate it); elapsed_seconds is "
+                "end-to-end staging wall-time (includes sha256 + move), null if unmeasured."
+            ),
         },
         "staged_files": [asdict(s) for s in staged],
     }
@@ -1083,6 +1097,7 @@ def stage_case(
         interval_hours = _interval_hours_for_sources(src_list, lu)
 
     staged: list[StagedFile] = []
+    t0 = time.perf_counter()  # end-to-end staging wall-time (incl. sha256 + move)
     for src in src_list:
         if src == DEFAULT_NAM_SOURCE:
             staged.extend(
@@ -1119,6 +1134,7 @@ def stage_case(
         interval_hours=interval_hours,
         sources=list(src_list),
         staged=staged,
+        elapsed_seconds=time.perf_counter() - t0,
     )
     case_dir = Path(output_root) / case
     manifest_path = write_manifest(manifest, case_dir)
