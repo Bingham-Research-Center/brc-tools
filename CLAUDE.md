@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging**: stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin) and **merged to `main` via PR #22**; GEFS two-stream still optional. A post-merge staging-hygiene batch (manifest schema v2 + token preflight) is on branch `feat/wrf-input-staging` (PR open). Status: `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detailed handoff: `docs/WRF-INPUT-STAGING.md`. If arriving from `brc-wrf`, read `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`; handing the run side back to `brc-wrf`, use `docs/HANDOFF-TO-BRC-WRF.md` (+ `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md` for the cross-repo wiring/caretaker pass).
+- **WRF-input staging**: GRIB → scratch for WPS/WRF (brc-tools' half; the model run is `brc-wrf`'s). NAM-only proven & merged; GEFS+NAM two-stream optional/unproven. State → `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detail → `docs/WRF-INPUT-STAGING.md`; cross-repo handoffs → `docs/HANDOFF-TO-BRC-WRF.md` + `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md`; arriving from brc-wrf → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -85,8 +85,8 @@ a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 pytest tests/
 ```
 Local Python work: use a conda env that carries the deps (herbie, polars, pandas,
-matplotlib, requests) — `clyfar-nov2025` works — not bare `python`. (There is no
-dedicated `brc-tools` env.)
+matplotlib, requests). On this CHPC checkout `clyfar-nov2025` already has them;
+fresh setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).
