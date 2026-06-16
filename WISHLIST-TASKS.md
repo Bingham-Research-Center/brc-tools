@@ -2,6 +2,21 @@
 
 Completed items are removed once merged; git history is the record.
 
+## WRF-input staging (branch `feat/wrf-input-staging`)
+
+A separate active lane: stage GRIB (GEFSv12 reforecast + NAM analysis) to scratch
+for WRF/WPS, with a provenance manifest + case contract. **NAM-only single-stream is
+proven end-to-end** (WPS → `real.exe` → `wrf.exe`); the **GEFS+NAM two-stream path is
+not** proven. brc-tools owns download/staging/manifest only — WPS/`real.exe`/`wrf.exe`/
+Slurm run profiles stay in `brc-wrf`.
+
+- Canonical docs: `docs/WRF-INPUT-STAGING.md` (full handoff) and
+  `docs/WRF-STAGING-STATE-PLAYBOOK.md` (terse state).
+- Cross-repo entry point: `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+- The remaining staging-microtask backlog (#4–#13, #31, …) lives in
+  `../brc-wrf/doc/BRC_WRF_MICROTASK_HANDOFF.md` — that handoff is the source of truth
+  for this lane; not duplicated here.
+
 ## Priority 1: Reliability
 
 The NWP/obs pipeline is functional but undertested. One regression in
