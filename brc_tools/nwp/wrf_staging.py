@@ -44,8 +44,10 @@ import socket
 import subprocess
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 import fasteners
 import requests
@@ -66,7 +68,9 @@ DEFAULT_SCRATCH_ROOT = Path(
     f"/scratch/general/vast/{os.environ.get('USER', 'user')}/wrf_inputs"
 )
 TOOL_NAME = "brc-tools"
-MANIFEST_SCHEMA_VERSION = 1
+# v2: added staged_files[].lead_times_source + provenance.total_bytes/elapsed_seconds.
+# Additive only; brc-wrf reads the contract sidecar, and verify_manifest still reads v1.
+MANIFEST_SCHEMA_VERSION = 2
 CONTRACT_SCHEMA_VERSION = 1
 
 # Split HTTP timeouts for direct GETs: a short connect bound (so a wedged socket
@@ -134,6 +138,11 @@ class StagedFile:
     size_bytes: int
     sha256: str
     created_at: str
+    # Provenance of ``lead_times``: "inventory" (parsed from a live Herbie inventory at
+    # download), "analysis" (NAM single-cycle, always [0]), "idx" (recovered from a
+    # co-located ``<file>.idx`` on the skip-existing path), or "skip-no-idx" (skip path
+    # with no sidecar idx — ``lead_times`` is empty; re-run with overwrite for full fidelity).
+    lead_times_source: str = "inventory"
 
 
 # ── token / path helpers ────────────────────────────────────────────────────
@@ -283,6 +292,22 @@ def _lead_times_from_inventory(inv) -> list[int]:
     if inv is None:
         return []
     hours = {h for h in (_parse_lead(v) for v in _inv_lead_values(inv)) if h is not None}
+    return sorted(hours)
+
+
+def _lead_times_from_idx(idx_path: Path) -> list[int]:
+    """Best-effort sorted integer lead-time list from a co-located GRIB ``.idx`` sidecar.
+
+    The idx is the wgrib-style inventory text written next to a GRIB; each line carries a
+    forecast-time token (e.g. ``...:3 hour fcst:...``) that :func:`_parse_lead` already
+    understands. Returns ``[]`` on any read/parse failure, so the caller falls back to a
+    degraded (but labelled) skip entry rather than raising.
+    """
+    try:
+        text = Path(idx_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    hours = {h for h in (_parse_lead(line) for line in text.splitlines()) if h is not None}
     return sorted(hours)
 
 
@@ -478,6 +503,7 @@ def stage_reforecast(
                     size_bytes=dest.stat().st_size,
                     sha256=_sha256(dest),
                     created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+                    lead_times_source="inventory",
                 )
             )
             LOG.info("staged %s -> %s (%d bytes)", token, dest, dest.stat().st_size)
@@ -490,11 +516,20 @@ def _record_existing(
 ) -> StagedFile:
     """Build a StagedFile for an already-present file without re-downloading.
 
-    ``lead_times`` is left empty because deriving it would require an
-    ``H.inventory()`` network call, which the skip-existing path deliberately
-    avoids; ``remote_url`` is reconstructed deterministically. Use
-    ``overwrite=True`` for a full-fidelity manifest.
+    The skip-existing path deliberately avoids an ``H.inventory()`` network call, so
+    ``lead_times`` is recovered offline only from a co-located ``<dest>.idx`` sidecar
+    *if one is present* (``lead_times_source="idx"``). In normal operation no idx is
+    co-located — staging moves only the GRIB, not its idx — so the entry is recorded
+    empty and labelled ``"skip-no-idx"``; re-run with ``overwrite=True`` for
+    full-fidelity lead times. ``remote_url`` is reconstructed deterministically.
     """
+    idx_path = Path(str(dest) + ".idx")
+    if idx_path.exists():
+        lead_times = _lead_times_from_idx(idx_path)
+        lead_times_source = "idx" if lead_times else "skip-no-idx"
+    else:
+        lead_times = []
+        lead_times_source = "skip-no-idx"
     return StagedFile(
         source=source,
         herbie_model=herbie_model,
@@ -503,13 +538,14 @@ def _record_existing(
         init_time=_isoformat_utc(init_dt),
         variable_level=token,
         fxx_bucket=bucket,
-        lead_times=[],
+        lead_times=lead_times,
         product=str(cfg.get("default_product", "")),
         local_path=str(dest),
         remote_url=_reforecast_remote_url(token, init_dt, member_token, bucket),
         size_bytes=dest.stat().st_size,
         sha256=_sha256(dest),
         created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+        lead_times_source=lead_times_source,
     )
 
 
@@ -657,6 +693,7 @@ def _nam_staged_file(
         size_bytes=dest.stat().st_size,
         sha256=_sha256(dest),
         created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+        lead_times_source="analysis",
     )
 
 
@@ -767,8 +804,13 @@ def build_manifest(
     interval_hours: int,
     sources: list[str],
     staged: list[StagedFile],
+    elapsed_seconds: float | None = None,
 ) -> dict:
-    """Compose the staging manifest (case block + provenance + per-file list)."""
+    """Compose the staging manifest (case block + provenance + per-file list).
+
+    ``elapsed_seconds`` is the end-to-end staging wall-time measured by the caller
+    (:func:`stage_case`); ``None`` when the manifest is built outside a timed run.
+    """
     lu = load_lookups()
     region_cfg = lu.get("regions", {}).get(region, {})
     bbox = (
@@ -801,6 +843,15 @@ def build_manifest(
             "git_sha": _git_sha(),
             "herbie_version": _herbie_version(),
             "generated_at": _isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+            "total_bytes": int(sum(s.size_bytes for s in staged)),
+            "elapsed_seconds": (
+                round(float(elapsed_seconds), 3) if elapsed_seconds is not None else None
+            ),
+            "note": (
+                "total_bytes is the on-disk footprint of staged_files (not bytes "
+                "transferred -- skip-existing files inflate it); elapsed_seconds is "
+                "end-to-end staging wall-time (includes sha256 + move), null if unmeasured."
+            ),
         },
         "staged_files": [asdict(s) for s in staged],
     }
@@ -1006,6 +1057,94 @@ def verify_manifest(manifest_path: str | Path) -> dict:
     return {"ok": n_ok == len(results), "n_files": len(results), "n_ok": n_ok, "results": results}
 
 
+# ── token preflight (reforecast S3 prefix vs configured wps_variable_levels) ──
+
+
+def _list_s3_keys(url: str, connect_timeout: float, read_timeout: float) -> list[str]:
+    """GET an S3 ``list-type=2`` URL and return every ``<Key>`` in the response.
+
+    Namespace-agnostic XML parse (matches tags whose localname is ``Key``, so it is
+    immune to the ``xmlns`` on ``ListBucketResult``). Warns if the listing is truncated
+    (``IsTruncated=true``); a reforecast member/bucket dir holds ~21 files, far under the
+    1000-key page limit, so a single page is expected.
+    """
+    timeout = (connect_timeout, read_timeout)
+    with requests.get(url, timeout=timeout) as resp:
+        resp.raise_for_status()
+        body = resp.content
+    root = ET.fromstring(body)
+    keys: list[str] = []
+    truncated = False
+    for elem in root.iter():
+        tag = elem.tag.rsplit("}", 1)[-1]  # strip any {namespace}
+        if tag == "Key" and elem.text:
+            keys.append(elem.text)
+        elif tag == "IsTruncated" and (elem.text or "").strip().lower() == "true":
+            truncated = True
+    if truncated:
+        LOG.warning("S3 listing truncated (>1000 keys?) at %s; results may be partial.", url)
+    return keys
+
+
+def preflight_tokens(
+    *,
+    init_time: str | dt.datetime,
+    member: int = 0,
+    source: str = DEFAULT_SOURCE,
+    fxx: int = 12,
+    variable_levels: list[str] | None = None,
+    connect_timeout: float = DEFAULT_HTTP_CONNECT_TIMEOUT,
+    read_timeout: float = DEFAULT_HTTP_READ_TIMEOUT,
+) -> dict:
+    """Diff the reforecast S3 prefix listing against the configured ``wps_variable_levels``.
+
+    Lists the per-variable files actually present at the reforecast init/member/bucket
+    prefix on S3 and compares their variable-level tokens to the configured set, catching
+    dataset drift across the 2000-2019 archive **before** a stage commits to downloads.
+    One S3 ``list-type=2`` GET; no GRIB is fetched. Returns
+    ``{prefix, bucket, member, configured, available, missing, extra, ok}`` where
+    ``missing`` are configured-but-absent tokens, ``extra`` present-but-unconfigured, and
+    ``ok`` is ``True`` when nothing configured is missing.
+    """
+    init_dt = _parse_init_time(init_time)
+    lu = load_lookups()
+    cfg = lu["models"].get(source, {})
+    breakpoint_fxx = int(cfg.get("fxx_bucket_breakpoint", 240))
+    member_token = _member_token(member)
+    bucket = _fxx_bucket(int(fxx), breakpoint_fxx)
+    configured = list(variable_levels or cfg.get("wps_variable_levels", []))
+
+    prefix = f"GEFSv12/reforecast/{init_dt:%Y}/{init_dt:%Y%m%d%H}/{member_token}/{bucket}/"
+    url = (
+        "https://noaa-gefs-retrospective.s3.amazonaws.com/?list-type=2&prefix="
+        + quote(prefix, safe="")  # encode the Days:1-10 colon + the slashes
+    )
+    keys = _list_s3_keys(url, connect_timeout, read_timeout)
+
+    # Recover each variable-level token by stripping the deterministic
+    # "_<yyyymmdd><hh>_<member>.grib2" suffix (derived from _reforecast_filename — DRY).
+    suffix = _reforecast_filename("", init_dt, member_token)
+    available = sorted(
+        {
+            name[: -len(suffix)]
+            for name in (k.rsplit("/", 1)[-1] for k in keys)
+            if name.endswith(suffix) and len(name) > len(suffix)
+        }
+    )
+    missing = sorted(set(configured) - set(available))
+    extra = sorted(set(available) - set(configured))
+    return {
+        "prefix": prefix,
+        "bucket": bucket,
+        "member": member_token,
+        "configured": configured,
+        "available": available,
+        "missing": missing,
+        "extra": extra,
+        "ok": not missing,
+    }
+
+
 # ── orchestrator ────────────────────────────────────────────────────────────
 
 
@@ -1048,6 +1187,7 @@ def stage_case(
         interval_hours = _interval_hours_for_sources(src_list, lu)
 
     staged: list[StagedFile] = []
+    t0 = time.perf_counter()  # end-to-end staging wall-time (incl. sha256 + move)
     for src in src_list:
         if src == DEFAULT_NAM_SOURCE:
             staged.extend(
@@ -1084,6 +1224,7 @@ def stage_case(
         interval_hours=interval_hours,
         sources=list(src_list),
         staged=staged,
+        elapsed_seconds=time.perf_counter() - t0,
     )
     case_dir = Path(output_root) / case
     manifest_path = write_manifest(manifest, case_dir)
@@ -1198,6 +1339,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--verify-manifest", default=None, metavar="PATH",
         help="Re-hash staged files against a manifest JSON and exit (integrity check).",
     )
+    parser.add_argument(
+        "--preflight", action="store_true",
+        help="List the reforecast S3 prefix for --init-time/--members[0] and diff against "
+             "wps_variable_levels, then exit (catches token drift; one live S3 GET).",
+    )
     parser.add_argument("--no-quicklook", action="store_true", help="Skip quicklook figures.")
     parser.add_argument("--obs-check", action="store_true", help="Attempt SynopticPy obs overlay (opt-in).")
     parser.add_argument("--no-validate-tokens", action="store_true", help="Skip the H.inventory() token guard.")
@@ -1250,6 +1396,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         _print_plan(plan)
         return 0
+
+    if args.preflight:
+        report = preflight_tokens(
+            init_time=args.init_time,
+            member=members[0] if members else 0,
+            source=sources[0] if sources else DEFAULT_SOURCE,
+            fxx=fxx_window[0],
+            variable_levels=variable_levels,
+            connect_timeout=args.connect_timeout,
+            read_timeout=args.read_timeout,
+        )
+        print(f"preflight {report['member']} s3://noaa-gefs-retrospective/{report['prefix']}")
+        print(f"  available={len(report['available'])} configured={len(report['configured'])}")
+        if report["missing"]:
+            print("  MISSING (configured, not on S3): " + ", ".join(report["missing"]))
+        if report["extra"]:
+            print("  extra (on S3, not configured): " + ", ".join(report["extra"]))
+        print("preflight: " + ("OK" if report["ok"] else "DRIFT"))
+        return 0 if report["ok"] else 1
 
     try:
         manifest_path = stage_case(

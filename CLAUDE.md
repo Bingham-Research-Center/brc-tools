@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin); merge gate met, GEFS two-stream still optional. Handoff + microtasks + CHPC/SLURM: `docs/WRF-INPUT-STAGING.md`.
+- **WRF-input staging**: GRIB → scratch for WPS/WRF (brc-tools' half; the model run is `brc-wrf`'s). NAM-only proven & merged; GEFS+NAM two-stream optional/unproven. State → `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detail → `docs/WRF-INPUT-STAGING.md`; cross-repo handoffs → `docs/HANDOFF-TO-BRC-WRF.md` + `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md`; arriving from brc-wrf → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -23,19 +23,28 @@ brc_tools/        installable package
   utils/          lookups, small helpers
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
+  walkthroughs/   plain-language per-tool guides + glossary
 tests/            pytest suite
 figures/          generated output (gitignored)
 ```
 
 ## Doc map (single source of truth per topic)
 - `README.md` — install + minimal quick usage (human onboarding)
+- `docs/walkthroughs/` — plain-language per-tool walk-throughs + shared glossary (new-hire entry point)
+- `docs/README.md` — index of the `docs/` directory (mirrors this map)
 - `docs/API-REFERENCE.md` — full module / function reference
+- `docs/API-CLIENTS.md` — external API-client helpers (e.g. FlightAware/AeroAPI)
 - `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script (pattern, conventions)
 - `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload)
+- `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
 - `docs/ENVIRONMENT-SETUP.md` — conda / venv setup
 - `docs/CROSS-REPO-SYNC.md` — sync protocol with clyfar / ubair-website / preprint
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy and phase tracker
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
+- `docs/WRF-STAGING-STATE-PLAYBOOK.md` — terse WRF staging state and reading packet
+- `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (NOT proven)
+- `docs/HANDOFF-TO-BRC-WRF.md` — paste-prompt to hand the WRF run side to a brc-wrf session
+- `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md` — cross-repo wiring + AGENTS-caretaker handoff to brc-wrf
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and
@@ -51,7 +60,8 @@ with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
 a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 
 ## Conventions
-- **UTC internally, always.** `datetime.timezone.utc`, never pytz.
+- **UTC internally, always.** `datetime.timezone.utc`, never pytz. (Servers sit in different local zones — UTC is the portable invariant; convert to Mountain only at display.)
+- **No path crosses machines.** CHPC and the Linode/Akamai website hub share **no filesystem**; absolute paths (`/uufs`, `/scratch`, `~`) are machine-local (CHPC-only here). The cross-machine seam is the **HTTP URL contract** (`BASINWX_API_URLS` / `~/.config/ubair-website/website_url`), never a shared path; in-repo doc/code references use **relative** paths. Same discipline as UTC: commit the portable invariant (UTC / URL / relative), never the machine-specific form. **Cold-start check:** if a doc or script hands an absolute path to the *other* server, that's a bug.
 - **Polars** preferred over pandas for new code.
 - **American English** in code identifiers (British prose is fine).
 - **Imports**: stdlib → third-party → local.
@@ -74,7 +84,9 @@ a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 ```
 pytest tests/
 ```
-Local Python work: use the `brc-tools` conda env, not bare `python`.
+Local Python work: use a conda env that carries the deps (herbie, polars, pandas,
+matplotlib, requests). On this CHPC checkout `clyfar-nov2025` already has them;
+fresh setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).

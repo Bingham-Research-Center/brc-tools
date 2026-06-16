@@ -67,6 +67,13 @@ These files must stay aligned across repos:
 > still use `AGENT-INDEX.md`. The `CONTRADICTIONS-REPORT.md` file lives in
 > `clyfar` and `preprint-clyfar-v0p9` (where the MSLP-unit issue actually
 > resides), not in brc-tools.
+>
+> **Note (2026-06-16, brc-tools-local):** brc-tools also has a separate seam to
+> **brc-wrf** (the WRF model fork) for WRF-input GRIB staging — *not* one of the 4
+> repos above. Its contract is the manifest/contract sidecar boundary; the protocol
+> lives in `docs/WRF-INPUT-STAGING.md`, `docs/HANDOFF-TO-BRC-WRF.md`, and
+> `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md` (cross-repo wiring + caretaker). Keep that
+> seam's docs in sync there, not here.
 
 ## Workflow for Making Changes
 

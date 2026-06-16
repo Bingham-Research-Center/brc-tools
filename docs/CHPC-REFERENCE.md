@@ -85,6 +85,7 @@ Swap to `--server-url https://www.basinwx.com` for production.
 | `ModuleNotFoundError: brc_tools` | PYTHONPATH unset or wrong env | Activate the env and re-source `~/.bashrc` |
 | Conda not found | Shell not initialised | `source ~/software/pkg/miniforge3/etc/profile.d/conda.sh` |
 | `df` reports "Too many levels of symbolic links" on a group volume | autofs fault on this node | Try a different node; volume may still be intact elsewhere |
+| Synoptic `stream_flow` / `gage_height` queries return zero stations | The token lacks the **USGS HYDRO** network (`mnet_id=203`) — it's a separate entitlement, not bundled with state/20-yr access | Email `support@synopticdata.com` to add network 203; meanwhile pull gauges directly from **USGS NWIS** (`pip install dataretrieval`, or `https://waterservices.usgs.gov/nwis/`) |
 
 ## Team members (CHPC access)
 

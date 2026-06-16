@@ -2,6 +2,21 @@
 
 Completed items are removed once merged; git history is the record.
 
+## WRF-input staging (branch `feat/wrf-input-staging`)
+
+A separate active lane: stage GRIB (GEFSv12 reforecast + NAM analysis) to scratch
+for WRF/WPS, with a provenance manifest + case contract. **NAM-only single-stream is
+proven end-to-end** (WPS → `real.exe` → `wrf.exe`); the **GEFS+NAM two-stream path is
+not** proven. brc-tools owns download/staging/manifest only — WPS/`real.exe`/`wrf.exe`/
+Slurm run profiles stay in `brc-wrf`.
+
+- Canonical docs: `docs/WRF-INPUT-STAGING.md` (full handoff) and
+  `docs/WRF-STAGING-STATE-PLAYBOOK.md` (terse state).
+- Cross-repo entry point: `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+- The remaining staging-microtask backlog (#4–#13, #31, …) lives in
+  `../brc-wrf/doc/BRC_WRF_MICROTASK_HANDOFF.md` — that handoff is the source of truth
+  for this lane; not duplicated here.
+
 ## Priority 1: Reliability
 
 The NWP/obs pipeline is functional but undertested. One regression in
@@ -18,11 +33,12 @@ in every case study.
 The case study pipeline proves the NWP library works. Closing #10 means
 the website receives fresh HRRR forecasts automatically.
 
-- [ ] **Define BasinWX JSON contract for HRRR waypoint forecasts** — document the expected JSON shape, variable names (`PM_25_concentration` vs `pm25_concentration`), and upload endpoint. Needs `reference/WEBSITE-INTEGRATION.md`.
+- [ ] **Define BasinWX JSON contract for HRRR waypoint forecasts** — document the expected JSON shape, variable names (`PM_25_concentration` vs `pm25_concentration`), and upload endpoint. Generic upload contract now documented in `docs/WEBSITE-INTEGRATION.md`; this item remains for the HRRR-waypoint-specific variable naming.
 - [ ] **HRRR waypoint forecast script** — scheduled script that calls `NWPSource.fetch()` → `extract_at_waypoints()` → formats JSON → `push_data.send_json_to_server()`. Target: hourly cron on CHPC.
 - [ ] Test data export format matches the JSON contract above.
 - [ ] Add structured logging to the operational script (replace print statements for scheduled/unattended runs).
-- [ ] **Road-forecast `points[]` projection** — `brc_tools/download/get_road_forecast.py` currently emits `routes{routeId: {waypoints[]}}` but `ubair-website/server/roadWeatherService.js:400` (`getHRRRConditionAtPoint`) reads `hrrrForecast.points[]`. Without a flat `points[]` the website parser returns `null` even when the file is uploaded. Design questions to resolve: (a) replace `routes{}` or supplement it (downstream consumers TBD); (b) per-point `forecasts[{valid_time, temp_2m, ...}]` array vs single `forecasts[0]` only — `roadWeatherService.js:420` reads index 0 only; (c) cardinality — flatten all route waypoints into one `points[]` or sample a denser grid. Cite: handoff `WEBSITE-BRCTOOLS-HANDOFF-apr27.md` §"DATATYPE 1 — road-forecast", and `dataUpload.js:189` (only `dataType==='road-forecast'` triggers `latest.json` side-effect — keep that bucket).
+- [ ] **Road-forecast `points[]` projection** — `brc_tools/download/get_road_forecast.py` currently emits `routes{routeId: {waypoints[]}}` but `ubair-website/server/roadWeatherService.js:400` (`getHRRRConditionAtPoint`) reads `hrrrForecast.points[]`. Without a flat `points[]` the website parser returns `null` even when the file is uploaded. Design questions to resolve: (a) replace `routes{}` or supplement it (downstream consumers TBD); (b) per-point `forecasts[{valid_time, temp_2m, ...}]` array vs single `forecasts[0]` only — `roadWeatherService.js:420` reads index 0 only; (c) cardinality — flatten all route waypoints into one `points[]` or sample a denser grid. Cite: `docs/WEBSITE-INTEGRATION.md` (road-forecast §) and `dataUpload.js:189` (only `dataType==='road-forecast'` triggers `latest.json` side-effect — keep that bucket).
+- [ ] **Dark website dataTypes (2026-04-27 handoff)** — three products the website expects but brc-tools never emits: `forecast_hrrr_kvel_crosswind_*` (PR #183), `forecast_hrrr_surface_layers_*` (PR #176), and the `forecasts` clustering fan-out gap to `.dev`. Schemas + endpoint contract in `docs/WEBSITE-INTEGRATION.md`.
 
 ## Priority 3: Analysis capability
 
@@ -32,6 +48,7 @@ Extend the case study toolkit for deeper diagnostics.
 - [ ] **Profile plotting** (`visualize/profile.py`) — single-station vertical profile. Stubs exist.
 - [ ] HRRR sub-hourly (15-min) support — product "subh" is defined in lookups.toml but untested.
 - [ ] GEFS ensemble workflows — spread, probability, lagged ensemble. Config exists; no analysis code yet.
+- [ ] **Synoptic USGS-HYDRO access** — the token lacks network `mnet_id=203`, so `stream_flow`/`gage_height` queries return zero. Email `support@synopticdata.com` to add it; interim workaround = USGS NWIS direct (`dataretrieval`). Fact + evidence folded into `docs/CHPC-REFERENCE.md`. `scripts/inventory_streamflow_vernal.py` lights up once granted.
 
 ## Priority 4: Developer experience
 
@@ -54,10 +71,8 @@ here so the next cold-start agent knows to tackle it.
 - [ ] **Roadmap brainstorm** — prepare a small doc (`docs/ROADMAP.md` or
   similar) that captures the next 6–12 months of work in outcome terms, not
   task lists. Input to the CLAUDE.md overhaul.
-- [ ] **Prune root + file contents** for AI-and-human readability: remove
-  stale `docs/` entries (PIPELINE-ARCHITECTURE aspirational, `nwp/MERGE-PLAN`
-  historical), consolidate `docs/nwp/` archive, and make sure every top-level
-  file earns its place.
+- [ ] **Prune root + file contents** for AI-and-human readability: keep
+  `docs/nwp/` tight and make sure every top-level file earns its place.
 - [ ] **Update "Key data-flow anchor" in CLAUDE.md** post-fan-out to mention
   `send_json_to_all` + `BASINWX_API_URLS` (small; bundle with the overhaul
   above unless a cold-start agent wants a quick win first).

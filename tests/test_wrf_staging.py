@@ -7,6 +7,7 @@ A live smoke test that hits real S3 is gated behind ``RUN_LIVE_HERBIE=1`` and th
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import socket
 from pathlib import Path
@@ -153,10 +154,11 @@ def test_staged_file_schema():
     expected = {
         "source", "herbie_model", "member", "member_int", "init_time",
         "variable_level", "fxx_bucket", "lead_times", "product", "local_path",
-        "remote_url", "size_bytes", "sha256", "created_at",
+        "remote_url", "size_bytes", "sha256", "created_at", "lead_times_source",
     }
     assert set(d) == expected
     assert d["init_time"].endswith("Z") and isinstance(d["member_int"], int)
+    assert d["lead_times_source"] == "inventory"  # default when not given
 
 
 def test_nam_cycle_enumeration():
@@ -206,6 +208,7 @@ def test_stage_reforecast_moves_into_layout(tmp_path, fake_herbie):
         assert dest.parent == tmp_path / "t" / "gefs_reforecast" / "c00"
         assert sf.member == "c00" and sf.member_int == 0
         assert sf.lead_times == _FULL_LEADS  # whole bucket parsed from inventory
+        assert sf.lead_times_source == "inventory"
         assert sf.sha256 and sf.size_bytes == len(_VALID_GRIB)
         assert sf.remote_url and sf.remote_url.endswith(".grib2")
     assert fake_herbie.last_search is None  # whole-file download, no byte-range subset
@@ -232,6 +235,35 @@ def test_stage_reforecast_skips_existing(tmp_path, fake_herbie):
     assert len(staged) == 1
     assert fake_herbie.init_count == 0  # Herbie never constructed
     assert fake_herbie.download_count == 0
+
+
+def test_skip_existing_labels_idx_and_no_idx(tmp_path, fake_herbie):
+    dest = _canonical_staging_path(
+        tmp_path, "t", "gefs_reforecast", "c00", "tmp_2m_2013013100_c00.grib2"
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(_VALID_GRIB)
+
+    kw = dict(
+        init_time="2013-01-31 00Z", variable_levels=["tmp_2m"], member=0,
+        output_root=tmp_path, case="t", herbie_save_dir=tmp_path / "cache",
+    )
+
+    # (a) no co-located idx -> empty lead_times, explicitly labelled "skip-no-idx"
+    staged = stage_reforecast(**kw)
+    assert staged[0].lead_times == []
+    assert staged[0].lead_times_source == "skip-no-idx"
+
+    # (b) a co-located <dest>.idx is parsed offline -> recovered leads, labelled "idx"
+    Path(str(dest) + ".idx").write_text(
+        "1:0:d=2013013100:TMP:2 m above ground:12 hour fcst:ENS=low-res ctl\n"
+        "2:100:d=2013013100:TMP:2 m above ground:24 hour fcst:ENS=low-res ctl\n"
+        "3:200:d=2013013100:TMP:2 m above ground:36 hour fcst:ENS=low-res ctl\n"
+    )
+    staged = stage_reforecast(**kw)
+    assert staged[0].lead_times == [12, 24, 36]
+    assert staged[0].lead_times_source == "idx"
+    assert fake_herbie.download_count == 0  # both runs hit the skip path, no download
 
 
 def test_validate_tokens_raises_on_empty_inventory(tmp_path, fake_herbie):
@@ -283,6 +315,23 @@ def test_remote_url_recorded(tmp_path, fake_herbie):
         herbie_save_dir=tmp_path / "cache",
     )
     assert staged[0].remote_url.startswith("https://noaa-gefs-retrospective.s3.amazonaws.com/")
+
+
+def test_fxx_window_crossing_bucket_warns_and_stages_first(tmp_path, fake_herbie, caplog):
+    # An fxx window straddling the 240 h breakpoint (200 -> Days:1-10, 300 -> Days:10-16):
+    # current contract is warn + stage only the first bucket (a true split needs a
+    # bucket-in-filename layout change, out of scope). Pin that so a change is deliberate.
+    with caplog.at_level(logging.WARNING, logger="brc_tools.nwp.wrf_staging"):
+        staged = stage_reforecast(
+            init_time="2013-01-31 00Z", variable_levels=["tmp_2m"], member=0,
+            output_root=tmp_path, case="t", herbie_save_dir=tmp_path / "cache",
+            fxx_window=(200, 300),
+        )
+    assert len(staged) == 1
+    assert staged[0].fxx_bucket == "Days:1-10"  # only the first bucket is staged
+    warnings_ = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("bucket" in r.getMessage().lower() for r in warnings_)  # breakpoint warned
+    assert any("240" in r.getMessage() for r in warnings_)
 
 
 # ── NAM analysis stager (mocked HTTP) ────────────────────────────────────────
@@ -408,8 +457,37 @@ def test_build_manifest_shape():
     assert m["case"]["sources"] == ["gefs_reforecast"]
     assert m["provenance"]["generated_at"].endswith("Z")
     assert "git_sha" in m["provenance"] and "tool_version" in m["provenance"]
+    assert m["provenance"]["total_bytes"] == 123  # sum of staged size_bytes
+    assert m["provenance"]["elapsed_seconds"] is None  # not passed -> null
     assert len(m["staged_files"]) == 1
     assert m["staged_files"][0]["variable_level"] == "tmp_2m"
+
+
+def test_manifest_records_total_bytes_and_elapsed():
+    def _sf(size: int) -> StagedFile:
+        return StagedFile(
+            source="nam_analysis", herbie_model="", member="", member_int=0,
+            init_time="2013-01-31T12:00:00Z", variable_level="all", fxx_bucket="analysis",
+            lead_times=[0], product="x", local_path="/x/f", remote_url="h",
+            size_bytes=size, sha256="a", created_at="2026-06-15T00:00:00Z",
+        )
+
+    m = build_manifest(
+        case="c", region="uinta_basin_wide",
+        requested_window=("2013-01-31T12:00:00Z", "2013-02-02T00:00:00Z"),
+        interval_hours=6, sources=["nam_analysis"], staged=[_sf(100), _sf(250)],
+        elapsed_seconds=1.23456,
+    )
+    assert m["provenance"]["total_bytes"] == 350  # footprint = sum of size_bytes
+    assert m["provenance"]["elapsed_seconds"] == 1.235  # rounded to 3 dp
+
+    m0 = build_manifest(
+        case="c", region="uinta_basin_wide",
+        requested_window=("2013-01-31T12:00:00Z", "2013-02-02T00:00:00Z"),
+        interval_hours=6, sources=["nam_analysis"], staged=[],
+    )
+    assert m0["provenance"]["total_bytes"] == 0
+    assert m0["provenance"]["elapsed_seconds"] is None  # unmeasured
 
 
 def test_write_manifest_roundtrips(tmp_path):
@@ -536,6 +614,91 @@ def test_verify_manifest_pass_and_detects_corruption(tmp_path):
     problems = {Path(r["local_path"]).name: r["problem"] for r in report["results"]}
     assert problems["a.grib2"] == "missing"
     assert "size" in problems["b.grib2"] or "sha256" in problems["b.grib2"]
+
+
+# ── token preflight (offline; mocked S3 listing) ─────────────────────────────
+
+
+class _FakeXMLResponse:
+    """Stand-in for a (non-streamed) requests response carrying an S3 listing body."""
+
+    def __init__(self, body: bytes, status_code: int = 200):
+        self.content = body
+        self.status_code = status_code
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"status {self.status_code}")
+
+
+def _s3_listing_xml(keys: list[str], truncated: bool = False) -> bytes:
+    """Minimal S3 ``ListBucketResult`` (namespaced, like the real API) for given keys."""
+    ns = "http://s3.amazonaws.com/doc/2006-03-01/"
+    contents = "".join(f"<Contents><Key>{k}</Key><Size>123</Size></Contents>" for k in keys)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<ListBucketResult xmlns="{ns}">'
+        "<Name>noaa-gefs-retrospective</Name>"
+        f"<IsTruncated>{'true' if truncated else 'false'}</IsTruncated>"
+        f"{contents}"
+        "</ListBucketResult>"
+    ).encode("utf-8")
+
+
+def _reforecast_keys(tokens, *, member_token="c00", bucket="Days:1-10") -> list[str]:
+    return [
+        f"GEFSv12/reforecast/2013/2013013100/{member_token}/{bucket}/"
+        f"{tok}_2013013100_{member_token}.grib2"
+        for tok in tokens
+    ]
+
+
+def test_preflight_tokens_diffs_against_configured(monkeypatch):
+    # present on "S3": two configured + one unconfigured; one configured token omitted
+    body = _s3_listing_xml(_reforecast_keys(["hgt_pres", "tmp_2m", "weasd_extra"]))
+    captured = {}
+
+    def fake_get(url, timeout=None):
+        captured["url"] = url
+        captured["timeout"] = timeout
+        return _FakeXMLResponse(body)
+
+    monkeypatch.setattr(wrf_staging.requests, "get", fake_get)
+
+    report = wrf_staging.preflight_tokens(
+        init_time="2013-01-31 00Z", member=0,
+        variable_levels=["hgt_pres", "tmp_2m", "spfh_2m"],  # spfh_2m absent -> missing
+        connect_timeout=3.0, read_timeout=9.0,
+    )
+    assert report["bucket"] == "Days:1-10" and report["member"] == "c00"
+    assert report["available"] == ["hgt_pres", "tmp_2m", "weasd_extra"]  # incl. _abv-style names safe
+    assert report["missing"] == ["spfh_2m"]
+    assert report["extra"] == ["weasd_extra"]
+    assert report["ok"] is False
+    # prefix is URL-encoded (the Days:1-10 colon) and the timeout tuple is threaded through
+    assert "Days%3A1-10" in captured["url"]
+    assert captured["timeout"] == (3.0, 9.0)
+
+
+def test_preflight_tokens_handles_split_token_suffix_and_ok(monkeypatch):
+    # the 700 hPa split token must survive suffix-stripping (end-anchored)
+    keys = _reforecast_keys(["hgt_pres", "hgt_pres_abv700mb"])
+    monkeypatch.setattr(
+        wrf_staging.requests, "get",
+        lambda url, timeout=None: _FakeXMLResponse(_s3_listing_xml(keys)),
+    )
+    report = wrf_staging.preflight_tokens(
+        init_time="2013-01-31 00Z", member=0,
+        variable_levels=["hgt_pres", "hgt_pres_abv700mb"],
+    )
+    assert report["available"] == ["hgt_pres", "hgt_pres_abv700mb"]
+    assert report["missing"] == [] and report["extra"] == [] and report["ok"] is True
 
 
 # ── case contract + interval derivation ──────────────────────────────────────
