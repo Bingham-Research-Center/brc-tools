@@ -44,8 +44,10 @@ import socket
 import subprocess
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 import fasteners
 import requests
@@ -1055,6 +1057,94 @@ def verify_manifest(manifest_path: str | Path) -> dict:
     return {"ok": n_ok == len(results), "n_files": len(results), "n_ok": n_ok, "results": results}
 
 
+# ── token preflight (reforecast S3 prefix vs configured wps_variable_levels) ──
+
+
+def _list_s3_keys(url: str, connect_timeout: float, read_timeout: float) -> list[str]:
+    """GET an S3 ``list-type=2`` URL and return every ``<Key>`` in the response.
+
+    Namespace-agnostic XML parse (matches tags whose localname is ``Key``, so it is
+    immune to the ``xmlns`` on ``ListBucketResult``). Warns if the listing is truncated
+    (``IsTruncated=true``); a reforecast member/bucket dir holds ~21 files, far under the
+    1000-key page limit, so a single page is expected.
+    """
+    timeout = (connect_timeout, read_timeout)
+    with requests.get(url, timeout=timeout) as resp:
+        resp.raise_for_status()
+        body = resp.content
+    root = ET.fromstring(body)
+    keys: list[str] = []
+    truncated = False
+    for elem in root.iter():
+        tag = elem.tag.rsplit("}", 1)[-1]  # strip any {namespace}
+        if tag == "Key" and elem.text:
+            keys.append(elem.text)
+        elif tag == "IsTruncated" and (elem.text or "").strip().lower() == "true":
+            truncated = True
+    if truncated:
+        LOG.warning("S3 listing truncated (>1000 keys?) at %s; results may be partial.", url)
+    return keys
+
+
+def preflight_tokens(
+    *,
+    init_time: str | dt.datetime,
+    member: int = 0,
+    source: str = DEFAULT_SOURCE,
+    fxx: int = 12,
+    variable_levels: list[str] | None = None,
+    connect_timeout: float = DEFAULT_HTTP_CONNECT_TIMEOUT,
+    read_timeout: float = DEFAULT_HTTP_READ_TIMEOUT,
+) -> dict:
+    """Diff the reforecast S3 prefix listing against the configured ``wps_variable_levels``.
+
+    Lists the per-variable files actually present at the reforecast init/member/bucket
+    prefix on S3 and compares their variable-level tokens to the configured set, catching
+    dataset drift across the 2000-2019 archive **before** a stage commits to downloads.
+    One S3 ``list-type=2`` GET; no GRIB is fetched. Returns
+    ``{prefix, bucket, member, configured, available, missing, extra, ok}`` where
+    ``missing`` are configured-but-absent tokens, ``extra`` present-but-unconfigured, and
+    ``ok`` is ``True`` when nothing configured is missing.
+    """
+    init_dt = _parse_init_time(init_time)
+    lu = load_lookups()
+    cfg = lu["models"].get(source, {})
+    breakpoint_fxx = int(cfg.get("fxx_bucket_breakpoint", 240))
+    member_token = _member_token(member)
+    bucket = _fxx_bucket(int(fxx), breakpoint_fxx)
+    configured = list(variable_levels or cfg.get("wps_variable_levels", []))
+
+    prefix = f"GEFSv12/reforecast/{init_dt:%Y}/{init_dt:%Y%m%d%H}/{member_token}/{bucket}/"
+    url = (
+        "https://noaa-gefs-retrospective.s3.amazonaws.com/?list-type=2&prefix="
+        + quote(prefix, safe="")  # encode the Days:1-10 colon + the slashes
+    )
+    keys = _list_s3_keys(url, connect_timeout, read_timeout)
+
+    # Recover each variable-level token by stripping the deterministic
+    # "_<yyyymmdd><hh>_<member>.grib2" suffix (derived from _reforecast_filename — DRY).
+    suffix = _reforecast_filename("", init_dt, member_token)
+    available = sorted(
+        {
+            name[: -len(suffix)]
+            for name in (k.rsplit("/", 1)[-1] for k in keys)
+            if name.endswith(suffix) and len(name) > len(suffix)
+        }
+    )
+    missing = sorted(set(configured) - set(available))
+    extra = sorted(set(available) - set(configured))
+    return {
+        "prefix": prefix,
+        "bucket": bucket,
+        "member": member_token,
+        "configured": configured,
+        "available": available,
+        "missing": missing,
+        "extra": extra,
+        "ok": not missing,
+    }
+
+
 # ── orchestrator ────────────────────────────────────────────────────────────
 
 
@@ -1249,6 +1339,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--verify-manifest", default=None, metavar="PATH",
         help="Re-hash staged files against a manifest JSON and exit (integrity check).",
     )
+    parser.add_argument(
+        "--preflight", action="store_true",
+        help="List the reforecast S3 prefix for --init-time/--members[0] and diff against "
+             "wps_variable_levels, then exit (catches token drift; one live S3 GET).",
+    )
     parser.add_argument("--no-quicklook", action="store_true", help="Skip quicklook figures.")
     parser.add_argument("--obs-check", action="store_true", help="Attempt SynopticPy obs overlay (opt-in).")
     parser.add_argument("--no-validate-tokens", action="store_true", help="Skip the H.inventory() token guard.")
@@ -1301,6 +1396,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         _print_plan(plan)
         return 0
+
+    if args.preflight:
+        report = preflight_tokens(
+            init_time=args.init_time,
+            member=members[0] if members else 0,
+            source=sources[0] if sources else DEFAULT_SOURCE,
+            fxx=fxx_window[0],
+            variable_levels=variable_levels,
+            connect_timeout=args.connect_timeout,
+            read_timeout=args.read_timeout,
+        )
+        print(f"preflight {report['member']} s3://noaa-gefs-retrospective/{report['prefix']}")
+        print(f"  available={len(report['available'])} configured={len(report['configured'])}")
+        if report["missing"]:
+            print("  MISSING (configured, not on S3): " + ", ".join(report["missing"]))
+        if report["extra"]:
+            print("  extra (on S3, not configured): " + ", ".join(report["extra"]))
+        print("preflight: " + ("OK" if report["ok"] else "DRIFT"))
+        return 0 if report["ok"] else 1
 
     try:
         manifest_path = stage_case(

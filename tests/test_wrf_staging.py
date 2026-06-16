@@ -616,6 +616,91 @@ def test_verify_manifest_pass_and_detects_corruption(tmp_path):
     assert "size" in problems["b.grib2"] or "sha256" in problems["b.grib2"]
 
 
+# ── token preflight (offline; mocked S3 listing) ─────────────────────────────
+
+
+class _FakeXMLResponse:
+    """Stand-in for a (non-streamed) requests response carrying an S3 listing body."""
+
+    def __init__(self, body: bytes, status_code: int = 200):
+        self.content = body
+        self.status_code = status_code
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"status {self.status_code}")
+
+
+def _s3_listing_xml(keys: list[str], truncated: bool = False) -> bytes:
+    """Minimal S3 ``ListBucketResult`` (namespaced, like the real API) for given keys."""
+    ns = "http://s3.amazonaws.com/doc/2006-03-01/"
+    contents = "".join(f"<Contents><Key>{k}</Key><Size>123</Size></Contents>" for k in keys)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<ListBucketResult xmlns="{ns}">'
+        "<Name>noaa-gefs-retrospective</Name>"
+        f"<IsTruncated>{'true' if truncated else 'false'}</IsTruncated>"
+        f"{contents}"
+        "</ListBucketResult>"
+    ).encode("utf-8")
+
+
+def _reforecast_keys(tokens, *, member_token="c00", bucket="Days:1-10") -> list[str]:
+    return [
+        f"GEFSv12/reforecast/2013/2013013100/{member_token}/{bucket}/"
+        f"{tok}_2013013100_{member_token}.grib2"
+        for tok in tokens
+    ]
+
+
+def test_preflight_tokens_diffs_against_configured(monkeypatch):
+    # present on "S3": two configured + one unconfigured; one configured token omitted
+    body = _s3_listing_xml(_reforecast_keys(["hgt_pres", "tmp_2m", "weasd_extra"]))
+    captured = {}
+
+    def fake_get(url, timeout=None):
+        captured["url"] = url
+        captured["timeout"] = timeout
+        return _FakeXMLResponse(body)
+
+    monkeypatch.setattr(wrf_staging.requests, "get", fake_get)
+
+    report = wrf_staging.preflight_tokens(
+        init_time="2013-01-31 00Z", member=0,
+        variable_levels=["hgt_pres", "tmp_2m", "spfh_2m"],  # spfh_2m absent -> missing
+        connect_timeout=3.0, read_timeout=9.0,
+    )
+    assert report["bucket"] == "Days:1-10" and report["member"] == "c00"
+    assert report["available"] == ["hgt_pres", "tmp_2m", "weasd_extra"]  # incl. _abv-style names safe
+    assert report["missing"] == ["spfh_2m"]
+    assert report["extra"] == ["weasd_extra"]
+    assert report["ok"] is False
+    # prefix is URL-encoded (the Days:1-10 colon) and the timeout tuple is threaded through
+    assert "Days%3A1-10" in captured["url"]
+    assert captured["timeout"] == (3.0, 9.0)
+
+
+def test_preflight_tokens_handles_split_token_suffix_and_ok(monkeypatch):
+    # the 700 hPa split token must survive suffix-stripping (end-anchored)
+    keys = _reforecast_keys(["hgt_pres", "hgt_pres_abv700mb"])
+    monkeypatch.setattr(
+        wrf_staging.requests, "get",
+        lambda url, timeout=None: _FakeXMLResponse(_s3_listing_xml(keys)),
+    )
+    report = wrf_staging.preflight_tokens(
+        init_time="2013-01-31 00Z", member=0,
+        variable_levels=["hgt_pres", "hgt_pres_abv700mb"],
+    )
+    assert report["available"] == ["hgt_pres", "hgt_pres_abv700mb"]
+    assert report["missing"] == [] and report["extra"] == [] and report["ok"] is True
+
+
 # ── case contract + interval derivation ──────────────────────────────────────
 
 
