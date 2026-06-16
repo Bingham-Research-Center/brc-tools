@@ -48,8 +48,7 @@ Add a short block to `AGENTS.md` (keep AGENTS.md the short routing file; detail 
 ## 4. brc-tools side (done this session)
 - Doc-map drift + stale merge-status fixed; `CROSS-REPO-SYNC.md` now notes this seam.
 - Both root scratch notes deleted.
-- Staging-hygiene batch pushed to `origin/feat/wrf-input-staging`; PR open against `main`
-  (find it via `gh pr list --repo Bingham-Research-Center/brc-tools`).
+- Staging-hygiene batch **merged to `main`** (PR #23, merge commit `52908df`, 2026-06-16).
 - Matching item: microtask **#32** (brc-wrf docs reference the brc-tools staging doc + scratch
   layout) — close it as part of §1–§3.
 

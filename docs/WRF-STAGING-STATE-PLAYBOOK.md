@@ -48,7 +48,7 @@ Those belong in `brc-wrf`, using CHPC settings from `brc-knowledge`.
 
 | Order | Next move | Stop point |
 | --- | --- | --- |
-| 1 | Merge or otherwise settle `feat/wrf-input-staging` after review. | `main` contains the proven staging boundary. |
+| 1 | ✅ Done — `feat/wrf-input-staging` merged to `main` (PR #22 NAM-only, PR #23 hygiene batch). | `main` now contains the proven staging boundary. |
 | 2 | Keep NAM-only as the baseline proof. | Do not rename it as GEFS+NAM. |
 | 3 | Decide whether GEFS+NAM is needed for the next science question. | If yes, design the WPS two-stream proof with `brc-wrf`; if no, improve NAM repeatability. |
 | 4 | If GEFS+NAM is pursued, run a no-download design pass first. | Confirm Vtable, source split, and expected missing fields before WPS. |

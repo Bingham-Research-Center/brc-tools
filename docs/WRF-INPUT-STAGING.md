@@ -5,8 +5,9 @@
 
 **Status:** ✅ **end-to-end validated** (2026-06-13). NAM-only staging drove WPS → `real.exe` →
 `wrf.exe` to `SUCCESS COMPLETE WRF` for the Jan-2013 Basin case on `notch392` (full evidence in
-§2). The merge gate (Microtask 30, "merge only after a successful `real.exe`") is now **met** —
-merging `feat/wrf-input-staging` → `main` is the only remaining step. **Scope of the proof:**
+§2). The merge gate (Microtask 30, "merge only after a successful `real.exe`") was **met**, and the
+work is now **merged to `main`** (NAM-only via PR #22; the staging-hygiene batch — schema v2 + token
+preflight — via PR #23, `52908df`, 2026-06-16). **Scope of the proof:**
 NAM-only single-stream (`Vtable.NAM`); a *known* 12/4 km nested Basin domain (not a fresh
 standalone 4 km); the GEFS reforecast two-stream path is **not** yet run. Validated at commit
 `3384912` (this branch's base, == the staged source `33849121…`, before this session's hardening
@@ -16,7 +17,7 @@ sidecar) and do not touch how GRIB is downloaded or laid out, so the proof still
 **Branch reconciled with `origin/main`.** A merge commit on `feat/wrf-input-staging` folds in
 upstream's slimmed `CLAUDE.md`, the `brc_tools/api/` package, and the `in_progress/` cleanup; the
 WRF files and `lookups.toml` did not collide. The in-flight `WISHLIST-TASKS.md` /
-`docs/CHPC-REFERENCE.md` edits are committed. (Not pushed — awaiting review.)
+`docs/CHPC-REFERENCE.md` edits are committed and merged to `main`.
 
 **Goal of this track:** produce, from NWP data, the GRIB inputs WRF/WPS actually want for a Uinta
 Basin case (test case: **2013-01-31 12Z → 2013-02-02 00Z**, one domain, ~4 km), stage them to
@@ -287,7 +288,7 @@ Everything in §2 was run on **notchpeak1 (login node)**. Honest audit:
    skin temp. *(Two-stream `fg_name='GEFS','NAM'` only if reforecast forcing is pursued — still open.)*
 3. ✅ `real.exe` produces `wrfinput_d01` + `wrfbdy_d01` with **no missing mandatory field**.
 4. ✅ `wrf.exe` reaches **SUCCESS COMPLETE WRF**; `wrfout*` archived to `lawson-group6`.
-5. ⏳ Only **then** merge `feat/wrf-input-staging` → `main` — **gate met**, merge pending.
+5. ✅ Merged to `main` — NAM-only via PR #22; staging-hygiene batch via PR #23 (`52908df`, 2026-06-16).
 
 ---
 
