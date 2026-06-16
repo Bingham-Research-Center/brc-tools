@@ -47,6 +47,38 @@ This package is deployed on CHPC to push weather data to BasinWX.
 
 **Cross-repo data contract:** see [`docs/CROSS-REPO-SYNC.md`](docs/CROSS-REPO-SYNC.md).
 
+### Path and storage hygiene
+
+Keep **source code in the repo** and **runtime outputs outside the repo checkout**.
+This matters on CHPC: large ignored trees under `~/gits/brc-tools/` slow `git status`
+and make source-vs-generated files harder to reason about.
+
+| Do | Don't |
+| --- | --- |
+| Use `/scratch/general/vast/$USER/...` for large reproducible outputs (WRF inputs, GRIB staging, bulk downloads). | Do **not** stage large runtime data under `~/gits/brc-tools/data/` or other repo-local paths. |
+| Use `~/.cache/brc-tools/...` or an env var such as `BRC_TOOLS_HERBIE_CACHE` for per-user caches. | Do **not** hard-code a specific user's home path such as `/uufs/chpc.utah.edu/common/home/u0737349/...`. |
+| Use `/tmp` / `tempfile.gettempdir()` for short-lived temp files and lock files. | Do **not** leave scratch, temp, cache, or lock artifacts in tracked source directories. |
+| Use relative repo paths only for committed assets such as docs, schemas, and test fixtures. | Do **not** write generated JSON, GRIB, logs, or cache files into the repo unless they are intentional fixtures/examples. |
+
+Examples:
+
+```bash
+# DO: large staged data on scratch
+/scratch/general/vast/$USER/wrf_inputs/jan2013_basin_gefs/
+
+# DO: user-local cache outside the repo
+export BRC_TOOLS_HERBIE_CACHE="$HOME/.cache/brc-tools/herbie"
+
+# DO: short-lived temp output
+/tmp/brc-tools-upload.json
+
+# DON'T: repo-local runtime output
+~/gits/brc-tools/data/map_obs_20251127_0400Z.json
+
+# DON'T: user-specific hard-coded path in docs or defaults
+/uufs/chpc.utah.edu/common/home/u0737349/gits/brc-tools/data/herbie_cache/
+```
+
 ### Upload destinations (fan-out)
 
 Uploads can target one or more servers (e.g. production + dev). Resolution
