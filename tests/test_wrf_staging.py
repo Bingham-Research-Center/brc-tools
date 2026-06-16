@@ -7,6 +7,7 @@ A live smoke test that hits real S3 is gated behind ``RUN_LIVE_HERBIE=1`` and th
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import socket
 from pathlib import Path
@@ -314,6 +315,23 @@ def test_remote_url_recorded(tmp_path, fake_herbie):
         herbie_save_dir=tmp_path / "cache",
     )
     assert staged[0].remote_url.startswith("https://noaa-gefs-retrospective.s3.amazonaws.com/")
+
+
+def test_fxx_window_crossing_bucket_warns_and_stages_first(tmp_path, fake_herbie, caplog):
+    # An fxx window straddling the 240 h breakpoint (200 -> Days:1-10, 300 -> Days:10-16):
+    # current contract is warn + stage only the first bucket (a true split needs a
+    # bucket-in-filename layout change, out of scope). Pin that so a change is deliberate.
+    with caplog.at_level(logging.WARNING, logger="brc_tools.nwp.wrf_staging"):
+        staged = stage_reforecast(
+            init_time="2013-01-31 00Z", variable_levels=["tmp_2m"], member=0,
+            output_root=tmp_path, case="t", herbie_save_dir=tmp_path / "cache",
+            fxx_window=(200, 300),
+        )
+    assert len(staged) == 1
+    assert staged[0].fxx_bucket == "Days:1-10"  # only the first bucket is staged
+    warnings_ = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("bucket" in r.getMessage().lower() for r in warnings_)  # breakpoint warned
+    assert any("240" in r.getMessage() for r in warnings_)
 
 
 # ── NAM analysis stager (mocked HTTP) ────────────────────────────────────────
