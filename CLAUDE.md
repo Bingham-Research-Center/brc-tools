@@ -84,7 +84,9 @@ a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 ```
 pytest tests/
 ```
-Local Python work: use the `brc-tools` conda env, not bare `python`.
+Local Python work: use a conda env that carries the deps (herbie, polars, pandas,
+matplotlib, requests) — `clyfar-nov2025` works — not bare `python`. (There is no
+dedicated `brc-tools` env.)
 
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).
