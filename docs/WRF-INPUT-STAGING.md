@@ -160,15 +160,15 @@ full set on a DTN, then prove through WPS/real on the brc-wrf side).
 - [x] **1. [AI] ✅ DONE** — `stage_nam_analysis()`: auth-free NAM 12 km analysis (NCEI `namanl_218`) staged to `<case>/nam_analysis/` with `source="nam_analysis"` manifest entries. Direct HTTP GET, **no NCAR RDA** (Herbie has no NCEI-historical NAM source). Mocked + opt-in-live (`RUN_LIVE_NCEI`) tests; `--source nam_analysis` CLI.
 - [x] **2. [AI] ✅ DONE** — Herbie `search=` lead-time subsetting (`--lead-subset`): only f12–f48 download. Proven `tmp_2m` 58 MB→9.7 MB (6×); full set ~4 GB→~650 MB.
 - [x] **3. [AI] ✅ DONE** — `--plan` / `--dry-run` lists every expected NAM cycle + reforecast object (URL, dest path, byte estimate) **offline**, then exits without downloading (`plan_case`).
-- [ ] **4. [AI]** Add a token-preflight: list the S3 prefix for an init and diff against `wps_variable_levels` (catches dataset drift across years 2000–2019).
-- [ ] **5. [AI]** Unit-test `obs_sanity_overlay` with a synthetic polars DataFrame (currently untested).
-- [ ] **6. [AI]** Have `_record_existing` re-derive `lead_times` from a cached `.idx` if present (avoid degraded skip-manifests), or document the limitation in the manifest itself.
+- [x] **4. [AI] ✅ DONE (offline-tested; live `--preflight` unverified)** — Add a token-preflight: list the S3 prefix for an init and diff against `wps_variable_levels` (catches dataset drift across years 2000–2019).
+- [x] **5. [AI] ✅ DONE** — Unit-test `obs_sanity_overlay` with a synthetic polars DataFrame (currently untested).
+- [x] **6. [AI] ✅ DONE (label-only; schema v2)** — Have `_record_existing` re-derive `lead_times` from a cached `.idx` if present (avoid degraded skip-manifests), or document the limitation in the manifest itself.
 - [ ] **7. [AI]** Multi-member staging proof (c00–p04) + per-member layout/manifest aggregation.
 - [x] **8. [AI] ✅ DONE** — `verify_manifest()` / `--verify-manifest <path>`: re-reads the manifest, checks each staged file's existence + size + recomputed `sha256`, exits nonzero on any mismatch.
 - [x] **9. [AI] ✅ MOOT** — soil now comes from NAM analysis (standard 4-layer 0-10/10-40/40-100/100-200 cm); the reforecast `bgrnd` mapping question only matters if a reforecast-soil run is attempted later.
 - [ ] **10. [AI]** Add an operational `gefs` (post-2017) staging path reusing the same machinery, for recent cases.
-- [ ] **11. [AI]** Record total bytes + elapsed per run into the manifest `provenance` (feeds benchmarking).
-- [ ] **12. [AI]** Handle a window that crosses the 240 h bucket boundary (currently warns + stages one bucket only).
+- [x] **11. [AI] ✅ DONE** — Record total bytes + elapsed per run into the manifest `provenance` (feeds benchmarking).
+- [x] **12. [AI] ✅ DONE (kept warn+partial; test pins it)** — Handle a window that crosses the 240 h bucket boundary (currently warns + stages one bucket only).
 - [ ] **13. [AI]** Pin `wps_variable_levels` per data-year if the reforecast token set differs across 2000–2019.
 
 ### B. brc-wrf side (WPS/WRF validation — the proof)
@@ -191,7 +191,7 @@ full set on a DTN, then prove through WPS/real on the brc-wrf side).
 
 ### D. Cross-cutting / hygiene
 - [x] **30. [H] ✅ GATE MET** — a successful `real.exe` (and full `wrf.exe`) is on record (§2), so `feat/wrf-input-staging` → `main` is unblocked. The merge itself is the only remaining action (branch not yet pushed).
-- [ ] **31. [AI]** Add a `WISHLIST-TASKS.md` entry pointing here.
+- [x] **31. [AI] ✅ DONE** — Add a `WISHLIST-TASKS.md` entry pointing here.
 - [ ] **32. [AI+H]** Ensure brc-wrf docs reference this file + the scratch layout (cross-repo sync).
 - [ ] **33. [H]** Retention: scratch auto-purges at 60 days — promote proven inputs to `lawson-group6` if reused.
 
