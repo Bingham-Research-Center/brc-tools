@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging** (branch `feat/wrf-input-staging`): stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin); GEFS two-stream still optional. Status: `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detailed handoff: `docs/WRF-INPUT-STAGING.md`. If arriving from `brc-wrf`, read `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`; handing the run side back to `brc-wrf`, use `docs/HANDOFF-TO-BRC-WRF.md`.
+- **WRF-input staging**: stage GRIB (GEFS reforecast + NAM analysis) to scratch for WRF/WPS. **End-to-end validated** (NAM-only single-stream → WPS → `real.exe` → `wrf.exe` `SUCCESS COMPLETE WRF`, Jan-2013 Basin) and **merged to `main` via PR #22**; GEFS two-stream still optional. A post-merge staging-hygiene batch (manifest schema v2 + token preflight) is on branch `feat/wrf-input-staging` (PR open). Status: `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detailed handoff: `docs/WRF-INPUT-STAGING.md`. If arriving from `brc-wrf`, read `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`; handing the run side back to `brc-wrf`, use `docs/HANDOFF-TO-BRC-WRF.md` (+ `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md` for the cross-repo wiring/caretaker pass).
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -31,7 +31,9 @@ figures/          generated output (gitignored)
 ## Doc map (single source of truth per topic)
 - `README.md` — install + minimal quick usage (human onboarding)
 - `docs/walkthroughs/` — plain-language per-tool walk-throughs + shared glossary (new-hire entry point)
+- `docs/README.md` — index of the `docs/` directory (mirrors this map)
 - `docs/API-REFERENCE.md` — full module / function reference
+- `docs/API-CLIENTS.md` — external API-client helpers (e.g. FlightAware/AeroAPI)
 - `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script (pattern, conventions)
 - `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload)
 - `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
@@ -42,6 +44,7 @@ figures/          generated output (gitignored)
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — terse WRF staging state and reading packet
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (NOT proven)
 - `docs/HANDOFF-TO-BRC-WRF.md` — paste-prompt to hand the WRF run side to a brc-wrf session
+- `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md` — cross-repo wiring + AGENTS-caretaker handoff to brc-wrf
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and
