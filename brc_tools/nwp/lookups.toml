@@ -124,6 +124,21 @@ grid              = "218"                    # 12 km CONUS Lambert-conformal
 filename_template = "namanl_218_{yyyymmdd}_{hhmm}_000.grb"
 url_template      = "https://www.ncei.noaa.gov/data/north-american-mesoscale-model/access/historical/analysis/{yyyymm}/{yyyymmdd}/{filename}"
 
+[models.rap_analysis]
+# RAP 13 km analysis (grid 130), hourly whole-file forcing for the Pelican
+# 2013-02-02 12-18Z hot-swap. Same shape as nam_analysis: one whole GRIB per
+# analysis cycle, staged by direct HTTP GET (NOT Herbie). PROVISIONAL: the NCEI
+# filename/URL and grib version below are best-guess and must be confirmed by one
+# live availability preflight before staging. The WPS Vtable (Vtable.RAP
+# candidates) is a brc-wrf review item and is NOT proven by this entry.
+description       = "RAP 13 km analysis (grid 130), NCEI historical archive"
+default_product   = "rap_130"
+cadence_hours     = 1                       # hourly analysis cycles
+grid              = "130"                    # 13 km CONUS Lambert-conformal
+wps_fg_name       = "RAP"                    # provisional WPS fg_name token
+filename_template = "rap_130_{yyyymmdd}_{hhmm}_000.grb2"
+url_template      = "https://www.ncei.noaa.gov/data/rapid-refresh/access/historical/analysis/{yyyymm}/{yyyymmdd}/{filename}"
+
 # ── Regions ─────────────────────────────────────────────────────────────────
 
 [regions.uinta_basin]
