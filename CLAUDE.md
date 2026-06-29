@@ -101,9 +101,10 @@ skeleton FlightRadar24 client.
 ```
 pytest tests/
 ```
-Local Python work: use a conda env that carries the deps (herbie, polars, pandas,
-matplotlib, requests). On this CHPC checkout `clyfar-nov2025` already has them;
-fresh setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
+Use a conda env with the deps (herbie, polars, pandas, matplotlib, cfgrib, requests).
+Preferred: the dedicated **`brc-tools-2026`** env (`mamba env create -f environment.yml`;
+herbie 2026.3.0 — validated, 107 passed); the shared `clyfar-nov2025` also works. Fresh
+setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).
