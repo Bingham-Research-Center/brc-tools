@@ -64,3 +64,30 @@ def test_build_road_payload_preserves_hourly_shape():
         -1.0,
         -1.0,
     ]
+
+
+def test_build_road_payload_emits_flat_points_for_website():
+    init_time = dt.datetime(2026, 3, 17, 12, tzinfo=dt.timezone.utc)
+    hourly_template = [{"temp_2m": -1.0, "wind_speed_10m": 3.0}] * 3
+    forecasts_by_route = {
+        "us40": {0: hourly_template},
+        "us191": {},
+        "basin_roads": {},
+    }
+
+    payload = build_road_payload(
+        init_time=init_time,
+        max_fxx=3,
+        forecasts_by_route=forecasts_by_route,
+    )
+
+    points = payload["points"]
+    assert len(points) == 17  # 9 + 4 + 4 across all corridors
+    first = points[0]
+    assert first["route_id"] == "us40"
+    assert {"lat", "lon", "name", "forecasts"} <= set(first)
+    assert len(first["forecasts"]) == 3
+    step_zero = first["forecasts"][0]
+    assert step_zero["valid_time"] == "2026-03-17T13:00:00Z"
+    assert step_zero["temp_2m"] == -1.0
+    assert step_zero["wind_speed_10m"] == 3.0
