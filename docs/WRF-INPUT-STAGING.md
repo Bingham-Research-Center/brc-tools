@@ -27,7 +27,7 @@ manifest**; the sibling **brc-wrf** repo owns **ungrib → metgrid → real** an
 > **Canonical CHPC references (read these for any run decision):**
 > - `~/gits/brc-knowledge/scholarium/reference-base/resources/chpc-team-resource-inventory.md` — **single source of truth** for nodes, partitions, storage, DTN, login-node etiquette.
 > - `~/gits/brc-knowledge/scholarium/reference-base/resources/wrf-on-chpc-quickstart.md` — WRF build/run, module stack, scaling table (§8).
-> - `~/gits/brc-knowledge/scholarium/reference-base/resources/run_wrf_feb05.slurm` — **validated** WRF run script for the Feb-2013 Basin case (notch392, 56 tasks). Reuse it; don't reinvent.
+> - `~/gits/brc-knowledge/scholarium/reference-base/resources/run_wrf_feb05.slurm` — **validated** WRF run script for the Feb-2013 Basin case (notch392, 56 tasks). The WRF run is owned by **brc-wrf**; brc-knowledge carries this script as the canonical reference.
 > - `~/gits/brc-knowledge/scholarium/reference-base/resources/chpc-slurm-job-examples.md` — DTN + compute-node proxy examples.
 
 ---

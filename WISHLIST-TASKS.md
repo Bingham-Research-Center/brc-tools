@@ -16,6 +16,12 @@ Slurm run profiles stay in `brc-wrf`.
 - The remaining staging-microtask backlog (#4–#13, #31, …) lives in
   `../brc-wrf/doc/BRC_WRF_MICROTASK_HANDOFF.md` — that handoff is the source of truth
   for this lane; not duplicated here.
+- [ ] **RAP analysis source (`rap_analysis`)** — brc-wrf's Pelican RAP rerun
+  (`../brc-wrf/brc-docs/BRC-WRF-PELICAN-RAP-FEASIBILITY.md`) wants hourly RAP analysis
+  staging; not yet implemented (only `nam_analysis` + `gefs_reforecast` exist in
+  `lookups.toml` / `brc_tools/nwp/wrf_staging.py`). Needs a lookups model entry,
+  hourly-cadence generalization of the NAM analysis staging path, and a Vtable/soil-field
+  decision.
 
 ## Priority 1: Reliability
 

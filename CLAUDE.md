@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging**: GRIB → scratch for WPS/WRF (brc-tools' half; the model run is `brc-wrf`'s). NAM-only proven & merged; GEFS+NAM two-stream optional/unproven. State → `docs/WRF-STAGING-STATE-PLAYBOOK.md`; detail → `docs/WRF-INPUT-STAGING.md`; cross-repo handoffs → `docs/HANDOFF-TO-BRC-WRF.md` + `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md`; arriving from brc-wrf → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+- **WRF-input staging**: stage GRIB → scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged; GEFS+NAM two-stream optional/unproven; RAP source requested by brc-wrf, not yet added. State → `docs/WRF-STAGING-STATE-PLAYBOOK.md`; cross-repo entry → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md` (full WRF doc set in Doc map below).
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -17,9 +17,9 @@ brc_tools/        installable package
   nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB)
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
-  visualize/      planview maps, timeseries panels
+  visualize/      planview maps, timeseries panels, grid.py (reusable field/section plots; consumed by brc-wrf)
   download/       Synoptic obs script, push_data uploader, HRRR helpers
-  aviation/       FlightAware spec-fetch helpers (being retired into api/)
+  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth)
   utils/          lookups, small helpers
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
@@ -54,10 +54,15 @@ edit there; do not duplicate into CLAUDE.md.
 `brc_tools.download.push_data.send_json_to_server(server_address, fpath, file_data, API_KEY)`
 POSTs `multipart/form-data` to `{server_address}/api/upload/{file_data}`
 with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
-`x-client-hostname` (must end `.chpc.utah.edu`). Server URL from
-`~/.config/ubair-website/website_url`. Health: `/api/health`.
+`x-client-hostname` (must end `.chpc.utah.edu`). Server URL resolves
+`BASINWX_API_URLS` (env, comma-sep for fan-out) → `~/.config/ubair-website/website_urls`
+→ `website_url` (legacy). Health: `/api/health`.
 **`clyfar` imports this function** — do not change its signature without
 a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
+
+A second cross-repo interface: `brc_tools.visualize.grid` (`plot_grid_field`,
+`plot_vertical_section`) is imported by `brc-wrf`'s `wrf_quicklook.py` — treat its
+public signatures as load-bearing too.
 
 ## Conventions
 - **UTC internally, always.** `datetime.timezone.utc`, never pytz. (Servers sit in different local zones — UTC is the portable invariant; convert to Mountain only at display.)
@@ -69,17 +74,26 @@ a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 - **JSON filenames**: `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
-- **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / hPa / m/s. Convert at the boundary.
+- **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa — `lookups.toml` `synoptic_units`). Convert at the boundary.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
 
 ## Environment variables
 | Var | Purpose | Required? |
 |-----|---------|-----------|
 | `DATA_UPLOAD_API_KEY` | BasinWX upload auth | for uploads |
+| `BASINWX_API_URLS` | BasinWX upload URL(s), comma-sep fan-out; overrides `~/.config/ubair-website/website_url(s)` | optional |
 | `SYNOPTIC_TOKEN` | Synoptic obs (also via `~/.config/SynopticPy/config.toml`) | for obs |
-| `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI | aviation only |
+| `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI (`api/` clients) | aviation only |
+| `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
+| `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
 | `BRC_TOOLS_HERBIE_CACHE` | NWP GRIB cache dir override | optional |
+| `BRC_TOOLS_HRRR_CACHE` | HRRR GRIB cache dir override | optional |
 | `BRC_TOOLS_LOCK_DIR` | Parallel-download lock dir | optional |
+| `BRC_TOOLS_HTTP_IPV4_ONLY` | Force IPv4 (CHPC DTN IPv6-hang workaround) | optional |
+
+All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — env var
+first, then optional `~/.config/<svc>/api_key`; `FR24_API_KEY` is reserved for the
+skeleton FlightRadar24 client.
 
 ## Testing
 ```
@@ -92,6 +106,8 @@ fresh setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).
 - `clyfar` — ozone forecast; imports `brc_tools.download.push_data`.
+- `brc-wrf` — WRF runs; consumes brc-tools staging (`manifest`/`contract` sidecars) + imports `brc_tools.visualize.grid`.
+- `brc-knowledge` — canonical CHPC infra + validated Slurm run scripts (referenced, not imported).
 - `preprint-clyfar-v0p9` — LaTeX manuscript.
 
 Governed by `.github/CODEOWNERS`; PRs require review from
