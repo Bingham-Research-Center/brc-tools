@@ -1016,7 +1016,7 @@ def plan_case(
                 plan.append({
                     "source": src, "member": "", "filename": filename,
                     "url": url, "local_path": str(dest),
-                    "est_bytes": NAM_EST_BYTES_PER_CYCLE,
+                    "est_bytes": int(cfg.get("est_bytes_per_cycle", NAM_EST_BYTES_PER_CYCLE)),
                 })
         else:
             breakpoint_fxx = int(cfg.get("fxx_bucket_breakpoint", 240))

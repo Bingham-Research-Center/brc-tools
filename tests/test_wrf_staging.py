@@ -621,7 +621,7 @@ def test_plan_case_rap_offline(tmp_path):
     assert len(plan) == 7  # hourly cycles 12Z..18Z (analysis path, not reforecast)
     assert all(e["source"] == "rap_analysis" and e["member"] == "" for e in plan)
     assert all(e["url"].startswith("https://www.ncei.noaa.gov/") for e in plan)
-    assert all(e["est_bytes"] for e in plan)  # rough offline estimate present
+    assert all(e["est_bytes"] == 12_500_000 for e in plan)  # per-source estimate (NCEI preflight)
     names = [Path(e["local_path"]).name for e in plan]
     assert names[0] == "rap_130_20130202_1200_000.grb2"
     assert names[-1] == "rap_130_20130202_1800_000.grb2"
