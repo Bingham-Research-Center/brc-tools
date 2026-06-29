@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging**: stage GRIB → scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged; GEFS+NAM two-stream optional/unproven; RAP source requested by brc-wrf, not yet added. State → `docs/WRF-STAGING-STATE-PLAYBOOK.md`; cross-repo entry → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md` (full WRF doc set in Doc map below).
+- **WRF-input staging**: stage GRIB → scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged; GEFS+NAM two-stream optional/unproven; RAP source added (#26: offline plan/contract/tests, NCEI path preflight-confirmed), live staging/WPS pending in brc-wrf. State → `docs/WRF-STAGING-STATE-PLAYBOOK.md`; cross-repo entry → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md` (full WRF doc set in Doc map below).
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -40,6 +40,7 @@ figures/          generated output (gitignored)
 - `docs/ENVIRONMENT-SETUP.md` — conda / venv setup
 - `docs/CROSS-REPO-SYNC.md` — sync protocol with clyfar / ubair-website / preprint
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy and phase tracker
+- `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix (Herbie vs direct), idiosyncrasies, Herbie currency
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — terse WRF staging state and reading packet
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (NOT proven)
@@ -74,6 +75,7 @@ public signatures as load-bearing too.
 - **JSON filenames**: `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
+- **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: only `nam_analysis`/`rap_analysis`, which Herbie can't retrieve for 2013).
 - **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa — `lookups.toml` `synoptic_units`). Convert at the boundary.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
 
