@@ -21,8 +21,8 @@ source venv/bin/activate
 # On Windows:
 venv\Scripts\activate
 
-# Install packages
-pip install -r requirements.txt
+# Install the package + dependencies (declared in pyproject.toml)
+pip install -e ".[dev]"
 ```
 
 ### 2. Using Environment Variables (.env file)
@@ -38,19 +38,19 @@ cp .env.example .env
 
 If you prefer conda/miniforge, that's fine! Here's how:
 
+**Recommended (conda-forge + mamba/miniforge):** use the pinned `environment.yml` at the
+repo root — it mirrors `pyproject.toml` and pins Herbie to a current release:
+
 ```bash
-# Create conda environment
-conda create -n brc-tools python=3.11
-
-# Activate it
-conda activate brc-tools
-
-# Install pip packages
-pip install -r requirements.txt
-
-# Some packages might work better with conda:
-conda install -c conda-forge cartopy
+mamba env create -f environment.yml   # creates env "brc-tools-2026"
+conda activate brc-tools-2026
+pip install -e . --no-deps            # install brc_tools itself (deps already solved)
+pytest tests/                          # validated: 107 passed, 2 skipped on herbie 2026.3.0
 ```
+
+Prefer a fresh, dedicated env over reusing a shared/accreted one. The canonical list of
+dependencies is **`pyproject.toml`** (`[project.dependencies]`); `environment.yml` is the
+conda mirror.
 
 ### Why Both pip and conda?
 - **pip**: Has all Python packages, always up-to-date
@@ -139,7 +139,7 @@ sudo apt-get install libproj-dev libgeos-dev
 ## Best Practices
 
 1. **Always activate your environment** before working
-2. **Keep requirements.txt updated** when adding packages
+2. **Keep `pyproject.toml` (and `environment.yml`) updated** when adding packages
 3. **Never commit .env files** (check .gitignore)
 4. **Document weird dependencies** in comments
 5. **Test in a fresh environment** occasionally
