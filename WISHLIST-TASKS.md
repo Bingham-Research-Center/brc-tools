@@ -27,7 +27,7 @@ proven end-to-end** (WPS → `real.exe` → `wrf.exe`); the **GEFS+NAM two-strea
 not** proven. brc-tools owns download/staging/manifest only — WPS/`real.exe`/`wrf.exe`/
 Slurm run profiles stay in `brc-wrf`.
 
-- Canonical docs: `docs/WRF-INPUT-STAGING.md` (full handoff) and
+- Canonical docs: `docs/WRF-INPUT-STAGING.md` (full reference) and
   `docs/WRF-STAGING-STATE-PLAYBOOK.md` (terse state).
 - Cross-repo entry point: `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
 - The remaining staging-microtask backlog (#4–#13, #31, …) lives in

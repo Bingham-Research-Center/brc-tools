@@ -71,9 +71,9 @@ These files must stay aligned across repos:
 > **Note (2026-06-16, brc-tools-local):** brc-tools also has a separate seam to
 > **brc-wrf** (the WRF model fork) for WRF-input GRIB staging — *not* one of the 4
 > repos above. Its contract is the manifest/contract sidecar boundary; the protocol
-> lives in `docs/WRF-INPUT-STAGING.md`, `docs/HANDOFF-TO-BRC-WRF.md`, and
-> `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md` (cross-repo wiring + caretaker). Keep that
-> seam's docs in sync there, not here.
+> lives in `docs/WRF-STAGING-STATE-PLAYBOOK.md` (the single cold-start handoff) and
+> `docs/WRF-INPUT-STAGING.md` (detail/proof). Keep that seam's docs in sync there,
+> not here.
 
 ## Workflow for Making Changes
 
