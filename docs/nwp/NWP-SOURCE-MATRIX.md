@@ -12,7 +12,7 @@ Herbie version evaluated: **2025.11.3** (env `clyfar-nov2025`).
 
 | Source (`lookups` key) | Role | brc-tools entry point | Mechanism | Herbie-native? | Key idiosyncrasies |
 |---|---|---|---|---|---|
-| `hrrr` | operational forecast | `NWPSource.fetch()` | **Herbie** `model="hrrr"` | ✅ yes | `subh` 15-min axis dropped by `NWPSource.normalize_coords` → `aviation.py` calls Herbie directly to keep 15-min |
+| `hrrr` | operational forecast | `NWPSource.fetch()` | **Herbie** `model="hrrr"` | ✅ yes | `subh` (15-min) resolves as hourly through NWPSource — `normalize_coords` drops the GRIB time axis; call Herbie directly if 15-min is needed |
 | `gefs` | operational ensemble | `NWPSource.fetch()` | **Herbie** `model="gefs"` | ✅ yes | 0–360° lon → shift-then-sel crop; product breakpoint `atmos.25`→`atmos.5` above f240 |
 | `rrfs` | experimental | `NWPSource.fetch()` | **Herbie** `model="rrfs"` | ✅ yes | evolving product names |
 | `gefs_reforecast` | WRF forcing (historical ens) | `wrf_staging.stage_reforecast()` | **Herbie** `Herbie.download()`, `model="gefs_reforecast"` | ✅ yes | per-variable file layout; 700 hPa pressure split (`_pres` / `_pres_abv700mb`); specific humidity only; 10 m winds = `ugrd_hgt`; **no land-sea mask, no snow**; members c00/p01–p04; `Days:1-10`/`10-16` buckets |

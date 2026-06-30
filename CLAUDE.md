@@ -76,7 +76,7 @@ public signatures as load-bearing too.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
 - **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: only `nam_analysis`/`rap_analysis`, which Herbie can't retrieve for 2013).
-- **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa — `lookups.toml` `synoptic_units`). Convert at the boundary.
+- **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa for pressure; units are per-alias in `lookups.toml` `synoptic_units`). Convert at the boundary (e.g. Pa→hPa) only for display.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
 
 ## Environment variables
@@ -93,9 +93,9 @@ public signatures as load-bearing too.
 | `BRC_TOOLS_LOCK_DIR` | Parallel-download lock dir | optional |
 | `BRC_TOOLS_HTTP_IPV4_ONLY` | Force IPv4 (CHPC DTN IPv6-hang workaround) | optional |
 
-All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — env var
-first, then optional `~/.config/<svc>/api_key`; `FR24_API_KEY` is reserved for the
-skeleton FlightRadar24 client.
+All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var
+only** today (the helper also accepts an optional `~/.config/<svc>/api_key` fallback, but
+no client wires it yet); `FR24_API_KEY` is reserved for the skeleton FlightRadar24 client.
 
 ## Testing
 ```
