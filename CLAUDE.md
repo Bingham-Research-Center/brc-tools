@@ -44,7 +44,6 @@ figures/          generated output (gitignored)
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-lane cold-start source of truth** (state + next-session handoff)
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (parked, NOT proven)
-- `docs/HANDOFF-TO-BRC-WRF.md` — older paste-prompt (superseded by the playbook above)
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and
