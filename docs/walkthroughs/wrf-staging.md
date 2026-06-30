@@ -5,17 +5,18 @@ scratch with provenance sidecars. This is **only the input-prep half**. brc-tool
 stops once the files + sidecars exist; running the model is the `brc-wrf` repo's
 job.
 
-> **State:** NAM-only single-stream is proven end-to-end. GEFS+NAM two-stream is
-> **not** proven — see [../WRF-GEFS-NAM-FIELD-MAP.md](../WRF-GEFS-NAM-FIELD-MAP.md).
+> **State:** NAM-only single-stream is proven end-to-end. GFS 0.5° analysis is a
+> second forcing, **staged + verified** for the Pelican case (awaiting brc-wrf WPS).
+> GEFS+NAM two-stream is **not** proven — see [../WRF-GEFS-NAM-FIELD-MAP.md](../WRF-GEFS-NAM-FIELD-MAP.md).
 
-**Needs:** DTN access for real downloads · conda env `brc-tools`
+**Needs:** DTN access for real downloads · conda env `brc-tools-2026`
 
 ## Look before you download (cheap, no network)
 
 `--plan` lists the files, URLs, and total bytes, then exits:
 
 ```bash
-python scripts/stage_wrf_inputs.py --plan \
+conda run -n brc-tools-2026 python -m brc_tools.nwp.wrf_staging --plan \
     --case jan2013_basin_gefs --init-time "2013-01-31 12Z" --source nam_analysis
 ```
 
@@ -30,7 +31,7 @@ sbatch scripts/stage_inputs.dtn.slurm        # brc-tools' own staging job
 ## Check what was staged
 
 ```bash
-python scripts/stage_wrf_inputs.py --verify-manifest \
+conda run -n brc-tools-2026 python -m brc_tools.nwp.wrf_staging --verify-manifest \
     /scratch/general/vast/$USER/wrf_inputs/jan2013_basin_gefs/manifest_jan2013_basin_gefs.json
 ```
 

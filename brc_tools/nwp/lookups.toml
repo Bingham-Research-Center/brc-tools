@@ -141,6 +141,27 @@ est_bytes_per_cycle = 12_500_000              # ~12 MB/file (NCEI preflight 2026
 filename_template   = "rap_130_{yyyymmdd}_{hhmm}_000.grb2"
 url_template        = "https://www.ncei.noaa.gov/data/rapid-refresh/access/historical/analysis/{yyyymm}/{yyyymmdd}/{filename}"
 
+[models.gfs_analysis]
+# GFS 0.5° analysis (grid 004) from the NCEI historical archive — an auth-free,
+# field-complete SECOND WRF/WPS forcing for the Pelican 2013-02-02 12-18Z hot-swap
+# ("poor-man's ensemble" beside the proven nam_analysis baseline). Same shape as
+# nam_analysis/rap_analysis: one whole GRIB2 per analysis cycle, staged by direct
+# HTTP GET (NOT Herbie — Herbie's gfs.py has only aws/nomads operational sources,
+# which don't reach 2013). Field adequacy CONFIRMED from the live .inv (2026-06-30):
+# 4-layer TMP/SOILW below-ground, LAND/TMP/ICEC/WEASD at surface, 26-level
+# HGT/TMP/RH/UGRD/VGRD, PRMSL+MSLET, 2 m/10 m — the full set real.exe needs (the
+# layered soil + real-ready 3D atmosphere RAP lacked). Maps to Vtable.GFS (brc-wrf).
+# Only gap vs NAM: no snod (snow depth); weasd (snow water-equiv) -> metgrid SNOW.
+# grid-4 also ships _003/_006 offsets -> optional 3-hourly LBCs (stager change).
+description         = "GFS 0.5° analysis (grid 004), NCEI historical archive"
+default_product     = "gfsanl_4"
+cadence_hours       = 6                       # analysis cycles at 00/06/12/18Z
+grid                = "004"                    # 0.5° global lat-lon
+wps_fg_name         = "GFS"                    # WPS fg_name token; Vtable.GFS (brc-wrf)
+est_bytes_per_cycle = 52_000_000              # ~52 MB/file (NCEI HEAD 2026-06-30)
+filename_template   = "gfsanl_4_{yyyymmdd}_{hhmm}_000.grb2"
+url_template        = "https://www.ncei.noaa.gov/data/global-forecast-system/access/historical/analysis/{yyyymm}/{yyyymmdd}/{filename}"
+
 # ── Regions ─────────────────────────────────────────────────────────────────
 
 [regions.uinta_basin]

@@ -6,7 +6,17 @@ recurring "are we reinventing the wheel?" question. Machine-readable companion:
 `brc_tools/nwp/lookups.toml` (the model registry); staging detail in
 `docs/WRF-INPUT-STAGING.md`.
 
-Herbie version evaluated: **2025.11.3** (env `clyfar-nov2025`).
+Herbie version evaluated for current WRF-staging work: **2026.3.0** (env
+`brc-tools-2026`). Do not run this lane from an inherited shell env; force:
+
+```bash
+conda run -n brc-tools-2026 python ...
+conda run -n brc-tools-2026 pytest ...
+```
+
+Earlier RAP wheel checks used `clyfar-nov2025` / Herbie **2025.11.3**; keep
+those results as historical evidence only unless they are refreshed under
+`brc-tools-2026`.
 
 ## Matrix
 
@@ -18,6 +28,8 @@ Herbie version evaluated: **2025.11.3** (env `clyfar-nov2025`).
 | `gefs_reforecast` | WRF forcing (historical ens) | `wrf_staging.stage_reforecast()` | **Herbie** `Herbie.download()`, `model="gefs_reforecast"` | ✅ yes | per-variable file layout; 700 hPa pressure split (`_pres` / `_pres_abv700mb`); specific humidity only; 10 m winds = `ugrd_hgt`; **no land-sea mask, no snow**; members c00/p01–p04; `Days:1-10`/`10-16` buckets |
 | `nam_analysis` | WRF forcing/filler (2013) | `wrf_staging.stage_nam_analysis()` | **Direct NCEI HTTP GET** (`requests`) | ❌ **no** | Herbie `nam` has only `aws`/`nomads` (operational, recent) — no NCEI-historical `namanl_218`. grib1 `.grb`; 6-hourly; whole file; carries land-mask/SST/skin/4-layer soil/snow |
 | `rap_analysis` | WRF forcing (Pelican hot-swap) | `wrf_staging.stage_rap_analysis()` → shared `stage_nam_analysis` | **Direct NCEI HTTP GET** (`requests`) | ⚠️ **intended but broken upstream** (see below) | grib2 `.grb2`; hourly; whole file; ~12 MB/cycle |
+| `era5` | WRF forcing candidate | _not implemented_ | Would require CDS/Copernicus tooling or another reviewed source path | n/a locally | Blocked locally: no `era5` model in `lookups.toml`, no `cdsapi`/`ecmwfapi` in `brc-tools-2026`, and no CDS credentials configured; WPS-side `Vtable.ECMWF` exists in brc-wrf |
+| `gfs_analysis` | WRF forcing (Pelican hot-swap, 2nd source) | `wrf_staging.stage_gfs_analysis()` → shared `stage_nam_analysis` | **Direct NCEI HTTP GET** (`requests`) | ❌ **no** | Herbie `gfs` has only `aws`/`nomads` (operational, recent) — no NCEI-historical `gfsanl_4`. grib2 `.grb2`; grid-004 0.5°; 6-hourly `_000` (grid-4 also ships `_003`/`_006` → optional 3-hourly LBCs); whole file ~52 MB/cycle; **field-complete for `real.exe`** (4-layer soil T/moisture, land-sea mask, skin temp, snow/ice, 26-level HGT/TMP/RH/UGRD/VGRD — confirmed from the live `.inv` 2026-06-30; the layered soil + real-ready 3D atmosphere RAP lacked); `Vtable.GFS`, humidity = RH; only gap vs NAM is `snod` (snow depth). NCEI product: https://www.ncei.noaa.gov/products/weather-climate-models/global-forecast |
 | _Synoptic obs_ | observations | `ObsSource` | SynopticPy (obs ≠ NWP) | n/a | UTC-strip, alias rename, waypoint injection |
 | _FlightAware_ | aviation | `brc_tools/api/flightaware` | AeroAPI client | n/a | paid API |
 
@@ -48,15 +60,19 @@ all 7 cycles 12–18Z → HTTP 200, ~12 MB; bogus cycle → 404.)
 
 ## Why the analysis sources use direct GET (not Herbie)
 
-Beyond the bug, `nam_analysis` + `rap_analysis` deliberately share one **whole-file analysis** path
-(`stage_nam_analysis`, source-generic) because:
+Beyond the bug, `nam_analysis`, `rap_analysis`, and `gfs_analysis` deliberately share one
+**whole-file analysis** path (`stage_nam_analysis`, source-generic) because:
 - **One path, one set of guarantees:** per-cycle locking, `BRC_TOOLS_HTTP_IPV4_ONLY` (NCEI IPv6-hang
-  workaround), GRIB validation, manifest/contract — identical for NAM and RAP.
+  workaround), GRIB validation, manifest/contract — identical for NAM, RAP, and GFS.
 - **Offline `--plan` is deterministic:** URLs/paths are templated from `lookups.toml`; no Herbie
   inventory probing.
 - **No byte-range/`.idx` machinery:** WPS wants whole analysis files; we never subset.
-- Herbie genuinely lacks NAM-NCEI-historical, so NAM had to be direct anyway; RAP rides the same path
-  for uniformity.
+- Herbie genuinely lacks NAM-NCEI-historical, so NAM had to be direct anyway; RAP and GFS ride the same
+  path for uniformity.
+- **GFS analysis chosen over NCAR-RDA FNL (`ds083.2`):** the auth-free NCEI archive needs no RDA
+  account/`cdsapi`, and grid-004 (0.5°) is *finer* than 2013 FNL (1°). Field adequacy and `Vtable.GFS`
+  were confirmed from the live `.inv` (no GRIB body downloaded) — it carries the 4-layer soil + full 3D
+  atmosphere RAP lacked, so it should clear the `NUM_METGRID_SOIL_LEVELS=0` block that stopped RAP.
 
 ## Wheel check / recommendations
 
@@ -68,11 +84,12 @@ Beyond the bug, `nam_analysis` + `rap_analysis` deliberately share one **whole-f
   2. **File an upstream Herbie issue** for the `'.grb.inv'` typo (cheap; helps everyone).
   3. Revisit a Herbie-backed RAP path once fixed (would gain RUC2 pre-2012 fallback for free).
 
-## Herbie currency (checked 2026-06-29)
+## Herbie currency (checked 2026-06-30)
 
 | | Version | When |
 |---|---|---|
-| Installed (`clyfar-nov2025`) | **2025.11.3** | Nov 2025 |
+| Required WRF-staging env (`brc-tools-2026`) | **2026.3.0** | Mar 2026 |
+| Inherited env observed in Codex (`clyfar-nov2025`) | **2025.11.3** | Nov 2025 |
 | Latest (conda-forge + PyPI) | **2026.3.0** | Mar 2026 |
 
 What updating `2025.11.3 → 2026.3.0` would buy:
@@ -84,9 +101,9 @@ What updating `2025.11.3 → 2026.3.0` would buy:
 - **Does NOT fix** the `rap_historical` `IDX_SUFFIX` typo — still `"grb.inv"` on the default branch at
   2026.3.0, so a Herbie-backed RAP path stays blocked regardless.
 
-**Recommendation:** update Herbie (ideally in a fresh, lean `brc-tools` env, not the shared
-`clyfar-nov2025`) pinned to `herbie-data>=2026.3.0`; afterward re-run the RRFS path and the RAP probe
-below. File an upstream issue for the `rap_historical` typo. Env recipe → `docs/ENVIRONMENT-SETUP.md`.
+**Recommendation:** use `brc-tools-2026` for all WRF-staging work. File an upstream issue
+for the `rap_historical` typo if RAP Herbie support matters later. Env recipe →
+`docs/ENVIRONMENT-SETUP.md`.
 
 ## Enforcement
 

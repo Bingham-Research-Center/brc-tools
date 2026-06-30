@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging**: stage GRIB → scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged; GEFS+NAM two-stream optional/unproven; RAP source merged (#26) **and staged+verified to scratch** — brc-wrf consumes the contract next (WPS Vtable + metgrid/real/wrf). **Cold-start entry → `docs/WRF-STAGING-STATE-PLAYBOOK.md`** (single source of truth for this lane); proof detail → `docs/WRF-INPUT-STAGING.md`; cross-repo → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+- **WRF-input staging**: stage GRIB → scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged (baseline `pelican2013_nam`); RAP staged but **blocked before `real.exe`** (no layered soil); **`gfs_analysis` added + staged+verified** (`pelican2013_gfs`, #33) as the 2nd IC/LBC forcing — brc-wrf consumes the GFS contract next (WPS `Vtable.GFS` → metgrid/real/wrf); GEFS+NAM two-stream optional/unproven. **Cold-start entry → `docs/WRF-STAGING-STATE-PLAYBOOK.md`** (single source of truth for this lane); proof detail → `docs/WRF-INPUT-STAGING.md`; cross-repo → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -73,7 +73,7 @@ public signatures as load-bearing too.
 - **JSON filenames**: `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
-- **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: only `nam_analysis`/`rap_analysis`, which Herbie can't retrieve for 2013).
+- **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: `nam_analysis`/`rap_analysis`/`gfs_analysis`, which Herbie can't retrieve for 2013).
 - **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa for pressure; units are per-alias in `lookups.toml` `synoptic_units`). Convert at the boundary (e.g. Pa→hPa) only for display.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
 
@@ -101,7 +101,7 @@ pytest tests/
 ```
 Use a conda env with the deps (herbie, polars, pandas, matplotlib, cfgrib, requests).
 Preferred: the dedicated **`brc-tools-2026`** env (`mamba env create -f environment.yml`;
-herbie 2026.3.0 — validated, 107 passed); the shared `clyfar-nov2025` also works. Fresh
+herbie 2026.3.0 — validated, 110 passed); the shared `clyfar-nov2025` also works. Fresh
 setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 
 ## Related repos
