@@ -38,6 +38,12 @@ Read for full context:
 - Caretaker: when a brc-tools path moves, re-check that `../brc-tools`↔`../brc-wrf` doc links still resolve
   (a manual pass — keep it true). brc-wrf consumes the **contract sidecar**, not `staged_files`.
 
+brc-wrf session paste-prompt (start a Claude Code session in `~/gits/brc-wrf`):
+- **Read:** `brc-docs/BRC-WRF-STATE-PLAYBOOK.md`, `brc-docs/BRC-WRF-PELICAN-RAP-FEASIBILITY.md`, `../brc-tools/docs/WRF-INPUT-STAGING.md`.
+- **Login-safe:** `git status --short`; `python brc-cases/wrf_case.py validate <case>.yaml`.
+- **Off-login (approved compute/DTN):** `python ../brc-tools/scripts/stage_wrf_inputs.py --verify-manifest /scratch/general/vast/$USER/wrf_inputs/pelican2013_rap_3_1_333m_75lev/manifest_pelican2013_rap_3_1_333m_75lev.json`; point the case `contract_path` at the RAP `contract_*.json`; then `wrf_case.py validate <case>.yaml --strict-files`.
+- **Stop points:** no `sbatch`/WPS/`real.exe`/`wrf.exe` without explicit human approval; absolute `/scratch` paths are CHPC-local — never hand one to another machine.
+
 Remaining brc-tools backlog (not blocking brc-wrf): `WISHLIST-TASKS.md` → "Session closeout" section.
 
 ## One-Sentence State
