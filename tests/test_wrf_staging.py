@@ -32,6 +32,7 @@ from brc_tools.nwp.wrf_staging import (
     build_contract,
     build_manifest,
     plan_case,
+    stage_gfs_analysis,
     stage_nam_analysis,
     stage_rap_analysis,
     stage_reforecast,
@@ -464,6 +465,31 @@ def test_stage_rap_analysis_layout_and_manifest(tmp_path, fake_nam_http):
     assert len(fake_nam_http.urls) == 7  # one whole-file GET per cycle
 
 
+def test_stage_gfs_analysis_layout_and_manifest(tmp_path, fake_nam_http):
+    # GFS analysis rides the shared whole-file analysis stager (mocked HTTP) at
+    # 6-hourly cadence -> 12Z + 18Z bracket the Pelican 2013-02-02 12-18Z window.
+    staged = stage_gfs_analysis(
+        init_time="2013-02-02 12Z",
+        fxx_window=(0, 6),
+        output_root=tmp_path,
+        case="pelican2013_gfs",
+    )
+    assert len(staged) == 2  # one whole file per 6-hourly analysis cycle (12Z, 18Z)
+    for sf in staged:
+        dest = Path(sf.local_path)
+        assert dest.exists() and validate_cached_grib(dest)
+        assert dest.parent == tmp_path / "pelican2013_gfs" / "gfs_analysis"  # no member dir
+        assert dest.name.startswith("gfsanl_4_") and dest.name.endswith("_000.grb2")
+        assert sf.source == "gfs_analysis" and sf.member == "" and sf.member_int == 0
+        assert sf.variable_level == "all" and sf.lead_times == [0]
+        assert sf.product == "gfsanl_4"
+        assert sf.remote_url.startswith("https://www.ncei.noaa.gov/")
+    assert {Path(sf.local_path).name for sf in staged} == {
+        "gfsanl_4_20130202_1200_000.grb2", "gfsanl_4_20130202_1800_000.grb2",
+    }
+    assert len(fake_nam_http.urls) == 2  # one whole-file GET per cycle
+
+
 # ── manifest ─────────────────────────────────────────────────────────────────
 
 
@@ -756,6 +782,7 @@ def test_interval_hours_for_sources():
     assert _interval_hours_for_sources(("gefs_reforecast",), lu) == 3
     assert _interval_hours_for_sources(("gefs_reforecast", "nam_analysis"), lu) == 3
     assert _interval_hours_for_sources(("rap_analysis",), lu) == 1  # hourly RAP analysis
+    assert _interval_hours_for_sources(("gfs_analysis",), lu) == 6  # 6-hourly GFS analysis
 
 
 def test_build_contract_nam_only():
@@ -797,6 +824,20 @@ def test_build_contract_rap_only():
     assert c["interval_seconds"] == 3600 and c["interval_hours"] == 1
     assert c["cadence_hours"]["rap_analysis"] == 1
     assert c["source_file_counts"] == {"rap_analysis": 1}
+
+
+def test_build_contract_gfs_only():
+    m = build_manifest(
+        case="pelican2013_gfs", region="uinta_basin_wide",
+        requested_window=("2013-02-02T12:00:00Z", "2013-02-02T18:00:00Z"),
+        interval_hours=6, sources=["gfs_analysis"],
+        staged=[_nam_staged_stub("gfs_analysis")],
+    )
+    c = build_contract(m)
+    assert c["wps_fg_name"] == ["GFS"]  # metadata-driven (Vtable.GFS), not mis-stamped
+    assert c["interval_seconds"] == 21600 and c["interval_hours"] == 6
+    assert c["cadence_hours"]["gfs_analysis"] == 6
+    assert c["source_file_counts"] == {"gfs_analysis": 1}
 
 
 def test_stage_case_writes_contract_and_derived_interval(tmp_path, fake_nam_http):

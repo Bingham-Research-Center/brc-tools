@@ -591,7 +591,7 @@ DEFAULT_NAM_SOURCE = "nam_analysis"
 DEFAULT_NAM_CADENCE_HOURS = 6
 # WPS fg_name token per staging source; build_contract prefers the lookups model's
 # wps_fg_name and falls back to this map so a non-NAM source is never stamped GEFS.
-_FG_NAME_FALLBACK = {"nam_analysis": "NAM", "gefs_reforecast": "GEFS", "rap_analysis": "RAP"}
+_FG_NAME_FALLBACK = {"nam_analysis": "NAM", "gefs_reforecast": "GEFS", "rap_analysis": "RAP", "gfs_analysis": "GFS"}
 
 
 def _snap_down_to_cadence(t: dt.datetime, cadence_hours: int) -> dt.datetime:
@@ -805,6 +805,19 @@ def stage_rap_analysis(**kwargs) -> list[StagedFile]:
     pending one live availability preflight; the WPS Vtable is a brc-wrf decision.
     """
     kwargs["source"] = "rap_analysis"
+    return stage_nam_analysis(**kwargs)
+
+
+def stage_gfs_analysis(**kwargs) -> list[StagedFile]:
+    """Stage GFS 0.5° analysis (NCEI ``gfsanl_4``) — 6-hourly whole-file forcing.
+
+    Thin wrapper over :func:`stage_nam_analysis` (the shared whole-file analysis
+    stager) pinned to ``source="gfs_analysis"``: 6-hourly cadence, NCEI direct GET,
+    no Herbie. Unlike RAP, GFS analysis is field-complete for ``real.exe`` (4-layer
+    soil, land-sea mask, skin temp, snow, full pressure column — confirmed from the
+    NCEI ``.inv``); the WPS Vtable is ``Vtable.GFS`` (a brc-wrf decision).
+    """
+    kwargs["source"] = "gfs_analysis"
     return stage_nam_analysis(**kwargs)
 
 
@@ -1191,7 +1204,7 @@ def stage_case(
 
     ``sources`` (e.g. ``("gefs_reforecast", "nam_analysis")``) overrides the
     singular ``source``; whole-file analysis sources (``nam_analysis``,
-    ``rap_analysis``) are staged via :func:`stage_nam_analysis` (one whole file per
+    ``rap_analysis``, ``gfs_analysis``) are staged via :func:`stage_nam_analysis` (one whole file per
     analysis cycle), any other source via :func:`stage_reforecast` (per member).
     ``interval_hours`` defaults to the forcing source's cadence (NAM-only → 6 h,
     RAP-only → 1 h, reforecast → 3 h) when not given.
@@ -1302,7 +1315,7 @@ def _run_obs_check(*, case: str, init_dt: dt.datetime) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the WRF-input staging script."""
     parser = argparse.ArgumentParser(
-        description="Stage WPS/WRF-ready GRIB inputs (GEFS reforecast or NAM/RAP analysis) to scratch.",
+        description="Stage WPS/WRF-ready GRIB inputs (GEFS reforecast or NAM/RAP/GFS analysis) to scratch.",
     )
     parser.add_argument("--case", default=DEFAULT_CASE, help="Case name (output subdir).")
     parser.add_argument(
@@ -1320,7 +1333,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--source",
         default=DEFAULT_SOURCE,
-        help="Comma list of sources: gefs_reforecast, nam_analysis, rap_analysis (default: gefs_reforecast).",
+        help="Comma list of sources: gefs_reforecast, nam_analysis, rap_analysis, gfs_analysis (default: gefs_reforecast).",
     )
     parser.add_argument(
         "--variable-levels",
