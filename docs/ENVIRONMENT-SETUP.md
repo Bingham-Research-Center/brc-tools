@@ -38,8 +38,8 @@ cp .env.example .env
 
 If you prefer conda/miniforge, that's fine! Here's how:
 
-**Recommended (conda-forge + mamba/miniforge):** use the pinned `environment.yml` at the
-repo root — it mirrors `pyproject.toml` and pins Herbie to a current release:
+**Recommended (conda-forge + mamba/miniforge):** use the curated `environment.yml` at the
+repo root — it mirrors `pyproject.toml` and tracks a current Herbie release:
 
 ```bash
 mamba env create -f environment.yml   # creates env "brc-tools-2026"
