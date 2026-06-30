@@ -1,4 +1,4 @@
-# WRF-Input GRIB Staging — Handoff
+# WRF-Input GRIB Staging — Reference (detail + proof)
 
 > **State:** NAM-only is proven end-to-end (WPS → `real.exe` → `wrf.exe`). GEFS+NAM two-stream is **not** proven.
 > **brc-wrf side:** `../brc-wrf/brc-docs/BRC-WRF-STATE-PLAYBOOK.md` · `../brc-wrf/brc-docs/BRC-WRF-FIRST-CASE.md` (paths from repo root; both repos checked out as siblings).

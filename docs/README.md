@@ -11,8 +11,8 @@ Project documentation. Topical files only — agent context lives in
 - **CROSS-REPO-SYNC.md** — protocol for keeping the four sibling repos aligned.
 - **WEBSITE-INTEGRATION.md** — BasinWX upload contract (endpoint, auth, dataTypes, schemas).
 - **ENVIRONMENT-SETUP.md** — venv/conda setup for new team members.
-- **WRF-INPUT-STAGING.md** — WRF/WPS GRIB staging handoff, proof evidence, and microtasks.
-- **WRF-STAGING-STATE-PLAYBOOK.md** — plain-language milestone/state packet for the WRF staging side.
-- **WRF-GEFS-NAM-FIELD-MAP.md** — DRAFT GEFS/NAM two-stream field-map (not proven).
-- **HANDOFF-TO-BRC-WRF.md** — paste-prompt to hand the WRF run side to a brc-wrf session.
+- **WRF-INPUT-STAGING.md** — WRF/WPS GRIB staging reference: status, proof evidence, and microtasks (the playbook is the handoff).
+- **WRF-STAGING-STATE-PLAYBOOK.md** — the single WRF cold-start handoff + state packet (start here for the WRF lane).
+- **WRF-GEFS-NAM-FIELD-MAP.md** — DRAFT GEFS/NAM two-stream field-map (parked, not proven).
+- **nwp/NWP-SOURCE-MATRIX.md** — per-source download matrix (Herbie vs direct) + Herbie currency.
 - **nwp/** — HRRR/RRFS roadmap (current operational focus).
