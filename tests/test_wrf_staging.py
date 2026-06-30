@@ -33,6 +33,7 @@ from brc_tools.nwp.wrf_staging import (
     build_manifest,
     plan_case,
     stage_nam_analysis,
+    stage_rap_analysis,
     stage_reforecast,
     verify_manifest,
     write_manifest,
@@ -186,6 +187,14 @@ def test_lookups_nam_analysis_parses():
     cfg = wrf_staging.load_lookups()["models"]["nam_analysis"]
     assert cfg["cadence_hours"] == 6
     assert "{yyyymmdd}" in cfg["filename_template"]
+    assert cfg["url_template"].startswith("https://www.ncei.noaa.gov/")
+
+
+def test_lookups_rap_analysis_parses():
+    cfg = wrf_staging.load_lookups()["models"]["rap_analysis"]
+    assert cfg["cadence_hours"] == 1                    # hourly analysis
+    assert cfg["wps_fg_name"] == "RAP"
+    assert cfg["filename_template"] == "rap_130_{yyyymmdd}_{hhmm}_000.grb2"
     assert cfg["url_template"].startswith("https://www.ncei.noaa.gov/")
 
 
@@ -433,6 +442,28 @@ def test_stage_nam_skips_existing(tmp_path, fake_nam_http):
     assert fake_nam_http.urls == []  # already staged -> no HTTP call
 
 
+def test_stage_rap_analysis_layout_and_manifest(tmp_path, fake_nam_http):
+    # RAP rides the shared whole-file analysis stager (mocked HTTP) at hourly cadence.
+    staged = stage_rap_analysis(
+        init_time="2013-02-02 00Z",
+        fxx_window=(12, 18),  # hourly 12Z..18Z on 2013-02-02 (Pelican window)
+        output_root=tmp_path,
+        case="pelican",
+    )
+    assert len(staged) == 7  # one whole file per hourly analysis cycle
+    for sf in staged:
+        dest = Path(sf.local_path)
+        assert dest.exists() and validate_cached_grib(dest)
+        assert dest.parent == tmp_path / "pelican" / "rap_analysis"  # no member dir
+        assert dest.name.startswith("rap_130_") and dest.name.endswith("_000.grb2")
+        assert sf.source == "rap_analysis" and sf.member == "" and sf.member_int == 0
+        assert sf.remote_url.startswith("https://www.ncei.noaa.gov/")
+    assert {Path(sf.local_path).name for sf in staged} == {
+        f"rap_130_20130202_{h:02d}00_000.grb2" for h in range(12, 19)
+    }
+    assert len(fake_nam_http.urls) == 7  # one whole-file GET per cycle
+
+
 # ── manifest ─────────────────────────────────────────────────────────────────
 
 
@@ -582,6 +613,21 @@ def test_plan_case_reforecast_offline(tmp_path):
     assert all(e["est_bytes"] is None for e in plan)  # reforecast size unknown offline
 
 
+def test_plan_case_rap_offline(tmp_path):
+    plan = plan_case(
+        case="pelican2013_rap", init_time="2013-02-02 00Z", output_root=tmp_path,
+        fxx_window=(12, 18), sources=("rap_analysis",),
+    )
+    assert len(plan) == 7  # hourly cycles 12Z..18Z (analysis path, not reforecast)
+    assert all(e["source"] == "rap_analysis" and e["member"] == "" for e in plan)
+    assert all(e["url"].startswith("https://www.ncei.noaa.gov/") for e in plan)
+    assert all(e["est_bytes"] == 12_500_000 for e in plan)  # per-source estimate (NCEI preflight)
+    names = [Path(e["local_path"]).name for e in plan]
+    assert names[0] == "rap_130_20130202_1200_000.grb2"
+    assert names[-1] == "rap_130_20130202_1800_000.grb2"
+    assert all(Path(e["local_path"]).parent.name == "rap_analysis" for e in plan)
+
+
 # ── manifest integrity ───────────────────────────────────────────────────────
 
 
@@ -709,6 +755,7 @@ def test_interval_hours_for_sources():
     assert _interval_hours_for_sources(("nam_analysis",), lu) == 6
     assert _interval_hours_for_sources(("gefs_reforecast",), lu) == 3
     assert _interval_hours_for_sources(("gefs_reforecast", "nam_analysis"), lu) == 3
+    assert _interval_hours_for_sources(("rap_analysis",), lu) == 1  # hourly RAP analysis
 
 
 def test_build_contract_nam_only():
@@ -736,6 +783,20 @@ def test_build_contract_two_stream():
     assert c["wps_fg_name"] == ["GEFS", "NAM"]
     assert c["interval_seconds"] == 10800
     assert c["source_file_counts"] == {"gefs_reforecast": 1, "nam_analysis": 1}
+
+
+def test_build_contract_rap_only():
+    m = build_manifest(
+        case="pelican2013_rap", region="uinta_basin_wide",
+        requested_window=("2013-02-02T12:00:00Z", "2013-02-02T18:00:00Z"),
+        interval_hours=1, sources=["rap_analysis"],
+        staged=[_nam_staged_stub("rap_analysis")],
+    )
+    c = build_contract(m)
+    assert c["wps_fg_name"] == ["RAP"]  # metadata-driven, NOT mis-stamped as GEFS
+    assert c["interval_seconds"] == 3600 and c["interval_hours"] == 1
+    assert c["cadence_hours"]["rap_analysis"] == 1
+    assert c["source_file_counts"] == {"rap_analysis": 1}
 
 
 def test_stage_case_writes_contract_and_derived_interval(tmp_path, fake_nam_http):

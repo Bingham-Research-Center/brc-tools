@@ -589,6 +589,9 @@ def _remote_url(H) -> str | None:
 
 DEFAULT_NAM_SOURCE = "nam_analysis"
 DEFAULT_NAM_CADENCE_HOURS = 6
+# WPS fg_name token per staging source; build_contract prefers the lookups model's
+# wps_fg_name and falls back to this map so a non-NAM source is never stamped GEFS.
+_FG_NAME_FALLBACK = {"nam_analysis": "NAM", "gefs_reforecast": "GEFS", "rap_analysis": "RAP"}
 
 
 def _snap_down_to_cadence(t: dt.datetime, cadence_hours: int) -> dt.datetime:
@@ -781,16 +784,28 @@ def stage_nam_analysis(
 
     if not staged:
         raise RuntimeError(
-            f"NAM staging produced no files for init {init_dt:%Y-%m-%d %HZ} window "
+            f"{source} staging produced no files for init {init_dt:%Y-%m-%d %HZ} window "
             f"{fxx_window}: all {len(cycles)} cycle(s) were missing/unreachable. Check the "
-            "NCEI URL template ([models.nam_analysis] in lookups.toml)."
+            f"NCEI URL template ([models.{source}] in lookups.toml)."
         )
     if len(staged) < len(cycles):
         LOG.warning(
-            "NAM: staged %d of %d cycles (%d missing gap(s)).",
-            len(staged), len(cycles), len(cycles) - len(staged),
+            "%s: staged %d of %d cycles (%d missing gap(s)).",
+            source, len(staged), len(cycles), len(cycles) - len(staged),
         )
     return staged
+
+
+def stage_rap_analysis(**kwargs) -> list[StagedFile]:
+    """Stage RAP 13 km analysis (NCEI ``rap_130``) — hourly whole-file forcing.
+
+    Thin wrapper over :func:`stage_nam_analysis` (the shared whole-file analysis
+    stager) pinned to ``source="rap_analysis"``: hourly cadence, NCEI direct GET,
+    no Herbie. The NCEI URL/filename in ``[models.rap_analysis]`` are PROVISIONAL
+    pending one live availability preflight; the WPS Vtable is a brc-wrf decision.
+    """
+    kwargs["source"] = "rap_analysis"
+    return stage_nam_analysis(**kwargs)
 
 
 # ── manifest ────────────────────────────────────────────────────────────────
@@ -873,16 +888,18 @@ def write_manifest(manifest: dict, output_dir: str | Path) -> Path:
 def _interval_hours_for_sources(sources, lu: dict) -> int:
     """Metgrid/WRF LBC interval (hours) implied by the forcing source(s).
 
-    NAM-only forcing runs at the NAM analysis cadence (6 h — the validated
-    Feb-2013 recipe). If a reforecast-family source is present it forces the LBCs
-    at the finer reforecast lead cadence (3 h), with NAM as filler. This replaces
-    the blind ``DEFAULT_INTERVAL_HOURS`` that wrongly stamped a NAM-only run as 3 h.
+    The interval is the **finest native cadence** among the staged sources:
+    analysis sources carry ``cadence_hours`` (NAM 6 h, RAP 1 h); the reforecast has
+    none and forces LBCs at the 3-hourly lead cadence (``DEFAULT_INTERVAL_HOURS``),
+    with NAM as filler. So NAM-only → 6 h, RAP-only → 1 h, reforecast(+NAM) → 3 h.
     """
-    non_nam = [s for s in sources if s != DEFAULT_NAM_SOURCE]
-    if non_nam:
-        return DEFAULT_INTERVAL_HOURS  # reforecast 3-hourly LBC cadence
-    cfg = lu["models"].get(DEFAULT_NAM_SOURCE, {})
-    return int(cfg.get("cadence_hours", DEFAULT_NAM_CADENCE_HOURS))
+    intervals = []
+    for src in sources:
+        cfg = lu["models"].get(src, {})
+        intervals.append(
+            int(cfg["cadence_hours"]) if "cadence_hours" in cfg else DEFAULT_INTERVAL_HOURS
+        )
+    return min(intervals) if intervals else DEFAULT_INTERVAL_HOURS
 
 
 def build_contract(manifest: dict, lu: dict | None = None) -> dict:
@@ -907,20 +924,22 @@ def build_contract(manifest: dict, lu: dict | None = None) -> dict:
     cadence_hours = {}
     for src in sources:
         cfg = lu["models"].get(src, {})
+        # Per-source native cadence: analysis sources (NAM 6 h, RAP 1 h) carry
+        # cadence_hours; the reforecast falls back to the 3-hourly LBC cadence.
         cadence_hours[src] = (
-            int(cfg.get("cadence_hours", DEFAULT_NAM_CADENCE_HOURS))
-            if src == DEFAULT_NAM_SOURCE
-            else DEFAULT_INTERVAL_HOURS
+            int(cfg["cadence_hours"]) if "cadence_hours" in cfg else DEFAULT_INTERVAL_HOURS
         )
 
-    nam = DEFAULT_NAM_SOURCE in sources
-    other = [s for s in sources if s != DEFAULT_NAM_SOURCE]
-    if other and nam:
-        fg_name = ["GEFS", "NAM"]  # two-stream: reforecast forcing + NAM filler
-    elif other:
-        fg_name = ["GEFS"]
-    else:
-        fg_name = ["NAM"]  # validated single-stream forcing
+    # WPS fg_name token per source (filler/forcing order follows ``sources``), from the
+    # lookups model's ``wps_fg_name`` with a fallback map for the legacy sources — so a
+    # non-NAM source (e.g. rap_analysis) is never mis-stamped as GEFS.
+    fg_name: list[str] = []
+    for src in sources:
+        token = lu["models"].get(src, {}).get("wps_fg_name") or _FG_NAME_FALLBACK.get(src)
+        if token and token not in fg_name:
+            fg_name.append(token)
+    if not fg_name:
+        fg_name = ["NAM"]
 
     interval_hours = _interval_hours_for_sources(sources, lu)
     name = case.get("name")
@@ -977,7 +996,7 @@ def plan_case(
     plan: list[dict] = []
     for src in sources:
         cfg = lu["models"].get(src, {})
-        if src == DEFAULT_NAM_SOURCE:
+        if cfg.get("filename_template"):  # whole-file analysis source (NAM, RAP)
             cadence = int(cfg.get("cadence_hours", DEFAULT_NAM_CADENCE_HOURS))
             url_template = cfg.get("url_template")
             filename_template = cfg.get("filename_template")
@@ -997,7 +1016,7 @@ def plan_case(
                 plan.append({
                     "source": src, "member": "", "filename": filename,
                     "url": url, "local_path": str(dest),
-                    "est_bytes": NAM_EST_BYTES_PER_CYCLE,
+                    "est_bytes": int(cfg.get("est_bytes_per_cycle", NAM_EST_BYTES_PER_CYCLE)),
                 })
         else:
             breakpoint_fxx = int(cfg.get("fxx_bucket_breakpoint", 240))
@@ -1169,10 +1188,11 @@ def stage_case(
     """Stage every requested source/member, write the manifest, optional quicklook/obs.
 
     ``sources`` (e.g. ``("gefs_reforecast", "nam_analysis")``) overrides the
-    singular ``source``; ``nam_analysis`` is staged via :func:`stage_nam_analysis`
-    (one whole file per analysis cycle), any other source via
-    :func:`stage_reforecast` (per member). ``interval_hours`` defaults to the
-    forcing source's cadence (NAM-only → 6 h, reforecast → 3 h) when not given.
+    singular ``source``; whole-file analysis sources (``nam_analysis``,
+    ``rap_analysis``) are staged via :func:`stage_nam_analysis` (one whole file per
+    analysis cycle), any other source via :func:`stage_reforecast` (per member).
+    ``interval_hours`` defaults to the forcing source's cadence (NAM-only → 6 h,
+    RAP-only → 1 h, reforecast → 3 h) when not given.
     Also writes a ``contract_<case>.json`` sidecar. Returns the manifest path.
     """
     init_dt = _parse_init_time(init_time)
@@ -1189,7 +1209,7 @@ def stage_case(
     staged: list[StagedFile] = []
     t0 = time.perf_counter()  # end-to-end staging wall-time (incl. sha256 + move)
     for src in src_list:
-        if src == DEFAULT_NAM_SOURCE:
+        if lu["models"].get(src, {}).get("filename_template"):  # whole-file analysis (NAM, RAP)
             staged.extend(
                 stage_nam_analysis(
                     init_time=init_dt,
@@ -1298,7 +1318,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--source",
         default=DEFAULT_SOURCE,
-        help="Comma list of sources: gefs_reforecast, nam_analysis (default: gefs_reforecast).",
+        help="Comma list of sources: gefs_reforecast, nam_analysis, rap_analysis (default: gefs_reforecast).",
     )
     parser.add_argument(
         "--variable-levels",
