@@ -18,6 +18,11 @@ pip install -e .          # core deps
 pip install -e ".[dev]"   # + pytest, ruff, mypy, jupyter
 ```
 
+Conda/mamba (recommended on CHPC — pinned, bundles the GRIB/cartopy stack):
+```bash
+mamba env create -f environment.yml   # env "brc-tools-2026"; then: pip install -e . --no-deps
+```
+
 ## Quick usage
 
 ```python
@@ -114,6 +119,23 @@ a follow-up, needs a cross-repo PR per
 Active backlog and open action items live in [`WISHLIST-TASKS.md`](WISHLIST-TASKS.md)
 (the canonical prioritised backlog). Cross-repo WRF state lives in
 [`docs/WRF-STAGING-STATE-PLAYBOOK.md`](docs/WRF-STAGING-STATE-PLAYBOOK.md).
+
+### Upstream notes — Herbie
+
+A couple of behaviours we hit while wiring up NCEI-historical GRIB staging on **Herbie
+2025.11.3**, recorded for our own reference — not bug reports, and not a claim our reading
+is the intended design (Herbie is excellent and we lean on it heavily):
+
+- The `rap_historical` template raised `ValueError: Invalid suffix 'grb.inv'` for a 2013
+  analysis date; that `IDX_SUFFIX` entry reads differently from the dotted `.grb.inv` used
+  elsewhere in the same file. We fetch the NCEI RAP-130 analysis directly instead — the same
+  URL the template builds.
+- `rap_ncei` / `nam` didn't resolve our 2013 targets (RAP-130 lives under
+  `…/access/historical/…`; Herbie's `nam` is operational-only).
+
+These are pinned to one version and may already differ upstream (latest is 2026.3.0) —
+worth re-checking after each upgrade. Full per-source rationale:
+[`docs/nwp/NWP-SOURCE-MATRIX.md`](docs/nwp/NWP-SOURCE-MATRIX.md).
 
 ## Authors
 

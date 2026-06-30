@@ -1,0 +1,38 @@
+# Dedicated, pinned conda env for brc-tools (2026 refresh) — a lean alternative to
+# the shared clyfar-* envs. Source of truth for deps is pyproject.toml
+# [project.dependencies]; this mirrors them on conda-forge and bumps Herbie to the
+# current release. Create with miniforge/mamba:
+#   mamba env create -f environment.yml
+#   conda activate brc-tools-2026
+#   pip install -e . --no-deps        # install brc_tools itself (deps already solved)
+name: brc-tools-2026
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  # --- core (mirrors pyproject [project.dependencies]) ------------------------
+  - numpy>=1.24
+  - pandas>=2.0
+  - polars>=0.20
+  - scipy>=1.10
+  - herbie-data>=2026.3.0      # bumped from >=2024 — RRFS S3 fix, requests/SSL, pandas 3.0
+  - matplotlib-base>=3.7       # headless (Agg); lighter than full matplotlib
+  - cartopy>=0.22
+  - requests>=2.31
+  - fasteners>=0.18
+  - beautifulsoup4>=4.12
+  - python-dotenv>=1.0
+  - pytz>=2023.3
+  - pyyaml>=6.0
+  - cfgrib                     # GRIB decode (Herbie .xarray / wrf_quicklook); pulls eccodes
+  - eccodes
+  # --- dev (lint/test/notebooks) ----------------------------------------------
+  - pytest>=7.4
+  - ruff>=0.1
+  - mypy>=1.5
+  - ipykernel>=6.25
+  - pip
+  - pip:
+      - SynopticPy>=2024.0.0   # obs wrapper (pip; not reliably on conda-forge)
+      - openai>=1.0            # [api] extra — brc_tools.api.perplexity
+      - mistralai>=1.0         # [api] extra — brc_tools.api.mistral
