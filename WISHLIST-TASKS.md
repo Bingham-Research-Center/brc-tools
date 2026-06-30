@@ -2,6 +2,23 @@
 
 Completed items are removed once merged; git history is the record.
 
+## Session closeout (2026-06-29) — open PRs + next steps
+
+Three PRs from this session's docs/RAP/env work (merge order independent; CODEOWNERS review):
+- **#25** — CLAUDE.md/docs sync + `docs/nwp/NWP-SOURCE-MATRIX.md` + a "check Herbie first" guard.
+- **#26** — `rap_analysis` staging source (offline, NCEI path preflight-confirmed).
+- **#27** — `brc-tools-2026` env + Herbie `2024`→`2026.3.0` bump (validated, 107 passed).
+
+Recommended next steps toward the goals (least-recently-mentioned first):
+1. **Merge #25/#26/#27**, then migrate the obs/HRRR crons to `brc-tools-2026` (re-verify the
+   RRFS path if RRFS ever goes operational — its Herbie template changed at 2026.3.0).
+2. **RAP forcing experiment** — the one approved DTN stage below is the *only* remaining
+   brc-tools step before brc-wrf can run the new ICs/LBCs.
+3. **clyfar `send_json_to_server`→`send_json_to_all`** — long-parked; needs a cross-repo PR
+   (`docs/CROSS-REPO-SYNC.md`) to retire the legacy single-URL path.
+4. **NWPSource/ObsSource integration tests** (Priority 1) — still the highest-leverage
+   reliability work, untouched this session.
+
 ## WRF-input staging (branch `feat/wrf-input-staging`)
 
 A separate active lane: stage GRIB (GEFSv12 reforecast + NAM analysis) to scratch
@@ -16,6 +33,11 @@ Slurm run profiles stay in `brc-wrf`.
 - The remaining staging-microtask backlog (#4–#13, #31, …) lives in
   `../brc-wrf/doc/BRC_WRF_MICROTASK_HANDOFF.md` — that handoff is the source of truth
   for this lane; not duplicated here.
+- [ ] **RAP forcing — DTN stage** — source support landed in #26 (offline plan/contract/
+  tests + source-generic staging); the NCEI path is preflight-confirmed. Remaining brc-tools
+  step: one approved DTN stage of the 7 RAP cycles (2013-02-02 12–18Z) → manifest/contract on
+  scratch; then brc-wrf owns the WPS Vtable choice + metgrid/real/wrf. Memo:
+  `../brc-wrf/brc-docs/BRC-WRF-PELICAN-RAP-FEASIBILITY.md`.
 
 ## Priority 1: Reliability
 
