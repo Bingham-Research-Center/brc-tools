@@ -777,10 +777,10 @@ def stage_nam_analysis(
 
             if validate and not validate_cached_grib(dest):
                 dest.unlink(missing_ok=True)
-                raise RuntimeError(f"Downloaded NAM GRIB failed validation: {dest}")
+                raise RuntimeError(f"Downloaded {source} GRIB failed validation: {dest}")
 
             staged.append(_nam_staged_file(dest, cycle, url, source, cfg))
-            LOG.info("staged NAM %s -> %s (%d bytes)", filename, dest, dest.stat().st_size)
+            LOG.info("staged %s %s -> %s (%d bytes)", source, filename, dest, dest.stat().st_size)
 
     if not staged:
         raise RuntimeError(
@@ -897,7 +897,8 @@ def _interval_hours_for_sources(sources, lu: dict) -> int:
     for src in sources:
         cfg = lu["models"].get(src, {})
         intervals.append(
-            int(cfg["cadence_hours"]) if "cadence_hours" in cfg else DEFAULT_INTERVAL_HOURS
+            int(cfg["cadence_hours"]) if "cadence_hours" in cfg
+            else (DEFAULT_NAM_CADENCE_HOURS if src == DEFAULT_NAM_SOURCE else DEFAULT_INTERVAL_HOURS)
         )
     return min(intervals) if intervals else DEFAULT_INTERVAL_HOURS
 
@@ -927,7 +928,8 @@ def build_contract(manifest: dict, lu: dict | None = None) -> dict:
         # Per-source native cadence: analysis sources (NAM 6 h, RAP 1 h) carry
         # cadence_hours; the reforecast falls back to the 3-hourly LBC cadence.
         cadence_hours[src] = (
-            int(cfg["cadence_hours"]) if "cadence_hours" in cfg else DEFAULT_INTERVAL_HOURS
+            int(cfg["cadence_hours"]) if "cadence_hours" in cfg
+            else (DEFAULT_NAM_CADENCE_HOURS if src == DEFAULT_NAM_SOURCE else DEFAULT_INTERVAL_HOURS)
         )
 
     # WPS fg_name token per source (filler/forcing order follows ``sources``), from the
@@ -1300,7 +1302,7 @@ def _run_obs_check(*, case: str, init_dt: dt.datetime) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the WRF-input staging script."""
     parser = argparse.ArgumentParser(
-        description="Stage WPS/WRF-ready GRIB inputs (GEFSv12 Reforecast) to scratch.",
+        description="Stage WPS/WRF-ready GRIB inputs (GEFS reforecast or NAM/RAP analysis) to scratch.",
     )
     parser.add_argument("--case", default=DEFAULT_CASE, help="Case name (output subdir).")
     parser.add_argument(
@@ -1330,7 +1332,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--interval-hours", type=int, default=None,
-        help="LBC interval metadata (default: derived from the forcing cadence — NAM 6 h, reforecast 3 h).",
+        help="LBC interval metadata (default: derived from the forcing cadence — NAM 6 h, RAP 1 h, reforecast 3 h).",
     )
     parser.add_argument("--herbie-save-dir", default=None, help="Herbie working cache before the move.")
     parser.add_argument("--keep-herbie-cache", action="store_true", help="Copy instead of move out of cache.")

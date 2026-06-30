@@ -18,7 +18,7 @@ pip install -e .          # core deps
 pip install -e ".[dev]"   # + pytest, ruff, mypy, jupyter
 ```
 
-Conda/mamba (recommended on CHPC — pinned, bundles the GRIB/cartopy stack):
+Conda/mamba (recommended on CHPC — curated, bundles the GRIB/cartopy stack):
 ```bash
 mamba env create -f environment.yml   # env "brc-tools-2026"; then: pip install -e . --no-deps
 ```

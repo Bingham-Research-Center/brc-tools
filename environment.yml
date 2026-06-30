@@ -1,4 +1,4 @@
-# Dedicated, pinned conda env for brc-tools (2026 refresh) — a lean alternative to
+# Dedicated, curated conda env for brc-tools (2026 refresh) — a lean alternative to
 # the shared clyfar-* envs. Source of truth for deps is pyproject.toml
 # [project.dependencies]; this mirrors them on conda-forge and bumps Herbie to the
 # current release. Create with miniforge/mamba:
@@ -24,9 +24,9 @@ dependencies:
   - python-dotenv>=1.0
   - pytz>=2023.3
   - pyyaml>=6.0
-  - cfgrib                     # GRIB decode (Herbie .xarray / wrf_quicklook); pulls eccodes
+  - cfgrib>=0.9.12             # GRIB decode (Herbie .xarray / wrf_quicklook); pulls eccodes
   - eccodes
-  # --- dev (lint/test/notebooks) ----------------------------------------------
+  # --- dev (lint/test + ipykernel; no full jupyter) ---------------------------
   - pytest>=7.4
   - ruff>=0.1
   - mypy>=1.5

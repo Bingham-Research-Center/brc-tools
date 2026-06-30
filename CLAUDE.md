@@ -8,7 +8,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Current focus
 - HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging**: stage GRIB → scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged; GEFS+NAM two-stream optional/unproven; RAP source added (#26: offline plan/contract/tests, NCEI path preflight-confirmed), live staging/WPS pending in brc-wrf. State → `docs/WRF-STAGING-STATE-PLAYBOOK.md`; cross-repo entry → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md` (full WRF doc set in Doc map below).
+- **WRF-input staging**: stage GRIB → scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged; GEFS+NAM two-stream optional/unproven; RAP source merged (#26) **and staged+verified to scratch** — brc-wrf consumes the contract next (WPS Vtable + metgrid/real/wrf). **Cold-start entry → `docs/WRF-STAGING-STATE-PLAYBOOK.md`** (single source of truth for this lane); proof detail → `docs/WRF-INPUT-STAGING.md`; cross-repo → `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -42,10 +42,9 @@ figures/          generated output (gitignored)
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy and phase tracker
 - `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix (Herbie vs direct), idiosyncrasies, Herbie currency
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
-- `docs/WRF-STAGING-STATE-PLAYBOOK.md` — terse WRF staging state and reading packet
-- `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (NOT proven)
-- `docs/HANDOFF-TO-BRC-WRF.md` — paste-prompt to hand the WRF run side to a brc-wrf session
-- `docs/HANDOFF-TO-BRC-WRF-HYGIENE.md` — cross-repo wiring + AGENTS-caretaker handoff to brc-wrf
+- `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-lane cold-start source of truth** (state + next-session handoff)
+- `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (parked, NOT proven)
+- `docs/HANDOFF-TO-BRC-WRF.md` — older paste-prompt (superseded by the playbook above)
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and

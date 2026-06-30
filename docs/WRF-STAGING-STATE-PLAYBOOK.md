@@ -2,7 +2,43 @@
 
 Short print-oriented explanation for John/JRL and Michael. This file describes
 what `brc-tools` owns in the WRF workflow, what is already proven, and what
-should happen next.
+should happen next. **This is the single cold-start source of truth for the WRF
+lane** — start here; the detail/proof lives in `docs/WRF-INPUT-STAGING.md`.
+
+## Cold-start handoff (for the next Claude Code session)
+
+**You are in `brc-tools`. The RAP forcing experiment's brc-tools half is DONE — the next
+move is in `brc-wrf`.**
+
+State (2026-06-29):
+- **RAP staged + verified on scratch:** `/scratch/general/vast/$USER/wrf_inputs/pelican2013_rap_3_1_333m_75lev/`
+  holds 7 hourly RAP-130 GRIB (2013-02-02 12–18Z, ~85 MB), `manifest_*.json` (`verify_manifest` 7/7 OK),
+  and `contract_*.json` (`wps_fg_name:["RAP"]`, `interval_seconds:3600`, hourly).
+- **`rap_analysis` source merged to `main`** (offline plan/contract/tests + source-generic whole-file
+  staging); the NCEI path is live-preflight-confirmed. Env: **`brc-tools-2026`** (herbie 2026.3.0;
+  `mamba env create -f environment.yml`).
+- **Session PRs merged:** #25 (docs + `docs/nwp/NWP-SOURCE-MATRIX.md` + Herbie guard), #26 (RAP), #27 (env).
+
+Next move — **switch to `brc-wrf`** and consume the contract:
+1. Point the brc-wrf case at the contract/manifest above; choose the WPS **Vtable.RAP** (candidates in the
+   memo — none generic) and run ungrib → metgrid → real → wrf.
+2. ⚠️ **Open risk — verify first:** RAP field-adequacy is UNPROVEN (land-sea mask / soil / snow / skin-temp /
+   SST). If RAP alone is short at metgrid, add a NAM filler stream (the parked GEFS+NAM two-stream pattern).
+
+If you instead need a **different NWP model** for ICs/LBCs: the pattern is now small — add `[models.<src>]`
+to `lookups.toml` (mirror `nam_analysis`/`rap_analysis`); a whole-file analysis source rides the existing
+generic path (zero new code); then `--plan` → one live preflight → one DTN stage → add a source-matrix row
+(the `tests/test_source_matrix.py` guard enforces it).
+
+Read for full context:
+- `docs/WRF-INPUT-STAGING.md` — NAM-only end-to-end proof detail.
+- `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source Herbie-vs-direct decisions + Herbie currency.
+- `../brc-wrf/brc-docs/BRC-WRF-PELICAN-RAP-FEASIBILITY.md` — RAP Vtable candidates + field gaps.
+- `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md` — brc-wrf's side of the seam.
+- Caretaker: when a brc-tools path moves, re-check that `../brc-tools`↔`../brc-wrf` doc links still resolve
+  (a manual pass — keep it true). brc-wrf consumes the **contract sidecar**, not `staged_files`.
+
+Remaining brc-tools backlog (not blocking brc-wrf): `WISHLIST-TASKS.md` → "Session closeout" section.
 
 ## One-Sentence State
 
