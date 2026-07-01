@@ -63,9 +63,11 @@ figures/
 *.log
 logs/
 
-# DTN / SLURM staging job logs (stage_<jobid>.out / .err — reproducible, not source)
+# DTN / SLURM job logs (<job>_<jobid>.out / .err — reproducible, not source)
 stage_*.out
 stage_*.err
+basin_o3_snow_*.out
+basin_o3_snow_*.err
 
 # SLURM figure-job logs (pelican_figures_<jobid>.out / .err — reproducible, not source)
 pelican_figures_*.out
