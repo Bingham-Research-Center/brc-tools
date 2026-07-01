@@ -394,9 +394,11 @@ def main():
 
     obs_cache, meta_cache = _cache_paths(args.cache_dir, start_dt, end_dt)
 
-    if args.no_fetch or (not args.refresh and obs_cache.exists()):
-        if not obs_cache.exists():
-            raise SystemExit(f"--no-fetch set but cache missing: {obs_cache}")
+    cache_ready = obs_cache.exists() and meta_cache.exists()
+    if args.no_fetch or (not args.refresh and cache_ready):
+        if not cache_ready:
+            missing = ", ".join(str(p) for p in (obs_cache, meta_cache) if not p.exists())
+            raise SystemExit(f"--no-fetch set but cache missing: {missing}")
         LOG.info("Loading cached obs: %s", obs_cache)
         df = pl.read_parquet(obs_cache)
         meta_df = pl.read_parquet(meta_cache)
@@ -430,7 +432,8 @@ def main():
              len(series["ozone"]))
 
     end_label = dt.datetime.strptime(args.end, "%Y-%m-%d")
-    season = f"{start_dt:%-d %b %Y} – {end_label:%-d %b %Y}"
+    # Avoid the glibc-only "%-d"; .day is portable off-CHPC.
+    season = f"{start_dt.day} {start_dt:%b %Y} – {end_label.day} {end_label:%b %Y}"
     agg = "daily-max" if args.ozone_stat == "dailymax" else "hourly"
     title = "Uinta Basin-floor winter ozone"
     subtitle = (f"{agg.capitalize()} ozone at sub-{int(args.max_elev_m)} m basin "

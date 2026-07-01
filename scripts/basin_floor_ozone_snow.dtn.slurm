@@ -36,8 +36,10 @@ echo "=== basin o3/snow start $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ==="
 export BRC_TOOLS_HTTP_IPV4_ONLY=1
 export MPLBACKEND=Agg
 
-# Output goes to CHPC group storage, never the repo (BRC_TOOLS_OUTPUT_DIR default).
-OUTROOT="${BRC_TOOLS_OUTPUT_DIR:-/uufs/chpc.utah.edu/common/home/lawson-group6/jrlawson/brc-tools-output}"
+# Output goes to CHPC group storage, never the repo. Export the default so the
+# Python process and the final 'ls' resolve the SAME location.
+export BRC_TOOLS_OUTPUT_DIR="${BRC_TOOLS_OUTPUT_DIR:-/uufs/chpc.utah.edu/common/home/lawson-group6/jrlawson/brc-tools-output}"
+OUTROOT="$BRC_TOOLS_OUTPUT_DIR"
 
 "$PY" scripts/basin_floor_ozone_snow.py \
   --start 2025-12-01 --end 2026-03-31 --max-elev-m 1900
