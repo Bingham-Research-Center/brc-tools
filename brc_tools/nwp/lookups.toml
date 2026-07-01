@@ -643,8 +643,17 @@ rrfs = "VGRD:hybrid level={level}"
 hrrr = "nat"
 rrfs = "natlev"
 
+# ── Aliases: air quality (obs-only; no NWP search table) ────────────────────
+
+[aliases.o3_concentration]
+description    = "Ozone concentration"
+units          = "ppb"
+output_var     = "o3_concentration"
+synoptic_name  = "ozone_concentration"
+synoptic_units = "ppb"
+
 # ── Reserved prefixes (documentation only) ──────────────────────────────────
-# o3_*, pm25_*, pm10_*, nox_*, co_*, so2_*, aod_*, refl_*, helicity_*,
+# pm25_*, pm10_*, nox_*, co_*, so2_*, aod_*, refl_*, helicity_*,
 # uh_*, ltng_*, sw_down, lw_down, shf, lhf, soil_t_*, soil_m_*,
 # ventrate, mxhgt
 
