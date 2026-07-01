@@ -42,7 +42,7 @@ which lists land-sea mask, SST, skin temp, and soil as NAM-supplied.)
 ## Hand-off
 
 Building `Vtable.GEFS` and proving `real.exe` with two streams is **brc-wrf**
-work. From the brc-tools side, staging is driven by
-`scripts/stage_wrf_inputs.py --source gefs_reforecast,nam_analysis` (see
+work. From the brc-tools side, staging is driven from the checkout by
+`conda run -n brc-tools-2026 python -m brc_tools.nwp.wrf_staging --source gefs_reforecast,nam_analysis` (see
 [walkthroughs/wrf-staging.md](walkthroughs/wrf-staging.md) and
 [WRF-INPUT-STAGING.md](WRF-INPUT-STAGING.md) §3).

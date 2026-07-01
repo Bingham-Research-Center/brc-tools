@@ -6,7 +6,8 @@ stops once the files + sidecars exist; running the model is the `brc-wrf` repo's
 job.
 
 > **State:** NAM-only single-stream is proven end-to-end. GFS 0.5° analysis is a
-> second forcing, **staged + verified** for the Pelican case (awaiting brc-wrf WPS).
+> second forcing, **staged + verified** and already consumed by the completed
+> Pelican GFS WRF-side run and paired NAM/GFS quicklooks.
 > GEFS+NAM two-stream is **not** proven — see [../WRF-GEFS-NAM-FIELD-MAP.md](../WRF-GEFS-NAM-FIELD-MAP.md).
 
 **Needs:** DTN access for real downloads · conda env `brc-tools-2026`

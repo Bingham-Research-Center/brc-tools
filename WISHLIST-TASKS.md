@@ -12,8 +12,10 @@ Three PRs from this session's docs/RAP/env work (merge order independent; CODEOW
 Recommended next steps toward the goals (least-recently-mentioned first):
 1. **Merge #25/#26/#27**, then migrate the obs/HRRR crons to `brc-tools-2026` (re-verify the
    RRFS path if RRFS ever goes operational — its Herbie template changed at 2026.3.0).
-2. **RAP forcing experiment** — the one approved DTN stage below is the *only* remaining
-   brc-tools step before brc-wrf can run the new ICs/LBCs.
+2. **Pelican forcing review** — RAP and GFS are no longer DTN-stage backlog:
+   RAP staged but failed WRF-side field adequacy before `real.exe`, while GFS
+   staged, verified, and completed WPS/`real.exe`/`wrf.exe` plus paired NAM/GFS
+   quicklooks in `brc-wrf`.
 3. **clyfar `send_json_to_server`→`send_json_to_all`** — long-parked; needs a cross-repo PR
    (`docs/CROSS-REPO-SYNC.md`) to retire the legacy single-URL path.
 4. **NWPSource/ObsSource integration tests** (Priority 1) — still the highest-leverage
@@ -29,14 +31,17 @@ Slurm run profiles stay in `brc-wrf`.
 
 - Canonical docs: `docs/WRF-INPUT-STAGING.md` (full reference) and
   `docs/WRF-STAGING-STATE-PLAYBOOK.md` (terse state).
-- Cross-repo entry point: `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+- Cross-repo entry point:
+  `../brc-wrf/brc-docs/BRC-WRF-PELICAN-NWP-HOTSWAP-HANDOFF.md`.
 - The remaining staging-microtask backlog (#4–#13, #31, …) lives in
   `../brc-wrf/doc/BRC_WRF_MICROTASK_HANDOFF.md` — that handoff is the source of truth
   for this lane; not duplicated here.
-- [ ] **RAP forcing — DTN stage** — source support landed in #26 (offline plan/contract/
-  tests + source-generic staging); the NCEI path is preflight-confirmed. Remaining brc-tools
-  step: one approved DTN stage of the 7 RAP cycles (2013-02-02 12–18Z) → manifest/contract on
-  scratch; then brc-wrf owns the WPS Vtable choice + metgrid/real/wrf. Memo:
+- [x] **RAP forcing — staged, then blocked in WRF field proof** — source support
+  landed in #26 and the 7 RAP cycles were staged. `brc-wrf` WPS-only proofs
+  showed unchanged RAP-only is not safe for `real.exe`: hybrid RAP lacked a
+  real-ready 3D atmosphere, and pressure RAP lacked layered soil
+  temperature/moisture. Future RAP work is a corrected source/product or an
+  explicit filler-stream design, not another unchanged DTN stage. Memo:
   `../brc-wrf/brc-docs/BRC-WRF-PELICAN-RAP-FEASIBILITY.md`.
 
 ## Priority 1: Reliability

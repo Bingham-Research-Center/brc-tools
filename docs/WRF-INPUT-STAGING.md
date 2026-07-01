@@ -1,6 +1,6 @@
 # WRF-Input GRIB Staging — Reference (detail + proof)
 
-> **State:** NAM-only is proven end-to-end (WPS → `real.exe` → `wrf.exe`). GFS 0.5° analysis is a second forcing, **staged + verified** for the Pelican case (awaiting brc-wrf WPS). GEFS+NAM two-stream is **not** proven.
+> **State:** NAM-only is proven end-to-end (WPS -> `real.exe` -> `wrf.exe`). GFS 0.5° analysis is a second forcing, **staged + verified** and consumed by the completed Pelican GFS WRF-side run plus paired NAM/GFS quicklooks. GEFS+NAM two-stream is **not** proven.
 > **brc-wrf side:** `../brc-wrf/brc-docs/BRC-WRF-STATE-PLAYBOOK.md` · `../brc-wrf/brc-docs/BRC-WRF-FIRST-CASE.md` (paths from repo root; both repos checked out as siblings).
 
 **Status:** ✅ **end-to-end validated** (2026-06-13). NAM-only staging drove WPS → `real.exe` →
@@ -68,10 +68,12 @@ forcing or as a second ungrib stream (multi-`fg_name` metgrid). **No NCAR RDA / 
 auth-free **NCEI GFS 0.5° analysis** (grid-004 GRIB2 `gfsanl_4`, direct GET like NAM/RAP) as a
 standalone single-stream forcing (`Vtable.GFS`, `fg_name=["GFS"]`, humidity = RH). Its `.inv` carries
 the full `real.exe` set — 4-layer soil T/moisture, land-sea mask, skin temp, snow/ice, 26-level
-atmosphere — so unlike RAP it should clear `NUM_METGRID_SOIL_LEVELS > 0`. Staged + `verify_manifest`
+atmosphere — and did clear the RAP `NUM_METGRID_SOIL_LEVELS = 0` blocker. Staged + `verify_manifest`
 **2/2 OK** for `pelican2013_gfs_3_1_333m_75lev` (12Z+18Z, `interval_seconds=21600`, a structural
-mirror of the NAM baseline); WPS/run is brc-wrf's. Chosen over NCAR-RDA FNL (auth-gated; 0.5° GFS is
-finer than 2013 FNL's 1°). Cross-repo handoff: `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+mirror of the NAM baseline). `brc-wrf` consumed that contract in job `13753673`;
+WPS, `real.exe`, `wrf.exe`, and archive completed with `NUM_METGRID_SOIL_LEVELS = 4`, and paired
+NAM/GFS quicklooks completed in job `13755401`. Chosen over NCAR-RDA FNL (auth-gated; 0.5° GFS is
+finer than 2013 FNL's 1°). Cross-repo handoff: `../brc-wrf/brc-docs/BRC-WRF-PELICAN-NWP-HOTSWAP-HANDOFF.md`.
 
 **Output layout:**
 ```
@@ -93,7 +95,8 @@ conda run -n brc-tools-2026 python -m brc_tools.nwp.wrf_staging --case jan2013_b
   --fxx-window 12,48 --lead-subset      # --lead-subset = only f12..f48, ~6x smaller
 
 # GFS 0.5° analysis — Pelican hot-swap second forcing (auth-free NCEI grid-4; 2x52 MB,
-# staged + verified 2026-06-30; field-complete; maps to Vtable.GFS). 12Z+18Z mirror the NAM baseline:
+# staged + verified 2026-06-30; field-complete; maps to Vtable.GFS; already consumed by brc-wrf).
+# 12Z+18Z mirror the NAM baseline:
 conda run -n brc-tools-2026 python -m brc_tools.nwp.wrf_staging --case pelican2013_gfs_3_1_333m_75lev \
   --init-time "2013-02-02 12Z" --source gfs_analysis --fxx-window 0,6 --http-ipv4-only --no-quicklook
 ```

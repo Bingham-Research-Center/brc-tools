@@ -7,9 +7,10 @@ lane** — start here; the detail/proof lives in `docs/WRF-INPUT-STAGING.md`.
 
 ## Cold-start handoff (for the next Claude Code session)
 
-**You are in `brc-tools`. GFS analysis is now a supported second forcing source,
-staged + verified for the Pelican hot-swap lane. The ball is in `brc-wrf`'s court:
-run WPS (`Vtable.GFS`) → metgrid → `real.exe` → `wrf.exe` on the staged contract.**
+**You are in `brc-tools`. GFS analysis is now a supported, staged, verified, and
+WRF-consumed second forcing source for the Pelican hot-swap lane. `brc-wrf`
+already ran WPS (`Vtable.GFS`) -> metgrid -> `real.exe` -> `wrf.exe`, archived
+the run, and rendered paired NAM/GFS quicklooks.**
 
 State (2026-06-30):
 - **NAM baseline complete:** `brc-wrf` has the successful
@@ -23,7 +24,7 @@ State (2026-06-30):
   `brc-tools-2026` lacks `cdsapi`/`ecmwfapi`, and CDS credentials were not
   configured. `brc-wrf` has a plausible WPS-side `Vtable.ECMWF`, but staging is
   not ready.
-- **GFS analysis SUPPORTED + STAGED + VERIFIED (2026-06-30):** added
+- **GFS analysis SUPPORTED + STAGED + VERIFIED + CONSUMED (2026-06-30):** added
   `[models.gfs_analysis]` (NCEI grid-004 0.5° GRIB2, auth-free direct GET — same
   lane as NAM/RAP) + `stage_gfs_analysis()` + matrix row + tests. Field adequacy
   CONFIRMED from the live `.inv` (4-layer soil T/moisture, land-sea mask, skin
@@ -31,8 +32,11 @@ State (2026-06-30):
   lacked). Staged + `verify_manifest` 2/2 OK to
   `/scratch/general/vast/$USER/wrf_inputs/pelican2013_gfs_3_1_333m_75lev/`
   (12Z+18Z, `wps_fg_name=["GFS"]`, `interval_seconds=21600` — an exact structural
-  mirror of the NAM baseline). Chosen over NCAR-RDA FNL (auth-gated; 0.5° GFS is
-  finer than 2013 FNL's 1°). NCEI product:
+  mirror of the NAM baseline). `brc-wrf` consumed the contract in job `13753673`;
+  WPS, `real.exe`, `wrf.exe`, and archive completed, with
+  `NUM_METGRID_SOIL_LEVELS = 4`. Paired NAM/GFS quicklooks completed in job
+  `13755401`. Chosen over NCAR-RDA FNL (auth-gated; 0.5° GFS is finer than 2013
+  FNL's 1°). NCEI product:
   https://www.ncei.noaa.gov/products/weather-climate-models/global-forecast
 - **Environment guardrail:** every brc-tools Python, Herbie, WRF
   source-planning, staging, manifest-verification, or pytest command must use
@@ -41,15 +45,14 @@ State (2026-06-30):
   Do not rely on inherited shells; Codex has inherited `clyfar-nov2025` in this
   lane.
 
-Next move (now in `brc-wrf`):
-1. Consume the staged GFS contract
-   `contract_pelican2013_gfs_3_1_333m_75lev.json`: ungrib with `Vtable.GFS`
-   (humidity = RH) → metgrid → `real.exe` → `wrf.exe`. **Watch
-   `NUM_METGRID_SOIL_LEVELS > 0`** — that is the exact RAP failure mode this
-   source is expected to clear.
-2. Note `SNOWH` may be absent (GFS ships `weasd` snow water-equiv, no `snod`);
-   metgrid yields `SNOW`, and Noah can derive depth — not a `real.exe` blocker.
-3. Handoff packet for `brc-wrf`: `../brc-wrf/brc-docs/BRC-TOOLS-LINK-HANDOFF.md`.
+Current stop point:
+1. Default next work is in `brc-wrf`: review the completed NAM/GFS paired
+   quicklooks and write the science-review packet. Do not redo GFS source
+   support.
+2. Optional new-source work belongs here only if John explicitly asks for FNL,
+   corrected RAP, or ERA5/CDS support.
+3. Cross-repo handoff:
+   `../brc-wrf/brc-docs/BRC-WRF-PELICAN-NWP-HOTSWAP-HANDOFF.md`.
 
 Optional brc-tools fast-follow (only if `brc-wrf` wants finer LBCs): grid-4 ships
 `_003`/`_006` offsets, so 3-hourly boundaries (`interval_seconds=10800`) are
@@ -75,13 +78,19 @@ downloads/staging still warrant a heads-up first.
 
 Remaining brc-tools backlog (not blocking brc-wrf): `WISHLIST-TASKS.md` → "Session closeout" section.
 
+Maintenance check after WRF-lane doc edits:
+
+```bash
+conda run -n brc-tools-2026 python scripts/check_wrf_doc_freshness.py
+```
+
 ## One-Sentence State
 
 `brc-tools` can stage WRF-ready GRIB inputs (NAM, RAP, and now GFS analysis; GEFS
 reforecast partial), verify their integrity, and hand `brc-wrf` a manifest/contract
 boundary; the NAM-only single-stream path is proven through WPS, `real.exe`, and
-`wrf.exe`, and GFS analysis is staged + verified for the same Pelican window,
-awaiting `brc-wrf` WPS.
+`wrf.exe`, and GFS analysis is staged, verified, and consumed by the completed
+Pelican GFS WRF-side run plus paired NAM/GFS quicklooks.
 
 ## What This Repo Owns
 
@@ -101,7 +110,7 @@ Those belong in `brc-wrf`, using CHPC settings from `brc-knowledge`.
 | Item | Status |
 | --- | --- |
 | NAM analysis staging | Proven and used in the successful Jan-2013 WRF proof. |
-| GFS analysis staging | Supported (`gfs_analysis`) + staged + `verify_manifest` 2/2 OK for `pelican2013_gfs_3_1_333m_75lev` (12Z+18Z); field-complete per the `.inv`; WPS/run is `brc-wrf`'s to prove. |
+| GFS analysis staging | Supported (`gfs_analysis`) + staged + `verify_manifest` 2/2 OK for `pelican2013_gfs_3_1_333m_75lev` (12Z+18Z); field-complete per the `.inv`; consumed by the completed `brc-wrf` GFS WRF-side run. |
 | Manifest verification | Proven: the existing proof manifest verifies `28/28 OK`. |
 | Contract sidecar | Implemented for fresh stages; old proof scratch predates this sidecar. |
 | Lead-time subsetting | Implemented for GEFS reforecast to reduce unnecessary download volume. |
@@ -113,10 +122,11 @@ Those belong in `brc-wrf`, using CHPC settings from `brc-knowledge`.
 | Stage | Result |
 | --- | --- |
 | WPS with NAM only | Produced 14 `met_em` files for d01/d02, 6-hour cadence. |
+| WPS with GFS analysis | Produced `num_metgrid_levels = 27` and `NUM_METGRID_SOIL_LEVELS = 4` for the Pelican 3-domain run. |
 | `real.exe` | Reached `SUCCESS COMPLETE REAL_EM INIT`. |
 | `wrf.exe` | Reached `SUCCESS COMPLETE WRF`. |
 | Archive | Produced a durable `lawson-group6` run directory. |
-| Visual QA | `brc-wrf` can now render no-run quicklooks from existing artifacts. |
+| Visual QA | `brc-wrf` rendered paired NAM/GFS standardized quicklooks, 30 PNGs per forcing. |
 
 ## Where We Should Go Next
 
@@ -124,8 +134,8 @@ Those belong in `brc-wrf`, using CHPC settings from `brc-knowledge`.
 | --- | --- | --- |
 | 1 | ✅ Done — `feat/wrf-input-staging` merged to `main` (PR #22 NAM-only, PR #23 hygiene batch). | `main` now contains the proven staging boundary. |
 | 2 | Keep NAM-only as the baseline proof. | Do not rename it as GEFS+NAM. |
-| 3 | ✅ Done — `gfs_analysis` source support added; GFS grid-4 staged + verified for `pelican2013_gfs_3_1_333m_75lev` (branch `nwp/gfs-analysis-source`). | Contract handed to `brc-wrf` via `BRC-TOOLS-LINK-HANDOFF.md`. |
-| 4 | `brc-wrf`: run WPS `Vtable.GFS` → metgrid → `real.exe` → `wrf.exe`; confirm `NUM_METGRID_SOIL_LEVELS > 0`. | brc-tools side complete; WPS/run stays in `brc-wrf`. |
+| 3 | ✅ Done — `gfs_analysis` source support added; GFS grid-4 staged + verified for `pelican2013_gfs_3_1_333m_75lev` (branch `nwp/gfs-analysis-source`). | Contract handed to `brc-wrf` via `BRC-WRF-PELICAN-NWP-HOTSWAP-HANDOFF.md`. |
+| 4 | ✅ Done — `brc-wrf` ran WPS `Vtable.GFS` -> metgrid -> `real.exe` -> `wrf.exe`; confirmed `NUM_METGRID_SOIL_LEVELS = 4`. | Review paired NAM/GFS quicklooks before approving more source work. |
 | 5 | Keep every full-stage or full-run step behind CHPC ownership boundaries. | DTN for downloads, `brc-wrf` for WPS/WRF, `brc-knowledge` for Slurm truth. |
 
 ## Reading Packet
