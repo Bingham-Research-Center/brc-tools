@@ -259,3 +259,39 @@ def plot_verification_timeseries(
     ax.grid(True, alpha=0.3)
 
     return ax
+
+
+def plot_scalar_timeseries(
+    series: dict[str, tuple[Sequence, np.ndarray]],
+    out_path,
+    *,
+    ylabel: str,
+    title: str,
+    run_styles: dict | None = None,
+    figsize: tuple = (8.0, 4.2),
+    dpi: int = 300,
+):
+    """Render one scalar per run against valid time (e.g. cold-pool heat deficit).
+
+    ``series`` maps a run label to ``(valid_times, values)``.  Returns the Path.
+    """
+    from pathlib import Path
+
+    out = Path(out_path)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    for i, (label, (times, values)) in enumerate(series.items()):
+        line_style = dict(DEFAULT_RUN_STYLES.get(i, {}))
+        if run_styles and label in run_styles:
+            line_style.update(run_styles[label])
+        ax.plot(list(times), np.asarray(values), marker="o", ms=3.5, label=label, **line_style)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel("valid time (UTC)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.autofmt_xdate()
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi)
+    plt.close(fig)
+    return out

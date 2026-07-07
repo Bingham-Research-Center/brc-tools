@@ -26,6 +26,10 @@ dependencies:
   - pyyaml>=6.0
   - cfgrib>=0.9.12             # GRIB decode (Herbie .xarray / wrf_quicklook); pulls eccodes
   - eccodes
+  # --- WRF-output analysis figures (brc_tools.nwp.wrf_output + visualize) ------
+  - netcdf4>=1.6               # read wrfout (NETCDF4/HDF5)
+  - metpy>=1.6                 # skew-T + thermodynamics (visualize.profile)
+  - siphon>=0.9                # Wyoming upper-air archive (visualize.profile)
   # --- dev (lint/test + ipykernel; no full jupyter) ---------------------------
   - pytest>=7.4
   - ruff>=0.1

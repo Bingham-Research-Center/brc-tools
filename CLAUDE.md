@@ -44,6 +44,7 @@ figures/          generated output (gitignored)
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-lane cold-start source of truth** (state + next-session handoff)
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (parked, NOT proven)
+- `docs/WRF-ANALYSIS-FIGURES.md` — publication figures for the pelican2013 cold-pool cases (driver, output routing, findings, caveats)
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and
@@ -61,7 +62,10 @@ a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 
 A second cross-repo interface: `brc_tools.visualize.grid` (`plot_grid_field`,
 `plot_vertical_section`) is imported by `brc-wrf`'s `wrf_quicklook.py` — treat its
-public signatures as load-bearing too.
+public signatures as load-bearing too. The publication-figure layer built on it —
+`brc_tools/nwp/wrf_output.py` (wrfout reader + derivations) and
+`brc_tools/visualize/{style,crosssection,domains,surface,profile,upperair}.py` —
+is documented in `docs/WRF-ANALYSIS-FIGURES.md` (driver: `scripts/pelican_figures.py`).
 
 ## Conventions
 - **UTC internally, always.** `datetime.timezone.utc`, never pytz. (Servers sit in different local zones — UTC is the portable invariant; convert to Mountain only at display.)
@@ -73,6 +77,7 @@ public signatures as load-bearing too.
 - **JSON filenames**: `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
+- **Heavy jobs run on SLURM, not login nodes.** Involved processing (WRF figure batches, multi-file analysis, staging) runs as CHPC SLURM jobs — ship a `scripts/*.slurm` wrapper (see `pelican_figures.slurm`, `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly since the login env doesn't carry. Details: `docs/CHPC-REFERENCE.md`.
 - **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: `nam_analysis`/`rap_analysis`/`gfs_analysis`, which Herbie can't retrieve for 2013).
 - **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa for pressure; units are per-alias in `lookups.toml` `synoptic_units`). Convert at the boundary (e.g. Pa→hPa) only for display.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
