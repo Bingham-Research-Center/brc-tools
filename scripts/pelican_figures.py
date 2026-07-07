@@ -76,8 +76,12 @@ SURFACE_VARS = {
 FAMILIES = ["domains", "section", "upperair", "surface", "difference", "profile", "skewt", "heatdeficit"]
 
 
+RUN_OVERRIDE: str | None = None  # set from --run; picks a specific run_* dir
+
+
 def run_dir(case: str) -> Path:
-    return wo.latest_run_dir(ARCHIVE / CASES[case][0] / "full6h")
+    base = ARCHIVE / CASES[case][0] / "full6h"
+    return (base / RUN_OVERRIDE) if RUN_OVERRIDE else wo.latest_run_dir(base)
 
 
 def _validate_output_dir(path: Path) -> None:
@@ -321,9 +325,12 @@ def main() -> None:
     ap.add_argument("--figure", default="all", help="|".join(FAMILIES) + "|all (comma-separated ok)")
     ap.add_argument("--time", default="all", help="hour(s) 12..18 or 'all' (comma-separated ok)")
     ap.add_argument("--output-dir", default=None, help="override output root (else routed by case)")
+    ap.add_argument("--run", default=None, help="specific run_* dir name (default: latest); single-case use")
     ap.add_argument("--sounding-cache", default=None, help="parquet from fetch_soundings.py (offline obs)")
     args = ap.parse_args()
 
+    global RUN_OVERRIDE
+    RUN_OVERRIDE = args.run
     use_publication_style()
     tasks = build_tasks(args)
     print(f"pelican_figures: {len(tasks)} figure task(s)")
