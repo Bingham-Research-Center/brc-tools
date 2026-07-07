@@ -40,6 +40,14 @@ fig = plot_planview_evolution(ds, "wind_speed_10m", cmap="YlOrRd")
 
 See `scripts/` for full case study examples.
 
+## Claude Code skills
+
+Repo-local skills (slash commands) live in `.claude/skills/`:
+
+- [`/wrf-full-figures`](.claude/skills/wrf-full-figures/SKILL.md) — generate publication
+  "full-figures" (300-DPI versions of the WRF quicklooks) for a WRF case on CHPC SLURM,
+  choosing a specific case/run. Companion doc: [`docs/WRF-ANALYSIS-FIGURES.md`](docs/WRF-ANALYSIS-FIGURES.md).
+
 ## CHPC Deployment
 
 This package is deployed on CHPC to push weather data to BasinWX.
