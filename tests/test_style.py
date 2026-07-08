@@ -42,6 +42,23 @@ def test_symmetric_limit_capped():
     assert st.symmetric_limit(a, cap=4.0) == 4.0
 
 
+def test_resolve_style_default_is_fixed():
+    assert st.resolve_style("theta_2m") == st.get_style("theta_2m")
+
+
+def test_resolve_style_autoscale_nulls_limits():
+    base = st.get_style("theta_2m")
+    a = st.resolve_style("theta_2m", autoscale=True)
+    assert a.vmin is None and a.vmax is None
+    assert a.cmap == base.cmap and a.label == base.label
+
+
+def test_resolve_style_override_wins_over_autoscale():
+    ov = st.VarStyle("viridis", "custom", vmin=1.0, vmax=2.0)
+    got = st.resolve_style("theta_2m", overrides={"theta_2m": ov}, autoscale=True)
+    assert got is ov
+
+
 def test_use_publication_style_sets_rcparams(tmp_path, monkeypatch):
     monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
     import matplotlib

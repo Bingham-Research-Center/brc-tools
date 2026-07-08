@@ -21,6 +21,7 @@ Conventions (validated against the pelican2013 d03 runs):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,7 @@ THETA0 = 300.0  # WRF base-state offset for perturbation potential temperature
 KT = 1.94384  # m s-1 -> knots
 
 _WRFOUT_TIME_FMT = "%Y-%m-%d_%H:%M:%S"
+_WRFOUT_DOMAIN_RE = re.compile(r"^wrfout_d(\d+)_")
 
 
 # --------------------------------------------------------------------------- #
@@ -74,6 +76,22 @@ def latest_run_dir(parent: str | Path) -> Path:
     if not runs:
         raise FileNotFoundError(f"no run_* directory under {parent}")
     return runs[-1]
+
+
+def discover_domains(run_dir: str | Path) -> list[int]:
+    """List the domain numbers present in a run directory (parsed from filenames).
+
+    Globs ``wrfout_d0N_*`` and returns the sorted, unique domain integers so callers
+    can adapt to a 2-, 3-, or 4-nest run instead of assuming a fixed count.  Uses the
+    same filename convention as :func:`list_valid_times` and :func:`wrfout_path`.
+    """
+    run_dir = Path(run_dir)
+    domains: set[int] = set()
+    for p in run_dir.glob("wrfout_d*_*"):
+        m = _WRFOUT_DOMAIN_RE.match(p.name)
+        if m:
+            domains.add(int(m.group(1)))
+    return sorted(domains)
 
 
 # --------------------------------------------------------------------------- #
@@ -199,6 +217,18 @@ def dx_dy(ds) -> tuple[float, float]:
     return float(ds.attrs["DX"]), float(ds.attrs["DY"])
 
 
+def grid_spacing_label(ds) -> str:
+    """Human-readable grid spacing from the ``DX`` global attr (e.g. ``3 km``, ``333 m``).
+
+    Lets a figure engine label nests from the data (``d02 (1 km)``) instead of a
+    hardcoded per-case string.  ``>= 1 km`` renders in km, else rounded to whole metres.
+    """
+    dx = float(ds.attrs["DX"])
+    if dx >= 1000.0:
+        return f"{dx / 1000.0:g} km"
+    return f"{round(dx):g} m"
+
+
 def center_indices(ds) -> tuple[int, int]:
     """Mass-grid centre indices ``(j, i)``."""
     return ds.sizes["south_north"] // 2, ds.sizes["west_east"] // 2
@@ -214,6 +244,23 @@ def nearest_column_index(ds, lat: float, lon: float) -> tuple[int, int]:
     _, idx = tree.query([lat, lon])
     j, i = np.unravel_index(int(idx), xlat.shape)
     return int(j), int(i)
+
+
+def point_in_domain(ds, lat: float, lon: float, *, pad: float = 0.0) -> bool:
+    """Whether ``(lat, lon)`` lies within the domain's XLAT/XLONG bounding box.
+
+    :func:`nearest_column_index` always returns the closest cell — even for a point
+    far outside the grid — so a focus point off the domain silently resolves to an
+    edge column.  This is the explicit membership test a figure engine uses to warn
+    (and skip point-dependent figures) instead of plotting that misleading edge cell.
+    ``pad`` (degrees) loosens the box for near-edge tolerance.
+    """
+    xlat = surface_field(ds, "XLAT")
+    xlon = surface_field(ds, "XLONG")
+    return bool(
+        (float(xlat.min()) - pad) <= lat <= (float(xlat.max()) + pad)
+        and (float(xlon.min()) - pad) <= lon <= (float(xlon.max()) + pad)
+    )
 
 
 def _dewpoint_c(pressure_pa_col: np.ndarray, qv: np.ndarray) -> np.ndarray:

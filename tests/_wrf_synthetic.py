@@ -16,19 +16,35 @@ Design choices that make assertions easy:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 _G = 9.80665
 
+_WRFOUT_TIME_FMT = "%Y-%m-%d_%H:%M:%S"
 
-def make_synthetic_wrf(nz: int = 4, ny: int = 6, nx: int = 6):
-    """Return a small in-memory ``xr.Dataset`` mimicking a wrfout file."""
+
+def make_synthetic_wrf(
+    nz: int = 4,
+    ny: int = 6,
+    nx: int = 6,
+    *,
+    lat0: float = 40.0,
+    lon0: float = -110.0,
+    drop_vars: tuple[str, ...] = (),
+):
+    """Return a small in-memory ``xr.Dataset`` mimicking a wrfout file.
+
+    ``lat0``/``lon0`` place the grid at a different region (the grid stays regular);
+    ``drop_vars`` omits fields to exercise missing-variable handling.
+    """
     import xarray as xr
 
     nzs, nys, nxs = nz + 1, ny + 1, nx + 1
     jj, ii = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
-    xlat = 40.0 + jj * 0.1
-    xlon = -110.0 + ii * 0.1
+    xlat = lat0 + jj * 0.1
+    xlon = lon0 + ii * 0.1
     hgt = 1500.0 + 20.0 * ii + 10.0 * jj  # gentle terrain slope
 
     lev = np.arange(nz).reshape(nz, 1, 1)
@@ -51,7 +67,7 @@ def make_synthetic_wrf(nz: int = 4, ny: int = 6, nx: int = 6):
 
     xyz = ("Time", "bottom_top", "south_north", "west_east")
     sfc = ("Time", "south_north", "west_east")
-    return xr.Dataset(
+    ds = xr.Dataset(
         data_vars={
             "T": (xyz, _t(t_pert)),
             "P": (xyz, _t(p)),
@@ -80,10 +96,48 @@ def make_synthetic_wrf(nz: int = 4, ny: int = 6, nx: int = 6):
             "DX": 333.333,
             "DY": 333.333,
             "MAP_PROJ": 1,
-            "TRUELAT1": 40.0,
-            "TRUELAT2": 41.0,
-            "STAND_LON": -110.0,
-            "CEN_LAT": 40.3,
-            "CEN_LON": -109.7,
+            "TRUELAT1": lat0,
+            "TRUELAT2": lat0 + 1.0,
+            "STAND_LON": lon0,
+            "CEN_LAT": lat0 + 0.3,
+            "CEN_LON": lon0 + 0.3,
         },
     )
+    if drop_vars:
+        ds = ds.drop_vars([v for v in drop_vars if v in ds])
+    return ds
+
+
+def write_synthetic_run(
+    run_dir,
+    domains: dict[int, dict],
+    times,
+    *,
+    nz: int = 4,
+    lat0: float = 40.0,
+    lon0: float = -110.0,
+):
+    """Write ``wrfout_d0N_<stamp>`` NetCDF files for a synthetic multi-domain run.
+
+    ``domains`` maps a domain number to a spec dict, e.g.
+    ``{1: {"ny": 8, "nx": 8, "dx": 3000.0},
+       2: {"ny": 10, "nx": 10, "dx": 1000.0, "drop_vars": ("SNOWH",)}}``.
+    Each spec may set ``ny``/``nx``/``dx``/``dy``/``lat0``/``lon0``/``drop_vars``.
+    Used by the figure-engine acceptance test to exercise a non-pelican shape off
+    disk (domain discovery, ``DX`` labels, missing-variable skips).
+    """
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for dom, spec in domains.items():
+        ds = make_synthetic_wrf(
+            nz=nz, ny=spec["ny"], nx=spec["nx"],
+            lat0=spec.get("lat0", lat0), lon0=spec.get("lon0", lon0),
+            drop_vars=tuple(spec.get("drop_vars", ())),
+        )
+        if "dx" in spec:
+            ds.attrs["DX"] = float(spec["dx"])
+            ds.attrs["DY"] = float(spec.get("dy", spec["dx"]))
+        for t in times:
+            fname = f"wrfout_d{dom:02d}_{t.strftime(_WRFOUT_TIME_FMT)}"
+            ds.to_netcdf(run_dir / fname, engine="netcdf4")
+    return run_dir

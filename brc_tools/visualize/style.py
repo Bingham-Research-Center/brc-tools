@@ -12,7 +12,7 @@ registry (``VAR_STYLES`` etc.) does not pull in matplotlib, only
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -104,6 +104,31 @@ def use_publication_style(*, dpi: int = 300) -> None:
 def get_style(var: str) -> VarStyle:
     """Return the fixed :class:`VarStyle` for a variable key (KeyError if unknown)."""
     return VAR_STYLES[var]
+
+
+def resolve_style(
+    var: str,
+    *,
+    overrides: dict[str, VarStyle] | None = None,
+    autoscale: bool = False,
+) -> VarStyle:
+    """Resolve a variable's :class:`VarStyle`, honouring per-case overrides / autoscale.
+
+    Fixed shared scales stay the default (so figures across cases/domains/hours remain
+    directly comparable).  A case may opt into:
+
+    * an explicit ``overrides[var]`` VarStyle (wins outright), or
+    * ``autoscale=True`` — the returned style has ``vmin``/``vmax`` set to ``None``, so
+      the renderers' existing data-driven path (:func:`shared_range`) fills them in.
+
+    An override for ``var`` takes precedence over ``autoscale``.
+    """
+    if overrides and var in overrides:
+        return overrides[var]
+    base = get_style(var)
+    if autoscale:
+        return replace(base, vmin=None, vmax=None)
+    return base
 
 
 def diff_style(var: str, *, limit: float | None = None, feedback: bool = False) -> VarStyle:

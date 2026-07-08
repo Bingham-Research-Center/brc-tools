@@ -2,13 +2,25 @@
 
 Completed items are removed once merged; git history is the record.
 
-## WRF figure driver — make it dataset-agnostic (next session)
+## WRF figure driver — dataset-agnostic engine (in progress)
 
-`scripts/pelican_figures.py` hardcodes pelican2013 assumptions (3 nests, region,
-variables, 12–18Z). Separate a reusable engine from the case config so it renders a
-*different* WRF run without editing task functions, and fails loudly on real
-mismatches. Full audit + suggested shape + acceptance test:
-**`docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md`** (single source for this task).
+Done (brc-tools PR1): the reusable engine `brc_tools/nwp/wrf_figures.py`
+(`CaseConfig`/`build_tasks`/`preflight`) + generic CLI
+`scripts/wrf_figures.py --config <case.toml>` + domain-awareness helpers in
+`wrf_output.py` + per-case colour-scale opt-in (`style.resolve_style`) + acceptance
+test (`tests/test_wrf_figures.py`). Renders any nest count/region/variable set from a
+TOML and reports genuine mismatches as named skips. Reference:
+**`docs/WRF-FIGURE-ENGINE.md`**; audit that drove it:
+`docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md`.
+
+Remaining (two-repo cutover):
+- **brc-tools PR2** — delete `scripts/pelican_figures.py` + `pelican_figures.slurm`;
+  repoint `.claude/skills/wrf-full-figures/SKILL.md` to the generic CLI + the
+  experiment-repo case; trim `docs/WRF-ANALYSIS-FIGURES.md` to findings only and drop
+  the robustness handoff.
+- **`../wrf-nudge-ozone-air2026`** — add `cases/pelican2013.toml` (the only
+  pelican-specific artifact) + a thin SLURM wrapper; fill the figure pointers in its
+  `docs/EXTERNAL-PATHS.md` / `docs/visualization-products.md`.
 
 ## Session closeout (2026-06-29) — open PRs + next steps
 

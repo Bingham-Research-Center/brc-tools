@@ -113,3 +113,32 @@ def test_cold_pool_diagnostics_positive(ds):
     # theta rises with height, so crest is warmer than floor
     assert wo.delta_theta_crest_floor(col, crest_m=1900.0) > 0
     assert wo.cold_pool_heat_deficit(col, crest_m=1900.0) > 0
+
+
+def test_discover_domains(tmp_path):
+    for name in (
+        "wrfout_d01_2013-02-02_12:00:00",
+        "wrfout_d02_2013-02-02_12:00:00",
+        "wrfout_d01_2013-02-02_13:00:00",
+        "wrfout_d03_2013-02-02_12:00:00",
+        "namelist.input",  # ignored
+    ):
+        (tmp_path / name).write_text("")
+    assert wo.discover_domains(tmp_path) == [1, 2, 3]
+    assert wo.discover_domains(tmp_path / "empty") == []
+
+
+def test_grid_spacing_label(ds):
+    ds.attrs["DX"] = 3000.0
+    assert wo.grid_spacing_label(ds) == "3 km"
+    ds.attrs["DX"] = 1000.0
+    assert wo.grid_spacing_label(ds) == "1 km"
+    ds.attrs["DX"] = 333.333
+    assert wo.grid_spacing_label(ds) == "333 m"
+
+
+def test_point_in_domain(ds):
+    # synthetic grid spans lat 40.0..40.5, lon -110.0..-109.5
+    assert wo.point_in_domain(ds, 40.3, -109.7) is True
+    assert wo.point_in_domain(ds, 10.0, 10.0) is False
+    assert wo.point_in_domain(ds, 40.55, -109.7, pad=0.1) is True  # just outside, padded

@@ -44,8 +44,9 @@ figures/          generated output (gitignored)
 - `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-lane cold-start source of truth** (state + next-session handoff)
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (parked, NOT proven)
-- `docs/WRF-ANALYSIS-FIGURES.md` — publication figures for the pelican2013 cold-pool cases (driver, output routing, findings, caveats)
-- `docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md` — next-session task: make the figure driver dataset-agnostic (audit of pelican2013 hardcodings)
+- `docs/WRF-FIGURE-ENGINE.md` — **dataset-agnostic figure engine** (`brc_tools/nwp/wrf_figures.py` + generic `scripts/wrf_figures.py --config <case.toml>`): TOML case schema, domain-awareness, preflight/named-skip semantics. Study-specific cases live in the study's own repo (pelican2013 → `../wrf-nudge-ozone-air2026/cases/pelican2013.toml`).
+- `docs/WRF-ANALYSIS-FIGURES.md` — pelican2013 cold-pool findings/caveats (science notes; the engine/CLI is `WRF-FIGURE-ENGINE.md`)
+- `docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md` — audit that drove the engine split (kept until the two-repo cutover lands)
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and
@@ -64,9 +65,12 @@ a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 A second cross-repo interface: `brc_tools.visualize.grid` (`plot_grid_field`,
 `plot_vertical_section`) is imported by `brc-wrf`'s `wrf_quicklook.py` — treat its
 public signatures as load-bearing too. The publication-figure layer built on it —
-`brc_tools/nwp/wrf_output.py` (wrfout reader + derivations) and
-`brc_tools/visualize/{style,crosssection,domains,surface,profile,upperair}.py` —
-is documented in `docs/WRF-ANALYSIS-FIGURES.md` (driver: `scripts/pelican_figures.py`).
+`brc_tools/nwp/wrf_output.py` (wrfout reader + derivations),
+`brc_tools/visualize/{style,crosssection,domains,surface,profile,upperair}.py`, and
+the dataset-agnostic engine `brc_tools/nwp/wrf_figures.py` (`CaseConfig`/`build_tasks`/
+`preflight`) driven by `scripts/wrf_figures.py --config <case.toml>` — is documented in
+`docs/WRF-FIGURE-ENGINE.md`. Study-specific case configs (TOML) live in the study repo,
+never in brc-tools.
 
 ## Conventions
 - **UTC internally, always.** `datetime.timezone.utc`, never pytz. (Servers sit in different local zones — UTC is the portable invariant; convert to Mountain only at display.)
