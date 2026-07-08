@@ -14,12 +14,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-# Default line styles for multi-run comparison
+# Default line styles for multi-run comparison.  One distinct (color, linestyle)
+# per run index; extend this when a comparison grows.  Consumers that index it
+# directly (plot_scalar_timeseries, plot_theta_profiles) fall back to an empty
+# style past the last entry, which collides with index 0 -- so keep an entry for
+# every run compared (5 = the pelican2013 case family incl. both terrain endpoints).
 DEFAULT_RUN_STYLES = {
     0: {"color": "tab:blue", "ls": "-", "lw": 1.5},
     1: {"color": "tab:red", "ls": "--", "lw": 1.5},
     2: {"color": "tab:green", "ls": "-.", "lw": 1.5},
     3: {"color": "tab:purple", "ls": ":", "lw": 1.5},
+    4: {"color": "tab:orange", "ls": "-", "lw": 1.5},
+    5: {"color": "tab:brown", "ls": "--", "lw": 1.5},
 }
 
 

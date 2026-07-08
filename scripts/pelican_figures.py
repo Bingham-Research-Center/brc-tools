@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 """Generate publication figures for the pelican2013 WRF cold-pool cases.
 
-Three archived runs (GFS 2-way, NAM 2-way, NAM 1-way) share the same d01/d02/d03
-nest (3 km / 1 km / 333 m) over the Uinta Basin for 2013-02-02 12->18 UTC.  This
-driver builds terrain-following cross-sections, multi-domain surface panels,
-GFS-vs-NAM and feedback difference maps, basin-core profiles / skew-T, crest-level
+Four archived runs (GFS 2-way, NAM 2-way, NAM 1-way, and NAM 1-way over coarse
+~9 km terrain) share the same d01/d02/d03 nest (3 km / 1 km / 333 m) over the
+Uinta Basin for 2013-02-02 12->18 UTC.  This driver builds terrain-following
+cross-sections, multi-domain surface panels, GFS-vs-NAM, feedback, and
+terrain-sensitivity difference maps, basin-core profiles / skew-T, crest-level
 upper-air maps, a nested-domain map, and a cold-pool heat-deficit time series.
 
 Outputs route OUTSIDE the repo:
@@ -56,6 +57,16 @@ CASES = {
     "gfs": ("pelican2013_gfs_3_1_333m_75lev", "GFS 2-way"),
     "nam": ("pelican2013_nam_3_1_333m_75lev", "NAM 2-way"),
     "nam_oneway": ("pelican2013_nam_3_1_333m_75lev_oneway", "NAM 1-way"),
+    # Terrain-sensitivity endpoints: both identical to nam_oneway except the WPS
+    # terrain source.  terrain5m uses gmted2010_5m (5 arc-MINUTES ~= 9 km) -- ~10x
+    # COARSER than the 30s (~900 m) default the other three use (staged as
+    # "hires_terrain" by mistake since WPS "5m" is arc-minutes, not metres; renamed
+    # terrain5m).  terrain3s is the genuine FINE run (USGS 3DEP 1-arcsec ~30 m) --
+    # ~30x FINER than the default; the fine-vs-default diff is the terrain payoff.
+    "nam_terrain5m": ("pelican2013_nam_3_1_333m_75lev_oneway_terrain5m",
+                      "NAM 1-way coarse terrain (~9 km)"),
+    "nam_terrain3s": ("pelican2013_nam_3_1_333m_75lev_oneway_terrain3s",
+                      "NAM 1-way fine terrain (~30 m)"),
 }
 HORSEPOOL = (40.144, -109.467)
 CREST_M = 2200.0
@@ -316,12 +327,35 @@ def build_tasks(args) -> list[tuple]:
             odir = out_dir(args, "diff_feedback", None)
             tasks.append((f"2way-1way map {t:%H}Z", task_diff_map,
                           (run_dir("nam"), run_dir("nam_oneway"), "2way-1way", t, odir, True)))
+    # Terrain sensitivity: nam_oneway (30s ~900 m) minus nam_terrain5m (5' ~9 km).
+    # Same ICs and 1-way nesting, so the only difference is the WPS terrain source.
+    if "difference" in fams and {"nam_oneway", "nam_terrain5m"} <= set(cases):
+        for t in times_for("nam_oneway", args.time):
+            odir = out_dir(args, "diff_terrain", None)
+            tasks.append((f"terrain 900m-9km map {t:%H}Z", task_diff_map,
+                          (run_dir("nam_oneway"), run_dir("nam_terrain5m"),
+                           "terrain-900m-9km", t, odir, False)))
+    # Terrain sensitivity (fine): nam_oneway (30s ~900 m default) minus
+    # nam_terrain3s (USGS 3DEP 1-arcsec ~30 m).  Same ICs and 1-way nesting, so the
+    # only difference is the WPS terrain source -- the genuine fine-vs-default test.
+    # Emit both the 2 m theta map and EW/NS theta sections (terrain signal is
+    # strongest in the vertical).
+    if "difference" in fams and {"nam_oneway", "nam_terrain3s"} <= set(cases):
+        for t in times_for("nam_oneway", args.time):
+            odir = out_dir(args, "diff_terrain_fine", None)
+            tasks.append((f"terrain 900m-30m map {t:%H}Z", task_diff_map,
+                          (run_dir("nam_oneway"), run_dir("nam_terrain3s"),
+                           "terrain-900m-30m", t, odir, False)))
+            for orient in ("EW", "NS"):
+                tasks.append((f"terrain 900m-30m {orient} {t:%H}Z", task_diff_section,
+                              (run_dir("nam_oneway"), run_dir("nam_terrain3s"),
+                               "terrain-900m-30m", t, orient, odir)))
     return tasks
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--case", default="all", help="gfs|nam|nam_oneway|all (comma-separated ok)")
+    ap.add_argument("--case", default="all", help="gfs|nam|nam_oneway|nam_terrain5m|nam_terrain3s|all (comma-separated ok)")
     ap.add_argument("--figure", default="all", help="|".join(FAMILIES) + "|all (comma-separated ok)")
     ap.add_argument("--time", default="all", help="hour(s) 12..18 or 'all' (comma-separated ok)")
     ap.add_argument("--output-dir", default=None, help="override output root (else routed by case)")

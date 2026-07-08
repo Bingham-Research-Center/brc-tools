@@ -67,6 +67,10 @@ logs/
 stage_*.out
 stage_*.err
 
+# SLURM figure-job logs (pelican_figures_<jobid>.out / .err — reproducible, not source)
+pelican_figures_*.out
+pelican_figures_*.err
+
 # Cache
 .cache/
 *.cache
