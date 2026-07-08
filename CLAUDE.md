@@ -19,7 +19,7 @@ brc_tools/        installable package
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
   visualize/      planview maps, timeseries panels, grid.py (reusable field/section plots; consumed by brc-wrf)
   download/       Synoptic obs script, push_data uploader, HRRR helpers
-  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth)
+  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB, auth-free)
   utils/          lookups, small helpers
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
@@ -45,6 +45,7 @@ figures/          generated output (gitignored)
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-lane cold-start source of truth** (state + next-session handoff)
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (parked, NOT proven)
 - `docs/WRF-ANALYSIS-FIGURES.md` — publication figures for the pelican2013 cold-pool cases (driver, output routing, findings, caveats)
+- `docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md` — next-session task: make the figure driver dataset-agnostic (audit of pelican2013 hardcodings)
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and

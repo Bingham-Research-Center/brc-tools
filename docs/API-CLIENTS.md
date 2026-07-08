@@ -1,17 +1,19 @@
 # External API clients (`brc_tools.api`)
 
-Thin Python wrappers for four external services. One subpackage each;
-shared auth helper at `brc_tools.api._auth.load_api_key`. The clients
-follow the same shape as `ObsSource` / `NWPSource`: a class with the
-credential loaded in `__init__`, a handful of single-purpose methods,
-no implicit retries.
+Thin Python wrappers for external services. One subpackage each; the
+key-based clients share `brc_tools.api._auth.load_api_key` and follow the
+same shape as `ObsSource` / `NWPSource`: a class with the credential
+loaded in `__init__`, a handful of single-purpose methods, no implicit
+retries. Open (auth-free) data pulls are function-based instead of a
+credential-holding class.
 
-| Service | Subpackage | Class | Env var | Notes |
+| Service | Subpackage | Entry point | Env var | Notes |
 |---------|-----------|-------|---------|-------|
 | FlightAware AeroAPI | `brc_tools.api.flightaware` | `FlightAwareClient` | `FLIGHTAWARE_API_KEY` | Free tier ~$5/mo |
 | FlightRadar24 | `brc_tools.api.flightradar24` | `FR24Client` | `FR24_API_KEY` | **Stub** — paid only, min ~$9/mo |
 | Perplexity Sonar | `brc_tools.api.perplexity` | `PerplexityClient` | `PERPLEXITY_API_KEY` | Pay-per-request; OpenAI-compatible |
 | Mistral | `brc_tools.api.mistral` | `MistralClient` | `MISTRAL_API_KEY` | Usage-based |
+| Radiosondes | `brc_tools.api.soundings` | `fetch_sounding()` | — (open) | IGRA2 (NCEI) + Univ. Wyoming; auth-free |
 
 ## Install
 
@@ -49,6 +51,38 @@ from brc_tools.api.mistral import MistralClient
 m = MistralClient()
 print(m.chat([{"role": "user", "content": "Hello"}]))
 ```
+
+## Soundings (radiosondes) — `brc_tools.api.soundings`
+
+Auth-free, function-based (no credential, so no `_auth`/class). Pulls one
+station's upper-air sounding for a valid time from an open archive and
+**normalises every provider to one canonical schema** so callers never see
+provider quirks (column names, m/s-vs-knot winds, station-id schemes):
+
+```python
+from datetime import datetime
+from brc_tools.api.soundings import fetch_sounding, STATIONS
+
+df = fetch_sounding("KSLC", datetime(2013, 2, 2, 12))   # provider="auto"
+# canonical polars columns, one row per level, surface->top:
+#   station | valid_time | pressure_hpa | temperature_c | dewpoint_c | u_kt | v_kt | provider
+```
+
+- **Providers** — `igra2` (NOAA IGRA2 via siphon `IGRAUpperAir`, hosted at
+  NCEI; winds m/s; ~40 s/station as siphon downloads the station's
+  period-of-record file) and `wyoming` (Univ. Wyoming via siphon; winds
+  knots). `provider="auto"` tries IGRA2 then Wyoming. **IGRA2 is the
+  default** because the UWyo service was migrated/offline as of 2026-07
+  (both `weather.uwyo.edu` and `weather.arcc.uwyo.edu` 404).
+- **Times are UTC** (naive, matching wrfout filename stamps). Missing launch,
+  network failure, or an offline archive all return `None` so batch callers
+  skip a station without special-casing.
+- **`STATIONS`** registers the operational RAOB proxies overlapping the
+  pelican2013 WRF domains — KSLC, KGJT, KRIW (Riverton WY), KDPG (Dugway UT);
+  all in d01, since the Uinta Basin launches no sonde. Unknown names pass
+  through, so any raw IGRA2 (`USM00072572`) or Wyoming (`72572`) id works too.
+- **Consumers**: `scripts/fetch_soundings.py` (writes the offline parquet
+  cache the figure batch reads) and `brc_tools.visualize.profile.LiveSounding`.
 
 ## MCP servers
 

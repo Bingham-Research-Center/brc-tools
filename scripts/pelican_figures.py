@@ -34,7 +34,7 @@ from brc_tools.visualize.crosssection import (
 )
 from brc_tools.visualize.domains import plot_domain_boxes
 from brc_tools.visualize.profile import (
-    CachedWyomingSounding,
+    CachedSounding,
     plot_skewt,
     plot_theta_profiles,
     sounding_from_column,
@@ -84,6 +84,15 @@ SURFACE_VARS = {
     "snow": ("snow_depth", False),
     "pblh": ("pblh", False),
 }
+# Operational RAOB proxies overlapping the domains (all in d01; the basin has
+# none) -- station skew-Ts verify the driving analysis against the sonde.  Metadata
+# (per-provider ids, lat/lon) lives in the reusable brc_tools.api.soundings registry,
+# which also lists KDPG (Dugway) -- registered but no launch on the 2013-02-02 case
+# date, so it is left out here to keep every station skew-T a real obs comparison.
+SOUNDING_STATIONS = ("KSLC", "KGJT", "KRIW")
+# Station skew-Ts only for the distinct driving analyses (GFS, NAM); the NAM
+# feedback/terrain variants share d01 away from the nest.
+IC_CASES = ("gfs", "nam")
 FAMILIES = ["domains", "section", "upperair", "surface", "difference", "profile", "skewt", "heatdeficit"]
 
 
@@ -252,17 +261,42 @@ def task_profiles(valid, out):
     )
 
 
-def task_skewt(case, valid, out, sounding_cache):
+def task_skewt(case, valid, out):
+    """Basin-core (Horsepool, d03) model skew-T -- the cold-pool structure.
+
+    Model-only: no operational RAOB launches inside the basin, and overlaying a
+    distant sonde on a basin column mismatches surface pressure.  Station-vs-RAOB
+    comparison is task_skewt_station at the proxy sites.
+    """
     _, label = CASES[case]
     ds = wo.open_wrfout(wo.wrfout_path(run_dir(case), 3, valid))
     model = sounding_from_column(wo.extract_column(ds, *HORSEPOOL), source=label,
                                  station="Horsepool", valid_time=valid)
-    obs = None
-    if sounding_cache:
-        obs = CachedWyomingSounding(sounding_cache).get("KSLC", valid)
     plot_skewt(
-        model, out / f"skewt_horsepool_{case}_{valid:%H}z.png", obs=obs,
-        title=f"{label} skew-T | Horsepool | {valid:%H}Z", annotation=ANNOT,
+        model, out / f"skewt_horsepool_{case}_{valid:%H}z.png",
+        title=f"{label} skew-T | Horsepool (d03) | {valid:%Y-%m-%d %H}Z", annotation=ANNOT,
+    )
+
+
+def task_skewt_station(case, station_name, valid, out, sounding_cache):
+    """Model d01 column AT a RAOB proxy site, overlaid on that site's sounding.
+
+    The proxies all sit in d01 (3 km), outside the basin, so this verifies the
+    driving analysis / synoptic environment (the GFS-vs-NAM IC question) against
+    the sonde -- unlike the basin-core Horsepool skew-T.
+    """
+    from brc_tools.api.soundings import STATIONS
+
+    _, label = CASES[case]
+    st = STATIONS[station_name]
+    ds = wo.open_wrfout(wo.wrfout_path(run_dir(case), 1, valid))
+    model = sounding_from_column(wo.extract_column(ds, st.lat, st.lon),
+                                 source=label, station=station_name, valid_time=valid)
+    obs = CachedSounding(sounding_cache).get(station_name, valid) if sounding_cache else None
+    plot_skewt(
+        model, out / f"skewt_{station_name}_{case}_{valid:%H}z.png", obs=obs,
+        title=f"{label} vs RAOB | {station_name} ({st.location}) d01 | {valid:%H}Z",
+        annotation=ANNOT,
     )
 
 
@@ -311,8 +345,17 @@ def build_tasks(args) -> list[tuple]:
                     tasks.append((f"{label} {var_key} {t:%H}Z", task_surface,
                                   (run, case, label, t, var_key, out_dir(args, "surface", case))))
             if "skewt" in fams:
-                tasks.append((f"{label} skewt {t:%H}Z", task_skewt,
-                              (case, t, out_dir(args, "skewt", None), args.sounding_cache)))
+                tasks.append((f"{label} skewt Horsepool {t:%H}Z", task_skewt,
+                              (case, t, out_dir(args, "skewt", None))))
+        # Station-collocated skew-Ts (model d01 column at each RAOB proxy + obs):
+        # a synoptic/IC check at the 12Z analysis time (the only RAOB launch).
+        # Only the distinct driving analyses need it -- the NAM feedback/terrain
+        # variants share d01 far from the nest, so their proxy columns match.
+        if "skewt" in fams and case in IC_CASES:
+            for t in times_for(case, "12"):
+                for stn in SOUNDING_STATIONS:
+                    tasks.append((f"{label} skewt {stn} {t:%H}Z", task_skewt_station,
+                                  (case, stn, t, out_dir(args, "skewt", None), args.sounding_cache)))
 
     if "difference" in fams and {"gfs", "nam"} <= set(cases):
         for t in times_for("nam", args.time):

@@ -2,6 +2,14 @@
 
 Completed items are removed once merged; git history is the record.
 
+## WRF figure driver — make it dataset-agnostic (next session)
+
+`scripts/pelican_figures.py` hardcodes pelican2013 assumptions (3 nests, region,
+variables, 12–18Z). Separate a reusable engine from the case config so it renders a
+*different* WRF run without editing task functions, and fails loudly on real
+mismatches. Full audit + suggested shape + acceptance test:
+**`docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md`** (single source for this task).
+
 ## Session closeout (2026-06-29) — open PRs + next steps
 
 Three PRs from this session's docs/RAP/env work (merge order independent; CODEOWNERS review):

@@ -79,8 +79,21 @@ heatdeficit` (or `all`). Heavier batches: `sbatch scripts/pelican_figures.slurm`
 
 ### Soundings (two-phase — compute nodes lack outbound network)
 1. On a **login/DTN node**: `python scripts/fetch_soundings.py --time "2013-02-02 12"
-   --out /scratch/general/vast/$USER/soundings_20130202_12z.parquet`
+   --stations KSLC,KGJT,KRIW,KDPG --out /scratch/general/vast/$USER/soundings_20130202_12z.parquet`
+   (needs `PYTHONPATH=~/gits/brc-tools`). Fetch + provider normalisation live in the
+   reusable `brc_tools.api.soundings` client (**IGRA2 default**, Wyoming fallback; UWyo
+   is offline as of 2026-07). See `docs/API-CLIENTS.md`.
 2. Pass `--sounding-cache <parquet>` to the driver / slurm for the skew-T obs overlay.
+
+**Proxy RAOB stations** (the basin launches no sonde). All four operational sites
+overlapping a domain sit in **d01** (from the IGRA2 inventory): `KSLC` (Salt Lake City),
+`KGJT` (Grand Junction), `KRIW` (Riverton WY), `KDPG` (Dugway UT). On the 2013-02-02
+case date three launched at 12Z (KSLC/KGJT/KRIW); **KDPG did not**. The `skewt` family
+therefore emits, per driving analysis (GFS, NAM only — the NAM feedback/terrain variants
+share d01 away from the nest): a basin-core **Horsepool** model skew-T (d03, model-only)
+plus **station** skew-Ts (model d01 column *at* KSLC/KGJT/KRIW overlaid on that site's
+RAOB) — the model-vs-analysis IC check. Model T tracks the KSLC RAOB near-perfectly at
+12Z; the model is drier than obs at 600–700 hPa.
 
 ## Selected findings (from the smoke runs)
 - **GFS vs NAM initial conditions diverge strongly**: at 12Z the Horsepool floor θ is
@@ -98,10 +111,11 @@ heatdeficit` (or `all`). Heavier batches: `sbatch scripts/pelican_figures.slurm`
   terrain-source axis is now bracketed at both ends: `nam_terrain5m` adds a **coarse**
   (~9 km) endpoint and `nam_terrain3s` (USGS 3DEP 1-arcsec) the genuine **fine** (~30 m)
   endpoint — both landed and registered here (`nam_terrain3s` on 2026-07-07).
-- **In-basin soundings**: only 12Z is an operational RAOB, and KSLC/KGJT sit *outside*
-  the basin (they verify the synoptic/valley environment, not the basin pool). The
-  UBWOS-2013 Ouray/Horsepool radiosondes plug in via
-  `profile.PlaceholderFileSounding` / `CachedWyomingSounding` once the user locates them.
+- **In-basin soundings**: only 12Z is an operational RAOB, and the proxies (KSLC/KGJT/
+  KRIW) sit *outside* the basin in d01 — they verify the synoptic/driving environment,
+  not the basin pool (that is what the model-only Horsepool skew-T is for). The
+  UBWOS-2013 Ouray/Horsepool radiosondes plug in via `profile.PlaceholderFileSounding`
+  / `CachedSounding` once the user locates them.
 - **Env**: `netcdf4`, `metpy`, `siphon` added (see `environment.yml` / the `wrf` extra
   in `pyproject.toml`).
 ```

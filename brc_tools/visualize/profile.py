@@ -74,28 +74,40 @@ class ModelColumnSounding:
         return sounding_from_column(col, source=self._label, station=station, valid_time=valid_time)
 
 
-class WyomingSounding:
-    """Sounding source for the University of Wyoming archive (needs network)."""
+class LiveSounding:
+    """Live sounding source via :mod:`brc_tools.api.soundings` (needs network).
+
+    ``provider`` is ``"auto"`` (IGRA2 then Wyoming), ``"igra2"``, or ``"wyoming"``.
+    The api layer owns the fetch + provider normalisation; this just wraps the
+    canonical frame in a :class:`Sounding`.
+    """
+
+    def __init__(self, provider: str = "auto"):
+        self._provider = provider
 
     def get(self, station: str, valid_time: datetime) -> Sounding | None:
-        try:
-            from siphon.simplewebservice.wyoming import WyomingUpperAir
-        except ImportError:
-            return None
-        try:
-            df = WyomingUpperAir.request_data(valid_time, station)
-        except Exception:
+        from brc_tools.api.soundings import fetch_sounding
+
+        df = fetch_sounding(station, valid_time, provider=self._provider)
+        if df is None or df.height == 0:
             return None
         return Sounding(
-            pressure_hpa=df["pressure"].values,
-            temperature_c=df["temperature"].values,
-            dewpoint_c=df["dewpoint"].values,
-            u_kt=df["u_wind"].values,
-            v_kt=df["v_wind"].values,
+            pressure_hpa=df["pressure_hpa"].to_numpy(),
+            temperature_c=df["temperature_c"].to_numpy(),
+            dewpoint_c=df["dewpoint_c"].to_numpy(),
+            u_kt=df["u_kt"].to_numpy(),
+            v_kt=df["v_kt"].to_numpy(),
             source="RAOB",
             station=station,
             valid_time=valid_time,
         )
+
+
+class WyomingSounding(LiveSounding):
+    """Back-compat alias: the Univ. Wyoming live source, now via the api layer."""
+
+    def __init__(self):
+        super().__init__(provider="wyoming")
 
 
 class CachedWyomingSounding:
@@ -124,6 +136,10 @@ class CachedWyomingSounding:
             station=station,
             valid_time=valid_time,
         )
+
+
+# Generalised name -- the parquet cache is provider-agnostic (IGRA2 or Wyoming).
+CachedSounding = CachedWyomingSounding
 
 
 class PlaceholderFileSounding:
