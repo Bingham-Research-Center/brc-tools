@@ -46,7 +46,9 @@ Repo-local skills (slash commands) live in `.claude/skills/`:
 
 - [`/wrf-full-figures`](.claude/skills/wrf-full-figures/SKILL.md) — generate publication
   "full-figures" (300-DPI versions of the WRF quicklooks) for a WRF case on CHPC SLURM,
-  choosing a specific case/run. Companion doc: [`docs/WRF-ANALYSIS-FIGURES.md`](docs/WRF-ANALYSIS-FIGURES.md).
+  choosing a specific case/run. Companion doc: [`docs/WRF-FIGURE-ENGINE.md`](docs/WRF-FIGURE-ENGINE.md)
+  (the engine + generic `scripts/wrf_figures.py --config <case.toml>` CLI; per-study cases
+  live in the study repo, e.g. `../wrf-nudge-ozone-air2026/cases/pelican2013.toml`).
 
 ## CHPC Deployment
 

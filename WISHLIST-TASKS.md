@@ -11,8 +11,9 @@ The figure system is now a reusable engine (brc-tools) + a declarative case (stu
   `wrf_output.py` + per-case colour-scale opt-in (`style.resolve_style`) + acceptance test
   (`tests/test_wrf_figures.py`). Renders any nest count/region/variable set from a TOML and
   reports genuine mismatches as named skips. Reference: **`docs/WRF-FIGURE-ENGINE.md`**.
-  The old `scripts/pelican_figures.py` + `.slurm` and the robustness handoff are removed;
-  the `wrf-full-figures` skill + `docs/WRF-ANALYSIS-FIGURES.md` now point at the study repo.
+  The old `scripts/pelican_figures.py` + `.slurm`, the robustness handoff, and the
+  `WRF-ANALYSIS-FIGURES.md` pointer are removed; the `wrf-full-figures` skill + README point
+  at `WRF-FIGURE-ENGINE.md` + the study repo.
 - `../wrf-nudge-ozone-air2026`: the pelican2013 case is `cases/pelican2013.toml` (the only
   pelican-specific artifact) + `slurm/pelican_figures.slurm`; science in
   `experiments/pelican2013-cold-pool-figures.md`.
