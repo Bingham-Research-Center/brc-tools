@@ -2,25 +2,24 @@
 
 Completed items are removed once merged; git history is the record.
 
-## WRF figure driver — dataset-agnostic engine (in progress)
+## WRF figure driver — dataset-agnostic engine (DONE 2026-07-08)
 
-Done (brc-tools PR1): the reusable engine `brc_tools/nwp/wrf_figures.py`
-(`CaseConfig`/`build_tasks`/`preflight`) + generic CLI
-`scripts/wrf_figures.py --config <case.toml>` + domain-awareness helpers in
-`wrf_output.py` + per-case colour-scale opt-in (`style.resolve_style`) + acceptance
-test (`tests/test_wrf_figures.py`). Renders any nest count/region/variable set from a
-TOML and reports genuine mismatches as named skips. Reference:
-**`docs/WRF-FIGURE-ENGINE.md`**; audit that drove it:
-`docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md`.
+The figure system is now a reusable engine (brc-tools) + a declarative case (study repo):
 
-Remaining (two-repo cutover):
-- **brc-tools PR2** — delete `scripts/pelican_figures.py` + `pelican_figures.slurm`;
-  repoint `.claude/skills/wrf-full-figures/SKILL.md` to the generic CLI + the
-  experiment-repo case; trim `docs/WRF-ANALYSIS-FIGURES.md` to findings only and drop
-  the robustness handoff.
-- **`../wrf-nudge-ozone-air2026`** — add `cases/pelican2013.toml` (the only
-  pelican-specific artifact) + a thin SLURM wrapper; fill the figure pointers in its
-  `docs/EXTERNAL-PATHS.md` / `docs/visualization-products.md`.
+- brc-tools: engine `brc_tools/nwp/wrf_figures.py` (`CaseConfig`/`build_tasks`/`preflight`)
+  + generic CLI `scripts/wrf_figures.py --config <case.toml>` + domain-awareness helpers in
+  `wrf_output.py` + per-case colour-scale opt-in (`style.resolve_style`) + acceptance test
+  (`tests/test_wrf_figures.py`). Renders any nest count/region/variable set from a TOML and
+  reports genuine mismatches as named skips. Reference: **`docs/WRF-FIGURE-ENGINE.md`**.
+  The old `scripts/pelican_figures.py` + `.slurm` and the robustness handoff are removed;
+  the `wrf-full-figures` skill + `docs/WRF-ANALYSIS-FIGURES.md` now point at the study repo.
+- `../wrf-nudge-ozone-air2026`: the pelican2013 case is `cases/pelican2013.toml` (the only
+  pelican-specific artifact) + `slurm/pelican_figures.slurm`; science in
+  `experiments/pelican2013-cold-pool-figures.md`.
+
+Follow-up (not blocking): run the SLURM smoke on real pelican data to confirm the engine
+reproduces the pre-refactor figure set (labels now sourced from `DX`), then fill the exact
+commit/output pointers in the study repo's `docs/EXTERNAL-PATHS.md`.
 
 ## Session closeout (2026-06-29) — open PRs + next steps
 

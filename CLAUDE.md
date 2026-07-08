@@ -45,8 +45,7 @@ figures/          generated output (gitignored)
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-lane cold-start source of truth** (state + next-session handoff)
 - `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (parked, NOT proven)
 - `docs/WRF-FIGURE-ENGINE.md` — **dataset-agnostic figure engine** (`brc_tools/nwp/wrf_figures.py` + generic `scripts/wrf_figures.py --config <case.toml>`): TOML case schema, domain-awareness, preflight/named-skip semantics. Study-specific cases live in the study's own repo (pelican2013 → `../wrf-nudge-ozone-air2026/cases/pelican2013.toml`).
-- `docs/WRF-ANALYSIS-FIGURES.md` — pelican2013 cold-pool findings/caveats (science notes; the engine/CLI is `WRF-FIGURE-ENGINE.md`)
-- `docs/WRF-FIGURES-ROBUSTNESS-HANDOFF.md` — audit that drove the engine split (kept until the two-repo cutover lands)
+- `docs/WRF-ANALYSIS-FIGURES.md` — pointer: the pelican2013 case config + science now live in `../wrf-nudge-ozone-air2026` (the engine/CLI is `WRF-FIGURE-ENGINE.md`)
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When introducing or editing a topic, find its canonical home above and
@@ -82,7 +81,7 @@ never in brc-tools.
 - **JSON filenames**: `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
-- **Heavy jobs run on SLURM, not login nodes.** Involved processing (WRF figure batches, multi-file analysis, staging) runs as CHPC SLURM jobs — ship a `scripts/*.slurm` wrapper (see `pelican_figures.slurm`, `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly since the login env doesn't carry. Details: `docs/CHPC-REFERENCE.md`.
+- **Heavy jobs run on SLURM, not login nodes.** Involved processing (WRF figure batches, multi-file analysis, staging) runs as CHPC SLURM jobs — ship a `scripts/*.slurm` wrapper (see `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly since the login env doesn't carry. Study-specific figure wrappers live in the study repo (e.g. `../wrf-nudge-ozone-air2026/slurm/pelican_figures.slurm` → the generic `scripts/wrf_figures.py`). Details: `docs/CHPC-REFERENCE.md`.
 - **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: `nam_analysis`/`rap_analysis`/`gfs_analysis`, which Herbie can't retrieve for 2013).
 - **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa for pressure; units are per-alias in `lookups.toml` `synoptic_units`). Convert at the boundary (e.g. Pa→hPa) only for display.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
