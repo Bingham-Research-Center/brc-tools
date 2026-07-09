@@ -17,6 +17,11 @@ Examples
     python scripts/wrf_figures.py --config <case.toml> \
         --case nam --figure section,surface --time 12,18
 
+    # a specific forecast lead (the 1-hour forecast = init + 1 h), skipping figures
+    # already produced — safe to re-run as WRF writes more output
+    python scripts/wrf_figures.py --config <case.toml> \
+        --case nam --figure surface --lead 1 --skip-existing
+
 Outputs route OUTSIDE the repo (per-case -> ``<run>/full-figures/<family>/``;
 cross-case -> ``$BRC_WRF_ARCHIVE/<slug>_pub_figures/compare/<family>/``); override
 with ``--output-dir``.  Run heavy batches on SLURM.  Soundings need a network node:
@@ -44,10 +49,14 @@ def main() -> None:
     ap.add_argument("--config", required=True, help="path to the case TOML")
     ap.add_argument("--case", default="all", help="case key(s) from the config, or 'all' (comma-separated ok)")
     ap.add_argument("--figure", default="all", help="|".join(FAMILIES) + "|all (comma-separated ok)")
-    ap.add_argument("--time", default="all", help="hour(s) or 'all' (comma-separated ok)")
+    ap.add_argument("--time", default="all", help="valid hour(s)-of-day or 'all' (comma-separated ok)")
+    ap.add_argument("--lead", default=None,
+                    help="forecast lead hour(s) from init, e.g. 1 or 0,1,6 (overrides --time)")
     ap.add_argument("--output-dir", default=None, help="override output root (else routed by case)")
     ap.add_argument("--run", default=None, help="specific run_* dir name (default: latest); single-case use")
     ap.add_argument("--sounding-cache", default=None, help="parquet from fetch_soundings.py (offline obs)")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="skip figures already newer than their wrfout (idempotent re-runs)")
     args = ap.parse_args()
 
     cfg = CaseConfig.from_toml(args.config)
@@ -58,6 +67,8 @@ def main() -> None:
         output_dir=args.output_dir,
         run_override=args.run,
         sounding_cache=args.sounding_cache,
+        lead=args.lead,
+        skip_existing=args.skip_existing,
     )
     use_publication_style()
     tasks = build_tasks(cfg, selection)

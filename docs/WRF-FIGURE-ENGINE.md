@@ -30,12 +30,33 @@ PY=~/software/pkg/miniforge3/envs/brc-tools-2026/bin/python
 
 # a subset (case keys / families / hours are all comma-separated or 'all')
 "$PY" scripts/wrf_figures.py --config <case.toml> --case nam --figure section,surface --time 12,18
+
+# a specific forecast lead (the 1-hour forecast), skipping figures already produced
+"$PY" scripts/wrf_figures.py --config <case.toml> --case nam --figure surface --lead 1 --skip-existing
 ```
 
 Families: `domains, section, upperair, surface, difference, profile, skewt,
 heatdeficit` (or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
 the case's own repo owns the sbatch wrapper. Soundings need a network node — run
 `scripts/fetch_soundings.py` first and pass `--sounding-cache`.
+
+### Time selection: `--time` (valid hour) vs `--lead` (forecast hour)
+- `--time` filters on **valid hour-of-day** (`--time 12,18` keeps every output whose
+  valid time is 12Z or 18Z).
+- `--lead` selects by **forecast lead** in whole hours from the run's init:
+  `--lead 1` renders the valid time at `init + 1 h`. Init is
+  `wrf_output.init_time(run, innermost)` — the `SIMULATION_START_DATE` global attr of
+  the earliest wrfout, falling back to the earliest valid time in the filenames.
+  `--lead` **overrides** `--time`. It governs the per-time families (section,
+  upperair, surface, focus skew-T, difference) and the θ(z) profile; the station RAOB
+  skew-T stays at `sounding_hour` and the heat-deficit series always spans all times.
+- **Idempotent re-runs:** `--skip-existing` skips any figure that already exists and
+  is newer than every source wrfout it derives from (mtime) — so a wrfout rewritten by
+  a later run regenerates its figure ("move to newer output"), while unchanged figures
+  are left alone. Filenames encode only the valid hour (`…_13z.png`), so this is safe
+  for hourly (or coarser) cadence; **sub-hourly output would collide within an hour**
+  (e.g. 13:00 and 13:10 both map to `…_13z.png`) — not handled, use full re-render
+  there.
 
 ### Output routing (outside the repo)
 - per-case → `<run>/full-figures/<family>/…`
@@ -69,6 +90,10 @@ consolidated report and only emits tasks that will succeed:
 - **A surface variable absent from any rendered domain** → that variable is dropped
   from the `surface` family with a named `[SKIP]` (e.g. `surface:snow — SNOWH absent
   in d01`), rather than a bare per-figure `[ERROR]` + traceback.
+- **A requested `--lead` whose wrfout isn't written yet** → a named
+  `[SKIP] <case>: lead 6h → …Z not available yet`, and no task is emitted — so
+  targeting a lead WRF hasn't reached (an in-progress run) is safe, and re-running
+  once that output lands picks it up.
 
 This is the key robustness change: the shared `case_study.run_figure_pipeline` still
 catches unexpected exceptions, but expected mismatches are now gated at build time.

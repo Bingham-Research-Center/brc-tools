@@ -70,6 +70,34 @@ def list_valid_times(run_dir: str | Path, domain: int) -> list[datetime]:
     return times
 
 
+def init_time(run_dir: str | Path, domain: int) -> datetime:
+    """Return a run's model initialization (cycle) time for a domain.
+
+    Prefers the ``SIMULATION_START_DATE`` global attribute of the earliest wrfout
+    file — authoritative even when the first history dump is not at t0 — and falls
+    back to the earliest valid time parsed from the filenames.  Forecast lead time
+    is then ``valid_time - init_time`` (there is no lead offset in the filenames).
+    """
+    times = list_valid_times(run_dir, domain)
+    if not times:
+        raise FileNotFoundError(f"no wrfout_d{domain:02d}_* files under {run_dir}")
+    earliest = times[0]
+    try:
+        ds = open_wrfout(wrfout_path(run_dir, domain, earliest))
+    except (FileNotFoundError, OSError):
+        return earliest
+    try:
+        stamp = ds.attrs.get("SIMULATION_START_DATE")
+    finally:
+        ds.close()
+    if stamp:
+        try:
+            return datetime.strptime(str(stamp).strip(), _WRFOUT_TIME_FMT)
+        except ValueError:
+            pass
+    return earliest
+
+
 def latest_run_dir(parent: str | Path) -> Path:
     """Return the most recent ``run_*`` directory under ``parent``."""
     runs = sorted(Path(parent).glob("run_*"))

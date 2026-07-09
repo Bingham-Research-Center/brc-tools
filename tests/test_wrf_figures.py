@@ -8,12 +8,14 @@ genuine mismatch becomes a NAMED skip/warning (not a silent per-figure ``[ERROR]
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
 from _wrf_synthetic import write_synthetic_run
 
 from brc_tools.nwp import wrf_figures as wf
+from brc_tools.nwp import wrf_output as wo
 from brc_tools.visualize.style import use_publication_style
 
 # A minimal, fully declarative case: 2 nests, focus point off-grid, no soundings.
@@ -94,7 +96,7 @@ def test_build_tasks_surface_enumerates_present_domains(tmp_path, monkeypatch):
 
     surf = [t for t in tasks if t[1] is wf.task_surface]
     assert surf, "expected surface tasks"
-    # args tuple is (cfg, run, domains, case, label, valid, sv, out)
+    # args tuple is (cfg, run, domains, case, label, valid, sv, out, skip_existing)
     assert all(args[2] == [1, 2] for _name, _fn, args in surf)
     keys = {args[6].key for _name, _fn, args in surf}
     assert "theta2m" in keys and "snow" not in keys  # snow dropped, others kept
@@ -126,3 +128,69 @@ def test_engine_renders_on_non_pelican_shape(tmp_path, monkeypatch):
     out = Path(args[7])
     pngs = list(out.glob("*.png"))
     assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_build_tasks_lead_selects_forecast_hour(tmp_path, monkeypatch):
+    # run inits at 12Z (earliest wrfout); --lead 1 => the 13Z valid time.
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["surface"], lead="1", output_dir=str(tmp_path / "out")
+    )
+    tasks = wf.build_tasks(cfg, sel)
+    surf = [t for t in tasks if t[1] is wf.task_surface]
+    assert surf, "expected surface tasks at the 1-hour lead"
+    # args: (cfg, run, domains, case, label, valid, sv, out, skip_existing)
+    assert {args[5] for _n, _fn, args in surf} == {datetime(2013, 2, 2, 13)}
+    assert all(args[8] is False for _n, _fn, args in surf)  # skip_existing threaded through
+
+
+def test_build_tasks_unavailable_lead_is_skipped_not_crashed(tmp_path, monkeypatch, capsys):
+    # only 12Z/13Z exist; lead 12h (-> next-day 00Z) is absent -> named skip, no crash.
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["surface"], lead="12", output_dir=str(tmp_path / "out")
+    )
+    tasks = wf.build_tasks(cfg, sel)  # must not raise
+    assert [t for t in tasks if t[1] is wf.task_surface] == []
+    assert "not available yet" in capsys.readouterr().out
+
+
+def test_lead_overrides_time(tmp_path, monkeypatch):
+    # --time asks for hour 12, --lead asks for +1h (=13Z); lead wins.
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["surface"], time="12", lead="1",
+        output_dir=str(tmp_path / "out"),
+    )
+    surf = [t for t in wf.build_tasks(cfg, sel) if t[1] is wf.task_surface]
+    assert {args[5] for _n, _fn, args in surf} == {datetime(2013, 2, 2, 13)}
+
+
+def test_skip_existing_skips_fresh_and_regenerates_stale(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["surface"], time="12",
+        output_dir=str(tmp_path / "out"), skip_existing=True,
+    )
+    _name, fn, args = [t for t in wf.build_tasks(cfg, sel) if t[1] is wf.task_surface][0]
+    _cfg, run, domains, _case, _label, valid, _sv, out, skip = args
+    assert skip is True
+
+    use_publication_style()
+    fn(*args)  # first render (PNG absent) -> writes it
+    png = next(Path(out).glob("*.png"))
+    srcs = [wo.wrfout_path(run, dom, valid) for dom in domains]
+
+    # figure newer than every source wrfout -> idempotent skip (not rewritten)
+    fresh = max(s.stat().st_mtime for s in srcs) + 10
+    os.utime(png, (fresh, fresh))
+    fn(*args)
+    assert png.stat().st_mtime == fresh  # untouched
+
+    # a source rewritten newer than the figure -> regenerate ("move to newer output")
+    stale = 1_000_000_000.0  # year 2001, safely older than any real render time
+    os.utime(png, (stale, stale))
+    os.utime(srcs[0], (stale + 100, stale + 100))
+    fn(*args)
+    assert png.stat().st_mtime > stale  # rewritten to real 'now'

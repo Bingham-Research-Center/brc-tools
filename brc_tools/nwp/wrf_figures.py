@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -229,10 +229,12 @@ class Selection:
 
     cases: list[str] | None = None      # None -> every run in the config
     families: list[str] | None = None   # None -> every family
-    time: str = "all"                   # "all" or comma-separated hours
+    time: str = "all"                   # "all" or comma-separated hours (hour-of-day)
     output_dir: str | None = None       # override output root (else routed by case)
     run_override: str | None = None      # a specific run_* dir name (else latest)
     sounding_cache: str | None = None    # parquet for skew-T obs overlay
+    lead: str | None = None              # forecast lead hour(s) from init; overrides `time`
+    skip_existing: bool = False          # skip figures already newer than their wrfout
 
 
 @dataclass
@@ -248,6 +250,7 @@ class PreflightReport:
     times: list[datetime]
     skips: list[str]
     warnings: list[str]
+    init: datetime | None = None  # model init/cycle time (for forecast-lead selection)
 
 
 # --------------------------------------------------------------------------- #
@@ -261,11 +264,54 @@ def _focus_slug(cfg: CaseConfig) -> str:
     return _slug(cfg.focus_point.name) or "focus"
 
 
-def _select_times(times: list[datetime], requested: str | None) -> list[datetime]:
+def _select_times(
+    times: list[datetime], selection: Selection, init: datetime | None
+) -> tuple[list[datetime], list[tuple[int, datetime]]]:
+    """Resolve a case's valid times to render, plus any requested-but-absent leads.
+
+    With ``selection.lead`` set, select the valid times at ``init + lead`` hours
+    (this *overrides* ``--time``); leads whose wrfout file is not present come back
+    as ``(lead_hours, target_valid_time)`` so the caller can name-skip them instead
+    of crashing.  Otherwise fall back to ``--time`` (``all`` or hour-of-day).
+    """
+    if selection.lead:
+        base = init if init is not None else (times[0] if times else None)
+        available = set(times)
+        selected: list[datetime] = []
+        missing: list[tuple[int, datetime]] = []
+        for lead in (int(x) for x in str(selection.lead).split(",")):
+            if base is None:
+                continue
+            target = base + timedelta(hours=lead)
+            if target in available:
+                selected.append(target)
+            else:
+                missing.append((lead, target))
+        return sorted(selected), missing
+    requested = selection.time
     if requested in (None, "all"):
-        return list(times)
+        return list(times), []
     hours = {int(h) for h in str(requested).split(",")}
-    return [t for t in times if t.hour in hours]
+    return [t for t in times if t.hour in hours], []
+
+
+def _skip_existing(out_png: Path, srcs: list[Path], enabled: bool) -> bool:
+    """Whether an idempotent re-run may skip ``out_png``.
+
+    True only when ``enabled`` and the figure already exists and is at least as new
+    as every source wrfout it derives from (mtime).  A source rewritten by a later
+    WRF run is thus newer than the figure, so the figure regenerates ("move to newer
+    output").  Keyed on the hour-only filename, so it is safe for hourly (or coarser)
+    output; sub-hourly cadence would collide (see docs/WRF-FIGURE-ENGINE.md).
+    """
+    if not enabled or not out_png.exists():
+        return False
+    out_mtime = out_png.stat().st_mtime
+    for s in srcs:
+        s = Path(s)
+        if not s.exists() or s.stat().st_mtime > out_mtime:
+            return False
+    return True
 
 
 def _surface_var_available(present: set[str], key: str) -> tuple[bool, tuple[str, ...]]:
@@ -300,20 +346,30 @@ def _surface_field_for(ds, key: str) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # per-figure tasks (each self-contained for run_figure_pipeline try/except)
 # --------------------------------------------------------------------------- #
-def task_section(cfg, run, innermost, case, label, valid, orient, out):
-    ds = wo.open_wrfout(wo.wrfout_path(run, innermost, valid))
+def task_section(cfg, run, innermost, case, label, valid, orient, out, skip_existing=False):
+    out_png = out / f"section_{orient.lower()}_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, innermost, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
     sec = wo.build_section(ds, orient)
     plot_wrf_section(
-        sec, out / f"section_{orient.lower()}_{case}_{valid:%H}z.png",
+        sec, out_png,
         locator_terrain=wo.surface_field(ds, "HGT"),
         title=f"{label} | d{innermost:02d} {orient} section | {valid:%Y-%m-%d %H}Z",
         annotation=cfg.annotation,
     )
 
 
-def task_upperair(cfg, run, innermost, case, label, valid, out):
-    ds = wo.open_wrfout(wo.wrfout_path(run, innermost, valid))
+def task_upperair(cfg, run, innermost, case, label, valid, out, skip_existing=False):
     crest = cfg.crest_m
+    out_png = out / f"crest{int(crest)}_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, innermost, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
     z = wo.geopotential_height_mass(ds)
     ue, ve = wo.earth_relative_winds(ds)
     dx, dy = wo.dx_dy(ds)
@@ -324,7 +380,7 @@ def task_upperair(cfg, run, innermost, case, label, valid, out):
     hgt = wo.surface_field(ds, "HGT")
     plot_height_surface(
         wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), th, u2, v2,
-        out / f"crest{int(crest)}_{case}_{valid:%H}z.png",
+        out_png,
         temp_adv2d=temperature_advection(tk, u2, v2, dx, dy), terrain=hgt,
         target_label=f"{int(crest)} m MSL", mask=below_ground_mask(crest, hgt),
         style=resolve_style("theta_crest", overrides=cfg.style.overrides,
@@ -334,7 +390,12 @@ def task_upperair(cfg, run, innermost, case, label, valid, out):
     )
 
 
-def task_surface(cfg, run, domains, case, label, valid, sv, out):
+def task_surface(cfg, run, domains, case, label, valid, sv, out, skip_existing=False):
+    out_png = out / f"{sv.key}_{case}_multidomain_{valid:%H}z.png"
+    srcs = [wo.wrfout_path(run, dom, valid) for dom in domains]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
     innermost = domains[-1]
     d_in = wo.open_wrfout(wo.wrfout_path(run, innermost, valid))
     lon_in, lat_in = wo.surface_field(d_in, "XLONG"), wo.surface_field(d_in, "XLAT")
@@ -353,36 +414,52 @@ def task_surface(cfg, run, domains, case, label, valid, sv, out):
         panels.append(panel)
     style = resolve_style(sv.style, overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
     plot_domain_panels(
-        panels, out / f"{sv.key}_{case}_multidomain_{valid:%H}z.png", style=style,
+        panels, out_png, style=style,
         wind=sv.wind, extent=extent, waypoints=cfg.waypoints,
         suptitle=f"{label} | {sv.style} | d{innermost:02d} area | {valid:%H}Z",
     )
 
 
-def task_diff_map(cfg, run_a, run_b, innermost, tag, valid, out, feedback):
-    da = wo.open_wrfout(wo.wrfout_path(run_a, innermost, valid))
-    db = wo.open_wrfout(wo.wrfout_path(run_b, innermost, valid))
+def task_diff_map(cfg, run_a, run_b, innermost, tag, valid, out, feedback, skip_existing=False):
+    out_png = out / f"theta2m_{tag}_{valid:%H}z.png"
+    srcs = [wo.wrfout_path(run_a, innermost, valid), wo.wrfout_path(run_b, innermost, valid)]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    da = wo.open_wrfout(srcs[0])
+    db = wo.open_wrfout(srcs[1])
     plot_field_difference(
         wo.surface_field(da, "XLONG"), wo.surface_field(da, "XLAT"),
-        wo.theta_2m(da), wo.theta_2m(db), out / f"theta2m_{tag}_{valid:%H}z.png",
+        wo.theta_2m(da), wo.theta_2m(db), out_png,
         var="theta", limit=3.0 if feedback else 5.0,
         title=f"{tag} | 2 m theta | d{innermost:02d} | {valid:%H}Z",
         terrain=wo.surface_field(da, "HGT"), annotation=cfg.annotation,
     )
 
 
-def task_diff_section(cfg, run_a, run_b, innermost, tag, valid, orient, out):
-    sec_a = wo.build_section(wo.open_wrfout(wo.wrfout_path(run_a, innermost, valid)), orient)
-    db = wo.open_wrfout(wo.wrfout_path(run_b, innermost, valid))
+def task_diff_section(cfg, run_a, run_b, innermost, tag, valid, orient, out, skip_existing=False):
+    out_png = out / f"section_{orient.lower()}_{tag}_{valid:%H}z.png"
+    src_a = wo.wrfout_path(run_a, innermost, valid)
+    src_b = wo.wrfout_path(run_b, innermost, valid)
+    if _skip_existing(out_png, [src_a, src_b], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    sec_a = wo.build_section(wo.open_wrfout(src_a), orient)
+    db = wo.open_wrfout(src_b)
     sec_b = wo.build_section(db, orient)
     plot_wrf_section_difference(
-        sec_a, sec_b, out / f"section_{orient.lower()}_{tag}_{valid:%H}z.png",
+        sec_a, sec_b, out_png,
         var="theta", title=f"{tag} | d{innermost:02d} {orient} theta | {valid:%H}Z",
         locator_terrain=wo.surface_field(db, "HGT"), annotation=cfg.annotation,
     )
 
 
-def task_domains(cfg, run, domains, out):
+def task_domains(cfg, run, domains, out, skip_existing=False):
+    out_png = out / "nested_domains.png"
+    srcs = [wo.wrfout_path(run, dom, wo.list_valid_times(run, dom)[0]) for dom in domains]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
     outlines = []
     outermost = domains[0]
     terr = lon = lat = None
@@ -394,61 +471,91 @@ def task_domains(cfg, run, domains, out):
             terr = wo.surface_field(ds, "HGT")
             lon, lat = wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT")
     plot_domain_boxes(
-        outlines, out / "nested_domains.png", terrain=terr, terrain_lonlat=(lon, lat),
+        outlines, out_png, terrain=terr, terrain_lonlat=(lon, lat),
         waypoints=cfg.waypoints, title=f"{cfg.label} WRF nested domains",
     )
 
 
-def task_profiles(cfg, case_runs, valid, out):
+def task_profiles(cfg, case_runs, valid, out, skip_existing=False):
+    out_png = out / f"theta_profiles_{_focus_slug(cfg)}_{valid:%H}z.png"
+    srcs = [wo.wrfout_path(run, innermost, valid) for _case, _label, run, innermost in case_runs]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
     cols = {}
     for _case, label, run, innermost in case_runs:
         ds = wo.open_wrfout(wo.wrfout_path(run, innermost, valid))
         cols[label] = wo.extract_column(ds, cfg.focus_point.lat, cfg.focus_point.lon, label=label)
     ref_terrain = next(iter(cols.values())).terrain_m
     plot_theta_profiles(
-        cols, out / f"theta_profiles_{_focus_slug(cfg)}_{valid:%H}z.png",
+        cols, out_png,
         terrain_m=ref_terrain, crest_m=cfg.crest_m, y_max_m=_PROFILE_Y_MAX_M,
         title=rf"$\theta(z)$ at {cfg.focus_point.name} | {valid:%Y-%m-%d %H}Z",
         annotation=cfg.annotation,
     )
 
 
-def task_skewt(cfg, run, innermost, case, label, valid, out):
+def task_skewt(cfg, run, innermost, case, label, valid, out, skip_existing=False):
     """Focus-point (innermost) model skew-T -- the cold-pool structure (model-only)."""
-    ds = wo.open_wrfout(wo.wrfout_path(run, innermost, valid))
+    out_png = out / f"skewt_{_focus_slug(cfg)}_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, innermost, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
     model = sounding_from_column(
         wo.extract_column(ds, cfg.focus_point.lat, cfg.focus_point.lon),
         source=label, station=cfg.focus_point.name, valid_time=valid,
     )
     plot_skewt(
-        model, out / f"skewt_{_focus_slug(cfg)}_{case}_{valid:%H}z.png",
+        model, out_png,
         title=f"{label} skew-T | {cfg.focus_point.name} (d{innermost:02d}) | {valid:%Y-%m-%d %H}Z",
         annotation=cfg.annotation,
     )
 
 
-def task_skewt_station(cfg, run, outermost, case, label, station_name, valid, out, sounding_cache):
+def task_skewt_station(
+    cfg, run, outermost, case, label, station_name, valid, out, sounding_cache, skip_existing=False
+):
     """Model outermost-domain column at a RAOB proxy site, overlaid on that sounding."""
     from brc_tools.api.soundings import STATIONS
 
+    out_png = out / f"skewt_{station_name}_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, outermost, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
     st = STATIONS[station_name]
-    ds = wo.open_wrfout(wo.wrfout_path(run, outermost, valid))
+    ds = wo.open_wrfout(src)
     model = sounding_from_column(
         wo.extract_column(ds, st.lat, st.lon),
         source=label, station=station_name, valid_time=valid,
     )
     obs = CachedSounding(sounding_cache).get(station_name, valid) if sounding_cache else None
     plot_skewt(
-        model, out / f"skewt_{station_name}_{case}_{valid:%H}z.png", obs=obs,
+        model, out_png, obs=obs,
         title=f"{label} vs RAOB | {station_name} ({st.location}) d{outermost:02d} | {valid:%H}Z",
         annotation=cfg.annotation,
     )
 
 
-def task_heatdeficit(cfg, case_runs, out):
+def task_heatdeficit(cfg, case_runs, out, skip_existing=False):
+    out_png = out / "heat_deficit_timeseries.png"
+    times_by_case = {
+        label: wo.list_valid_times(run, innermost)
+        for _case, label, run, innermost in case_runs
+    }
+    srcs = [
+        wo.wrfout_path(run, innermost, t)
+        for _case, label, run, innermost in case_runs
+        for t in times_by_case[label]
+    ]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
     series = {}
     for _case, label, run, innermost in case_runs:
-        times = wo.list_valid_times(run, innermost)
+        times = times_by_case[label]
         deficits = []
         for t in times:
             ds = wo.open_wrfout(wo.wrfout_path(run, innermost, t))
@@ -459,7 +566,7 @@ def task_heatdeficit(cfg, case_runs, out):
             )
         series[label] = (times, np.array(deficits))
     plot_scalar_timeseries(
-        series, out / "heat_deficit_timeseries.png",
+        series, out_png,
         ylabel=r"cold-pool heat deficit (MJ m$^{-2}$)",
         title=f"Cold-pool heat deficit at {cfg.focus_point.name} (crest {int(cfg.crest_m)} m)",
     )
@@ -487,6 +594,7 @@ def preflight(cfg: CaseConfig, case: str, *, run_override: str | None = None) ->
     if not times:
         skips.append(f"case {case}: no valid times for d{innermost:02d} under {run}")
         return PreflightReport(case, domains, innermost, outermost, False, [], [], skips, warnings)
+    init = wo.init_time(run, innermost)  # for forecast-lead (--lead) selection
 
     # probe each domain (at the first time) for the focus point and variable presence.
     point_ok = True
@@ -531,7 +639,9 @@ def preflight(cfg: CaseConfig, case: str, *, run_override: str | None = None) ->
                 f"absent in d{missing_dom:02d}"
             )
 
-    return PreflightReport(case, domains, innermost, outermost, point_ok, usable, times, skips, warnings)
+    return PreflightReport(
+        case, domains, innermost, outermost, point_ok, usable, times, skips, warnings, init=init
+    )
 
 
 def _print_report(cfg: CaseConfig, reports: dict[str, PreflightReport]) -> None:
@@ -548,6 +658,22 @@ def _print_report(cfg: CaseConfig, reports: dict[str, PreflightReport]) -> None:
         for s in rep.skips:
             print(f"    [SKIP] {s}")
     print("=" * (len(header) + 8))
+
+
+def _report_missing_leads(reports: dict[str, PreflightReport], selection: Selection) -> None:
+    """Name-skip requested forecast leads whose wrfout file isn't present yet.
+
+    A lead WRF hasn't reached is reported (not crashed on): re-running once that
+    output lands picks it up.  No-op unless ``--lead`` is set.
+    """
+    if not selection.lead:
+        return
+    for case, rep in reports.items():
+        if not rep.domains or rep.init is None:
+            continue
+        _, missing = _select_times(rep.times, selection, rep.init)
+        for lead, target in missing:
+            print(f"  [SKIP] {case}: lead {lead}h → {target:%Y-%m-%d %H}Z not available yet")
 
 
 # --------------------------------------------------------------------------- #
@@ -586,8 +712,12 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
     if unknown:
         raise SystemExit(f"unknown case(s) {unknown}; known cases: {list(cfg.runs)}")
 
+    if selection.lead and selection.time not in (None, "all"):
+        print(f"note: --lead {selection.lead} governs time selection; --time {selection.time} ignored")
+
     reports = {c: preflight(cfg, c, run_override=selection.run_override) for c in cases}
     _print_report(cfg, reports)
+    _report_missing_leads(reports, selection)
 
     usable_cases = [c for c in cases if reports[c].domains]
     point_cases = [c for c in usable_cases if reports[c].point_ok]
@@ -597,19 +727,26 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
     ]
     tasks: list[tuple] = []
 
+    skip = selection.skip_existing
+
     # --- cross-case families ---
     if "domains" in fams and usable_cases:
         c0 = usable_cases[0]
         run0 = cfg.resolve_run_dir(c0, selection.run_override)
         tasks.append(("domains map", task_domains,
-                      (cfg, run0, reports[c0].domains, out_dir(cfg, selection, "domains", None))))
+                      (cfg, run0, reports[c0].domains, out_dir(cfg, selection, "domains", None), skip)))
     if "profile" in fams and case_runs:
-        for t in [t for t in reports[point_cases[0]].times if t.hour in cfg.profile_hours]:
+        prep = reports[point_cases[0]]
+        if selection.lead:
+            profile_times, _ = _select_times(prep.times, selection, prep.init)
+        else:
+            profile_times = [t for t in prep.times if t.hour in cfg.profile_hours]
+        for t in profile_times:
             tasks.append((f"profiles {t:%H}Z", task_profiles,
-                          (cfg, case_runs, t, out_dir(cfg, selection, "profiles", None))))
+                          (cfg, case_runs, t, out_dir(cfg, selection, "profiles", None), skip)))
     if "heatdeficit" in fams and case_runs:
         tasks.append(("heat deficit series", task_heatdeficit,
-                      (cfg, case_runs, out_dir(cfg, selection, "heatdeficit", None))))
+                      (cfg, case_runs, out_dir(cfg, selection, "heatdeficit", None), skip)))
 
     # --- per-case families ---
     for case in usable_cases:
@@ -617,33 +754,36 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
         run = cfg.resolve_run_dir(case, selection.run_override)
         label = cfg.runs[case].label
         innermost, outermost = rep.innermost, rep.outermost
-        for t in _select_times(rep.times, selection.time):
+        sel_times, _ = _select_times(rep.times, selection, rep.init)
+        for t in sel_times:
             if "section" in fams:
                 for orient in ("EW", "NS"):
                     tasks.append((f"{label} {orient} {t:%H}Z", task_section,
                                   (cfg, run, innermost, case, label, t, orient,
-                                   out_dir(cfg, selection, "sections", case))))
+                                   out_dir(cfg, selection, "sections", case), skip)))
             if "upperair" in fams:
                 tasks.append((f"{label} upperair {t:%H}Z", task_upperair,
                               (cfg, run, innermost, case, label, t,
-                               out_dir(cfg, selection, "upperair", case))))
+                               out_dir(cfg, selection, "upperair", case), skip)))
             if "surface" in fams:
                 for sv in rep.usable_surface_vars:
                     tasks.append((f"{label} {sv.key} {t:%H}Z", task_surface,
                                   (cfg, run, rep.domains, case, label, t, sv,
-                                   out_dir(cfg, selection, "surface", case))))
+                                   out_dir(cfg, selection, "surface", case), skip)))
             if "skewt" in fams and rep.point_ok:
                 tasks.append((f"{label} skewt {cfg.focus_point.name} {t:%H}Z", task_skewt,
                               (cfg, run, innermost, case, label, t,
-                               out_dir(cfg, selection, "skewt", None))))
+                               out_dir(cfg, selection, "skewt", None), skip)))
         # Station-collocated skew-Ts at the sounding hour (the analysis-time RAOBs),
-        # only for the distinct driving analyses (ic_cases).
+        # only for the distinct driving analyses (ic_cases).  Keyed to the RAOB launch
+        # time, so unaffected by --lead.
         if "skewt" in fams and case in cfg.ic_cases:
             for t in [t for t in rep.times if t.hour == cfg.sounding_hour]:
                 for stn in cfg.sounding_stations:
                     tasks.append((f"{label} skewt {stn} {t:%H}Z", task_skewt_station,
                                   (cfg, run, outermost, case, label, stn, t,
-                                   out_dir(cfg, selection, "skewt", None), selection.sounding_cache)))
+                                   out_dir(cfg, selection, "skewt", None),
+                                   selection.sounding_cache, skip)))
 
     # --- difference families ---
     if "difference" in fams:
@@ -655,11 +795,12 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
             run_b = cfg.resolve_run_dir(dp.b, selection.run_override)
             innermost = reports[dp.a].innermost
             odir = out_dir(cfg, selection, dp.dir or f"diff_{_slug(dp.tag)}", None)
-            for t in _select_times(reports[dp.a].times, selection.time):
+            diff_times, _ = _select_times(reports[dp.a].times, selection, reports[dp.a].init)
+            for t in diff_times:
                 tasks.append((f"{dp.tag} map {t:%H}Z", task_diff_map,
-                              (cfg, run_a, run_b, innermost, dp.tag, t, odir, dp.feedback)))
+                              (cfg, run_a, run_b, innermost, dp.tag, t, odir, dp.feedback, skip)))
                 if dp.sections:
                     for orient in ("EW", "NS"):
                         tasks.append((f"{dp.tag} {orient} {t:%H}Z", task_diff_section,
-                                      (cfg, run_a, run_b, innermost, dp.tag, t, orient, odir)))
+                                      (cfg, run_a, run_b, innermost, dp.tag, t, orient, odir, skip)))
     return tasks

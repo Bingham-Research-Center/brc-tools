@@ -128,6 +128,27 @@ def test_discover_domains(tmp_path):
     assert wo.discover_domains(tmp_path / "empty") == []
 
 
+def test_init_time_reads_simulation_start_date(tmp_path):
+    # earliest file is 13Z, but the SIMULATION_START_DATE attr (12Z) is authoritative
+    ds = make_synthetic_wrf(nz=4, ny=6, nx=6)
+    ds.attrs["SIMULATION_START_DATE"] = "2013-02-02_12:00:00"
+    for hh in (13, 14):
+        ds.to_netcdf(tmp_path / f"wrfout_d02_2013-02-02_{hh:02d}:00:00", engine="netcdf4")
+    assert wo.init_time(tmp_path, 2) == datetime(2013, 2, 2, 12)
+
+
+def test_init_time_falls_back_to_earliest_valid_time(tmp_path):
+    ds = make_synthetic_wrf(nz=4, ny=6, nx=6)  # no SIMULATION_START_DATE attr
+    for hh in (12, 13):
+        ds.to_netcdf(tmp_path / f"wrfout_d01_2013-02-02_{hh:02d}:00:00", engine="netcdf4")
+    assert wo.init_time(tmp_path, 1) == datetime(2013, 2, 2, 12)
+
+
+def test_init_time_no_files_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        wo.init_time(tmp_path, 1)
+
+
 def test_grid_spacing_label(ds):
     ds.attrs["DX"] = 3000.0
     assert wo.grid_spacing_label(ds) == "3 km"
