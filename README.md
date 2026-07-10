@@ -1,4 +1,4 @@
-### `brc-tools` - Bingham Research Center (python) Tools
+# `brc-tools` — Bingham Research Center Python tools
 
 > AI agents: see [`CLAUDE.md`](CLAUDE.md) for project context.
 > Documentation index: [`docs/`](docs/). Current focus: HRRR/RRFS ingest in [`docs/nwp/`](docs/nwp/).
@@ -8,6 +8,11 @@ Shared Python utilities for atmospheric data operations at the Bingham
 Research Center. Pulls weather observations (SynopticPy) and NWP model
 data (Herbie/HRRR) and pushes JSON to the [BasinWX](https://www.basinwx.com)
 website.
+
+**Mental model (new here?):** fetch weather data (station observations + model
+forecasts) → tidy it into a common shape → ship small JSON files to the website that
+draws the Uinta Basin's air-quality dashboards. Almost everything in the package hangs
+off that one flow. Not a meteorologist? Start with [`docs/walkthroughs/`](docs/walkthroughs/).
 
 Package name: `brc_tools` (underscore). Repo name: `brc-tools` (hyphen).
 
@@ -51,6 +56,8 @@ Repo-local skills (slash commands) live in `.claude/skills/`:
   live in the study repo, e.g. `../wrf-nudge-ozone-air2026/cases/pelican2013.toml`).
 
 ## CHPC Deployment
+
+*Operations reference — a junior dev can skip this on day one and come back when you actually deploy.*
 
 This package is deployed on CHPC to push weather data to BasinWX.
 

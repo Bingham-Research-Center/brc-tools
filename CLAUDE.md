@@ -17,7 +17,7 @@ brc_tools/        installable package
   nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB)
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
-  visualize/      planview maps, timeseries panels, grid.py (reusable field/section plots; consumed by brc-wrf); figure-engine render modules (surface/crosssection/upperair/profile/domains/basemap/style)
+  visualize/      planview + timeseries panels; grid.py (field/section plots — brc-wrf seam); figure-engine modules (surface/section/upperair/profile/domains/basemap/style)
   download/       Synoptic obs script, push_data uploader, HRRR helpers
   api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB, auth-free)
   utils/          lookups, small helpers
@@ -97,7 +97,7 @@ pytest tests/
 ```
 Use a conda env with the deps (herbie, polars, pandas, matplotlib, cfgrib, requests).
 Preferred: the dedicated **`brc-tools-2026`** env (`mamba env create -f environment.yml`;
-herbie 2026.3.0 — validated, 110 passed); the shared `clyfar-nov2025` also works. Fresh
+herbie 2026.3.0 — validated, 174 passed / 2 skipped); the shared `clyfar-nov2025` also works. Fresh
 setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 
 ## Related repos
