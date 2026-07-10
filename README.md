@@ -40,6 +40,16 @@ fig = plot_planview_evolution(ds, "wind_speed_10m", cmap="YlOrRd")
 
 See `scripts/` for full case study examples.
 
+## Claude Code skills
+
+Repo-local skills (slash commands) live in `.claude/skills/`:
+
+- [`/wrf-full-figures`](.claude/skills/wrf-full-figures/SKILL.md) — generate publication
+  "full-figures" (300-DPI versions of the WRF quicklooks) for a WRF case on CHPC SLURM,
+  choosing a specific case/run. Companion doc: [`docs/WRF-FIGURE-ENGINE.md`](docs/WRF-FIGURE-ENGINE.md)
+  (the engine + generic `scripts/wrf_figures.py --config <case.toml>` CLI; per-study cases
+  live in the study repo, e.g. `../wrf-nudge-ozone-air2026/cases/pelican2013.toml`).
+
 ## CHPC Deployment
 
 This package is deployed on CHPC to push weather data to BasinWX.

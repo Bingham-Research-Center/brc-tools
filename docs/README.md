@@ -14,5 +14,6 @@ Project documentation. Topical files only — agent context lives in
 - **WRF-INPUT-STAGING.md** — WRF/WPS GRIB staging reference: status, proof evidence, and microtasks (the playbook is the handoff).
 - **WRF-STAGING-STATE-PLAYBOOK.md** — the single WRF cold-start handoff + state packet (start here for the WRF lane).
 - **WRF-GEFS-NAM-FIELD-MAP.md** — DRAFT GEFS/NAM two-stream field-map (parked, not proven).
+- **WRF-FIGURE-ENGINE.md** — dataset-agnostic WRF figure engine + `scripts/wrf_figures.py --config <case.toml>` CLI (TOML schema, domain-awareness, named-skip preflight). Per-study cases live in the study repo.
 - **nwp/NWP-SOURCE-MATRIX.md** — per-source download matrix (Herbie vs direct) + Herbie currency.
 - **nwp/** — HRRR/RRFS roadmap (current operational focus).

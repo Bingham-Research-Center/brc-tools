@@ -6,9 +6,9 @@ JSON to the BasinWX website. Package: **`brc_tools`** (underscore).
 Repo: **`brc-tools`** (hyphen).
 
 ## Current focus
-- HRRR/RRFS → BasinWX operational ingest (GH issue #10). Strategy and status: `docs/nwp/ROADMAP.md`.
-- Case-study pipeline (natural language → script → figures). Pattern: `docs/CASE-STUDY-GUIDE.md`.
-- **WRF-input staging**: stage GRIB -> scratch as a `manifest_<case>.json` + `contract_<case>.json` handshake that `brc-wrf` consumes for WPS/WRF. brc-tools owns staging/manifests/contracts/NWP-download + the reusable `visualize/grid.py` quicklook helpers; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`. NAM-only proven & merged (baseline `pelican2013_nam`); RAP staged but **blocked before `real.exe`** (no layered soil); **`gfs_analysis` added, staged, verified, and consumed** (`pelican2013_gfs`, #33) for the completed Pelican GFS WRF-side run and paired NAM/GFS quicklooks. GEFS+NAM two-stream remains optional/unproven. **Cold-start entry -> `docs/WRF-STAGING-STATE-PLAYBOOK.md`** (single source of truth for this lane); proof detail -> `docs/WRF-INPUT-STAGING.md`; cross-repo -> `../brc-wrf/brc-docs/BRC-WRF-PELICAN-NWP-HOTSWAP-HANDOFF.md`.
+- HRRR/RRFS → BasinWX operational ingest (GH #10). Strategy/status: `docs/nwp/ROADMAP.md`.
+- Case-study pipeline (natural language → script → figures): `docs/CASE-STUDY-GUIDE.md`.
+- **WRF-input staging**: stage GRIB → scratch as `manifest_<case>.json` + `contract_<case>.json` for `brc-wrf` (brc-tools owns staging/download + `visualize/grid.py`; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`). NAM-only & GFS proven/merged; RAP blocked pre-`real.exe` (no layered soil); GEFS+NAM two-stream unproven. Cold-start SSOT: `docs/WRF-STAGING-STATE-PLAYBOOK.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
@@ -17,9 +17,9 @@ brc_tools/        installable package
   nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB)
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
-  visualize/      planview maps, timeseries panels, grid.py (reusable field/section plots; consumed by brc-wrf)
+  visualize/      planview maps, timeseries panels, grid.py (reusable field/section plots; consumed by brc-wrf); figure-engine render modules (surface/crosssection/upperair/profile/domains/basemap/style)
   download/       Synoptic obs script, push_data uploader, HRRR helpers
-  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth)
+  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB, auth-free)
   utils/          lookups, small helpers
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
@@ -28,26 +28,20 @@ tests/            pytest suite
 figures/          generated output (gitignored)
 ```
 
-## Doc map (single source of truth per topic)
-- `README.md` — install + minimal quick usage (human onboarding)
-- `docs/walkthroughs/` — plain-language per-tool walk-throughs + shared glossary (new-hire entry point)
-- `docs/README.md` — index of the `docs/` directory (mirrors this map)
-- `docs/API-REFERENCE.md` — full module / function reference
-- `docs/API-CLIENTS.md` — external API-client helpers (e.g. FlightAware/AeroAPI)
-- `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script (pattern, conventions)
+## Doc map (single source of truth per topic — load a doc only when its topic is in play)
+- `README.md` / `docs/walkthroughs/` — human onboarding + per-tool guides & glossary (new-hire entry)
+- `docs/README.md` — index of `docs/` (mirrors this map)
+- `docs/API-REFERENCE.md` / `docs/API-CLIENTS.md` — module reference / external API-client helpers
+- `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script
 - `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload)
 - `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
-- `docs/ENVIRONMENT-SETUP.md` — conda / venv setup
-- `docs/CROSS-REPO-SYNC.md` — sync protocol with clyfar / ubair-website / preprint
-- `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy and phase tracker
-- `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix (Herbie vs direct), idiosyncrasies, Herbie currency
-- `docs/WRF-INPUT-STAGING.md` — WRF/WPS GRIB staging: status, microtasks, CHPC DTN + SLURM
-- `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-lane cold-start source of truth** (state + next-session handoff)
-- `docs/WRF-GEFS-NAM-FIELD-MAP.md` — DRAFT GEFS/NAM two-stream field-map (parked, NOT proven)
+- `docs/ENVIRONMENT-SETUP.md` — conda/venv setup · `docs/CROSS-REPO-SYNC.md` — sibling-repo sync protocol
+- `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix
+- `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-staging cold-start SSOT**; detail in `docs/WRF-INPUT-STAGING.md`; two-stream draft `docs/WRF-GEFS-NAM-FIELD-MAP.md` (parked)
+- `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the study repo; SSOT index → `../wrf-nudge-ozone-air2026/EXPERIMENT-FIGURE-INVENTORY.md`
 - `WISHLIST-TASKS.md` — prioritised backlog
 
-When introducing or editing a topic, find its canonical home above and
-edit there; do not duplicate into CLAUDE.md.
+When editing a topic, edit its canonical doc above; do not duplicate into CLAUDE.md.
 
 ## Key data-flow anchor (load-bearing — verify before changing)
 `brc_tools.download.push_data.send_json_to_server(server_address, fpath, file_data, API_KEY)`
@@ -59,23 +53,26 @@ with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
 **`clyfar` imports this function** — do not change its signature without
 a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 
-A second cross-repo interface: `brc_tools.visualize.grid` (`plot_grid_field`,
-`plot_vertical_section`) is imported by `brc-wrf`'s `wrf_quicklook.py` — treat its
-public signatures as load-bearing too.
+A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
+`plot_vertical_section`) is imported by `brc-wrf`'s `wrf_quicklook.py` — signatures
+load-bearing. The publication figure engine built on it (`wrf_figures.py` over
+`wrf_output.py` + `visualize/*`) is documented in `docs/WRF-FIGURE-ENGINE.md` (Doc map).
 
 ## Conventions
 - **UTC internally, always.** `datetime.timezone.utc`, never pytz. (Servers sit in different local zones — UTC is the portable invariant; convert to Mountain only at display.)
-- **No path crosses machines.** CHPC and the Linode/Akamai website hub share **no filesystem**; absolute paths (`/uufs`, `/scratch`, `~`) are machine-local (CHPC-only here). The cross-machine seam is the **HTTP URL contract** (`BASINWX_API_URLS` / `~/.config/ubair-website/website_url`), never a shared path; in-repo doc/code references use **relative** paths. Same discipline as UTC: commit the portable invariant (UTC / URL / relative), never the machine-specific form. **Cold-start check:** if a doc or script hands an absolute path to the *other* server, that's a bug.
-- **Runtime outputs stay out of the repo checkout.** New code/docs should route generated JSON, caches, GRIB, logs, temp files, and locks to machine-appropriate locations **outside** `~/gits/brc-tools/`: use `/scratch/general/vast/$USER/...` for large reproducible data, `~/.cache/brc-tools/...` or env-driven paths for per-user caches, and `tempfile.gettempdir()` / `/tmp` for short-lived temp/lock files. Do **not** introduce repo-local runtime defaults like `~/gits/brc-tools/data/...` or user-specific absolute examples like `/uufs/chpc.utah.edu/common/home/u0737349/...` unless the file is an intentional committed fixture/schema/example.
+- **No path crosses machines.** CHPC and the website hub (Linode/Akamai) share **no filesystem**; `/uufs`, `/scratch`, `~` are CHPC-local. The cross-machine seam is the **HTTP URL contract** (`BASINWX_API_URLS` / `~/.config/ubair-website/website_url`), never a shared path; in-repo references use **relative** paths. **Cold-start check:** an absolute path handed to the *other* server is a bug.
+- **Runtime outputs stay out of the repo checkout.** Route generated JSON, caches, GRIB, logs, temp/lock files **outside** `~/gits/brc-tools/`: `/scratch/general/vast/$USER/...` (large reproducible data), `~/.cache/brc-tools/...` or env-driven (per-user caches), `tempfile.gettempdir()` (temp/locks). No repo-local runtime defaults (`~/gits/brc-tools/data/...`) or user-absolute examples (`/uufs/.../u0737349/...`) unless it's an intentional committed fixture/schema.
 - **Polars** preferred over pandas for new code.
 - **American English** in code identifiers (British prose is fine).
 - **Imports**: stdlib → third-party → local.
 - **JSON filenames**: `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
+- **Heavy jobs run on SLURM, not login nodes.** Involved processing (WRF figure batches, multi-file analysis, staging) runs as CHPC SLURM jobs — ship a `scripts/*.slurm` wrapper (see `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly since the login env doesn't carry. Study-specific figure wrappers live in the study repo (e.g. `../wrf-nudge-ozone-air2026/slurm/pelican_figures.slurm` → the generic `scripts/wrf_figures.py`). Details: `docs/CHPC-REFERENCE.md`.
 - **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: `nam_analysis`/`rap_analysis`/`gfs_analysis`, which Herbie can't retrieve for 2013).
 - **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa for pressure; units are per-alias in `lookups.toml` `synoptic_units`). Convert at the boundary (e.g. Pa→hPa) only for display.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
+- **Navigate, don't dredge.** Ingest high-value tokens, not whole trees. Never blind-`cat`/read entire figure, GRIB, or `run_*` output dirs (the WRF archive is ~30 GB of near-duplicate PNGs) — `ls | wc -l` or glob first, then read the one file you need; load a doc/TOML only when its topic is in play (see Doc map). For WRF run/figure locations + completeness, read the SSOT index `../wrf-nudge-ozone-air2026/EXPERIMENT-FIGURE-INVENTORY.md`, not the archive tree.
 
 ## Environment variables
 | Var | Purpose | Required? |
@@ -86,10 +83,9 @@ public signatures as load-bearing too.
 | `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI (`api/` clients) | aviation only |
 | `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
-| `BRC_TOOLS_HERBIE_CACHE` | NWP GRIB cache dir override | optional |
-| `BRC_TOOLS_HRRR_CACHE` | HRRR GRIB cache dir override | optional |
-| `BRC_TOOLS_LOCK_DIR` | Parallel-download lock dir | optional |
-| `BRC_TOOLS_HTTP_IPV4_ONLY` | Force IPv4 (CHPC DTN IPv6-hang workaround) | optional |
+| `BRC_TOOLS_HERBIE_CACHE` / `BRC_TOOLS_HRRR_CACHE` | NWP / HRRR GRIB cache dir override | optional |
+| `BRC_TOOLS_BASEMAP_DIR` | persistent Natural-Earth cache for figure map overlays (else `CARTOPY_DATA_DIR` → scratch); stage once via `scripts/fetch_basemap.dtn.slurm` | optional |
+| `BRC_TOOLS_LOCK_DIR` / `BRC_TOOLS_HTTP_IPV4_ONLY` | parallel-download lock dir / force IPv4 (CHPC DTN IPv6 workaround) | optional |
 
 All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var
 only** today (the helper also accepts an optional `~/.config/<svc>/api_key` fallback, but
@@ -108,6 +104,7 @@ setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 - `ubair-website` — Node.js receiver for uploads (data contract).
 - `clyfar` — ozone forecast; imports `brc_tools.download.push_data`.
 - `brc-wrf` — WRF runs; consumes brc-tools staging (`manifest`/`contract` sidecars) + imports `brc_tools.visualize.grid`.
+- `wrf-nudge-ozone-air2026` — pelican2013 WRF study; owns the case TOMLs + run/figure inventory (SSOT for run/figure locations), consumes the brc-tools figure engine.
 - `brc-knowledge` — canonical CHPC infra + validated Slurm run scripts (referenced, not imported).
 - `preprint-clyfar-v0p9` — LaTeX manuscript.
 

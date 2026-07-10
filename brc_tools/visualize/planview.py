@@ -36,13 +36,58 @@ def _get_latlon(ds):
     return lat, lon
 
 
-def add_map_features(ax):
-    """Add state/province borders to a Cartopy axes (10m resolution)."""
-    states = cfeature.NaturalEarthFeature(
-        "cultural", "admin_1_states_provinces_lakes", "10m",
-        facecolor="none", edgecolor="black", linewidth=0.8,
-    )
-    ax.add_feature(states)
+def add_map_features(
+    ax,
+    *,
+    states=True,
+    counties=False,
+    rivers=False,
+    roads=False,
+    terrain=None,
+    terrain_lonlat=None,
+    resolution="10m",
+):
+    """Add cartopy basemap features to an axes.
+
+    Defaults preserve the original behaviour (state/province borders only).  The
+    optional counties / rivers / roads / terrain layers use subtle, non-clashing
+    styling and are wrapped so a missing Natural-Earth shapefile (e.g. an offline
+    compute node without a pre-populated ``CARTOPY_DATA_DIR``) degrades gracefully
+    instead of raising.
+    """
+    if terrain is not None and terrain_lonlat is not None:
+        from brc_tools.visualize.grid import terrain_contour_levels
+
+        lon2d, lat2d = (np.asarray(a) for a in terrain_lonlat)
+        levels = terrain_contour_levels(np.asarray(terrain))
+        try:
+            ax.contourf(
+                lon2d, lat2d, np.asarray(terrain),
+                levels=levels if levels is not None else 20, cmap="terrain",
+                alpha=0.55, transform=ccrs.PlateCarree(), zorder=0,
+            )
+        except Exception:  # pragma: no cover - rendering fallback
+            pass
+
+    def _feature(category, name, res, **style):
+        try:
+            ax.add_feature(cfeature.NaturalEarthFeature(
+                category, name, res, facecolor="none", **style))
+        except Exception:  # pragma: no cover - offline / missing shapefile
+            pass
+
+    if states:
+        _feature("cultural", "admin_1_states_provinces_lakes", resolution,
+                 edgecolor="black", linewidth=0.8)
+    if counties:
+        _feature("cultural", "admin_2_counties", resolution,
+                 edgecolor="0.5", linewidth=0.4, alpha=0.7)
+    if rivers:
+        _feature("physical", "rivers_lake_centerlines", resolution,
+                 edgecolor="#4a7ba6", linewidth=0.5, alpha=0.7)
+    if roads:
+        _feature("cultural", "roads", "10m",
+                 edgecolor="#8a6d3b", linewidth=0.4, alpha=0.6)
 
 
 def add_waypoints(ax, waypoints, *, transform=None, fontsize=7, annotate=True):

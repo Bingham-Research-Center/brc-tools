@@ -48,6 +48,12 @@ api = [
     "openai>=1.0",
     "mistralai>=1.0",
 ]
+wrf = [
+    # WRF-output analysis figures (brc_tools.nwp.wrf_output + visualize.{crosssection,profile,upperair}).
+    "netCDF4>=1.6",   # read wrfout (NETCDF4/HDF5)
+    "metpy>=1.6",     # skew-T + thermodynamics
+    "siphon>=0.9",    # Wyoming upper-air sounding archive
+]
 dev = [
     "pytest>=7.4.0",
     "ruff>=0.1.0",

@@ -240,6 +240,26 @@ lon = -108.972
 elevation_m = 1463
 reference_stid = "A3822"
 
+# ── Radiosonde comparison sites (00/12Z launches; UBWOS Ouray is in-basin) ──
+
+[waypoints.kslc]
+lat = 40.772
+lon = -111.955
+elevation_m = 1288
+reference_stid = "KSLC"        # Wyoming RAOB 72572 (Salt Lake City; outside the basin)
+
+[waypoints.kgjt]
+lat = 39.119
+lon = -108.527
+elevation_m = 1475
+reference_stid = "KGJT"        # Wyoming RAOB 72476 (Grand Junction; outside the basin)
+
+[waypoints.ouray]
+lat = 40.055
+lon = -109.688
+elevation_m = 1464
+reference_stid = "UBOUR"       # UBWOS-2013 in-basin sounding site (data TBD)
+
 # ── US-40 gap-fill stations (west to east) ─────────────────────────────────
 
 [waypoints.strawberry]
