@@ -95,6 +95,12 @@ The engine never assumes a nest count. It discovers nests with
 `DX` global attr via `wrf_output.grid_spacing_label(ds)` (e.g. `d02 (1 km)`,
 `d03 (333 m)`).
 
+By default the `section` family renders the **innermost** nest. `--section-domain d03`
+(or `3`) targets a coarser nest instead; those section filenames gain a `_dNN` tag so the
+override coexists with the default set (e.g. render d03 sections beside an existing d04 set
+on a 4-nest run). A nest the run lacks is a named `[SKIP]`; the override applies only to the
+per-run `section` family (not diff sections), all other families keep the innermost nest.
+
 ## Preflight & named skips (fail loudly, not silently)
 
 Before building tasks, `preflight(cfg, case)` probes each selected case and returns a

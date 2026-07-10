@@ -57,6 +57,9 @@ def main() -> None:
     ap.add_argument("--sounding-cache", default=None, help="parquet from fetch_soundings.py (offline obs)")
     ap.add_argument("--skip-existing", action="store_true",
                     help="skip figures already newer than their wrfout (idempotent re-runs)")
+    ap.add_argument("--section-domain", default=None,
+                    help="render the section family on this nest (e.g. d03 or 3) instead of the "
+                         "innermost; filenames gain a _dNN tag so it coexists with the default set")
     args = ap.parse_args()
 
     cfg = CaseConfig.from_toml(args.config)
@@ -69,6 +72,7 @@ def main() -> None:
         sounding_cache=args.sounding_cache,
         lead=args.lead,
         skip_existing=args.skip_existing,
+        section_domain=args.section_domain,
     )
     use_publication_style()
     tasks = build_tasks(cfg, selection)

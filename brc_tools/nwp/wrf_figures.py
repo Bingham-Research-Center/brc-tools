@@ -257,6 +257,7 @@ class Selection:
     sounding_cache: str | None = None    # parquet for skew-T obs overlay
     lead: str | None = None              # forecast lead hour(s) from init; overrides `time`
     skip_existing: bool = False          # skip figures already newer than their wrfout
+    section_domain: str | None = None    # section family nest override (e.g. "d03"); None -> innermost
 
 
 @dataclass
@@ -284,6 +285,28 @@ def _slug(text: str) -> str:
 
 def _focus_slug(cfg: CaseConfig) -> str:
     return _slug(cfg.focus_point.name) or "focus"
+
+
+def _section_domain(
+    selection: Selection, rep: PreflightReport
+) -> tuple[int | None, str, str | None]:
+    """Resolve the nest the ``section`` family renders on, plus a filename tag.
+
+    Defaults to the innermost nest with an empty tag (legacy filenames, so existing
+    output and ``--skip-existing`` are unaffected).  With ``--section-domain`` set to
+    a nest that exists (e.g. ``d03`` on a 4-nest run whose innermost is ``d04``), use
+    that nest and tag its filenames ``_dNN`` so the override coexists with the default
+    set.  Returns ``(None, "", reason)`` when the requested nest isn't present, so the
+    caller name-skips it rather than crashing (consistent with the fail-soft preflight).
+    """
+    if not selection.section_domain:
+        return rep.innermost, "", None
+    want = int(str(selection.section_domain).lower().lstrip("d"))
+    if want not in rep.domains:
+        have = ",".join(f"d{d:02d}" for d in rep.domains)
+        return None, "", f"d{want:02d} not among [{have}]"
+    tag = "" if want == rep.innermost else f"_d{want:02d}"
+    return want, tag, None
 
 
 def _select_times(
@@ -368,9 +391,12 @@ def _surface_field_for(ds, key: str) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # per-figure tasks (each self-contained for run_figure_pipeline try/except)
 # --------------------------------------------------------------------------- #
-def task_section(cfg, run, innermost, case, label, valid, orient, out, skip_existing=False):
-    out_png = out / f"section_{orient.lower()}_{case}_{valid:%H}z.png"
-    src = wo.wrfout_path(run, innermost, valid)
+def task_section(cfg, run, dom, case, label, valid, orient, out, skip_existing=False, domain_tag=""):
+    # ``domain_tag`` is "" for the default innermost nest (legacy filename) and "_dNN"
+    # when --section-domain targets a coarser nest, so the override coexists with the
+    # default set instead of clobbering it.
+    out_png = out / f"section_{orient.lower()}_{case}{domain_tag}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, dom, valid)
     if _skip_existing(out_png, [src], skip_existing):
         print(f"  [skip] {out_png.name} up to date")
         return
@@ -379,7 +405,7 @@ def task_section(cfg, run, innermost, case, label, valid, orient, out, skip_exis
     plot_wrf_section(
         sec, out_png,
         locator_terrain=wo.surface_field(ds, "HGT"),
-        title=f"{label} | d{innermost:02d} {orient} section | {valid:%Y-%m-%d %H}Z",
+        title=f"{label} | d{dom:02d} {orient} section | {valid:%Y-%m-%d %H}Z",
         annotation=cfg.annotation, waypoints=cfg.waypoints,
     )
 
@@ -827,12 +853,16 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
         label = cfg.runs[case].label
         innermost, outermost = rep.innermost, rep.outermost
         sel_times, _ = _select_times(rep.times, selection, rep.init)
+        # section-family nest: innermost by default, overridable via --section-domain.
+        sec_dom, sec_tag, sec_reason = _section_domain(selection, rep)
+        if "section" in fams and sec_dom is None:
+            print(f"  [SKIP] {case}: section-domain {selection.section_domain} — {sec_reason}")
         for t in sel_times:
-            if "section" in fams:
+            if "section" in fams and sec_dom is not None:
                 for orient in ("EW", "NS"):
-                    tasks.append((f"{label} {orient} {t:%H}Z", task_section,
-                                  (cfg, run, innermost, case, label, t, orient,
-                                   out_dir(cfg, selection, "sections", case), skip)))
+                    tasks.append((f"{label} {orient} d{sec_dom:02d} {t:%H}Z", task_section,
+                                  (cfg, run, sec_dom, case, label, t, orient,
+                                   out_dir(cfg, selection, "sections", case), skip, sec_tag)))
             if "upperair" in fams:
                 tasks.append((f"{label} upperair {t:%H}Z", task_upperair,
                               (cfg, run, innermost, case, label, t,
