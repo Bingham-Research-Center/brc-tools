@@ -20,6 +20,7 @@ def plot_domain_boxes(
     terrain_lonlat=None,
     extent: tuple[float, float, float, float] | None = None,
     waypoints: dict | None = None,
+    overlays: dict | None = None,
     box_colors=None,
     title: str,
     figsize: tuple[float, float] = (8.5, 8.0),
@@ -54,10 +55,25 @@ def plot_domain_boxes(
             color=color, fontsize=9, fontweight="bold", va="bottom", ha="left",
         )
 
+    if terrain_lonlat is not None:
+        lon2d, lat2d = (np.asarray(a) for a in terrain_lonlat)
+        ov_extent = (float(lon2d.min()), float(lon2d.max()),
+                     float(lat2d.min()), float(lat2d.max()))
+    else:
+        lons = np.concatenate([o.lon_ring for o in outlines])
+        lats = np.concatenate([o.lat_ring for o in outlines])
+        ov_extent = (float(lons.min()), float(lons.max()),
+                     float(lats.min()), float(lats.max()))
+
+    if overlays and any(overlays.values()):
+        from brc_tools.visualize.basemap import add_reference_overlays
+
+        add_reference_overlays(ax, ov_extent, layers=overlays)
+
     if waypoints:
-        for name, wp in waypoints.items():
-            ax.plot(wp["lon"], wp["lat"], marker="^", color="black", ms=5)
-            ax.text(wp["lon"], wp["lat"], f" {name}", fontsize=6, va="center")
+        from brc_tools.visualize.basemap import draw_waypoints
+
+        draw_waypoints(ax, waypoints, ov_extent, ms=5)
 
     if extent is not None:
         ax.set_xlim(extent[0], extent[1])

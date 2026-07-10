@@ -46,6 +46,18 @@ def test_temperature_advection_sign():
     assert np.all(adv < 0)  # westerly into a warm-east gradient -> cold advection
 
 
+def test_temperature_advection_presmooth_tames_noise():
+    rng = np.random.default_rng(0)
+    base = np.tile(280.0 + 0.01 * np.arange(20), (20, 1))
+    noisy = base + rng.normal(0.0, 0.3, size=base.shape)  # add small-scale noise
+    u = np.ones_like(base)
+    v = np.zeros_like(base)
+    raw = temperature_advection(noisy, u, v, dx_m=250.0, dy_m=250.0)
+    smoothed = temperature_advection(noisy, u, v, dx_m=250.0, dy_m=250.0, smooth_sigma=2.0)
+    # pre-gradient smoothing must reduce the advection field's roughness (variance)
+    assert np.nanvar(smoothed) < np.nanvar(raw)
+
+
 def test_plot_height_surface_writes_png(tmp_path, monkeypatch):
     monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
     ds = make_synthetic_wrf(nz=6, ny=12, nx=12)

@@ -26,6 +26,45 @@ def _terrain_floor(terrain: np.ndarray) -> float:
     return float(np.floor(np.nanmin(terrain) / 100.0) * 100.0 - 50.0)
 
 
+def _waypoints_on_section(section, waypoints, max_offset_km: float):
+    """Project waypoints onto the section line.
+
+    For each waypoint returns ``(distance_km, name, offset_km, terrain_m)`` at the nearest
+    point on the section, keeping only those within ``max_offset_km`` perpendicular of the
+    line (an equirectangular metric — fine over a single WRF nest) and not at the very
+    termini.  Lets a section annotate the towns/sites it actually passes through.
+    """
+    if not waypoints:
+        return []
+    lon = np.asarray(section.lon_line, dtype=float)
+    lat = np.asarray(section.lat_line, dtype=float)
+    dist = np.asarray(section.distance_km, dtype=float)
+    terrain = np.asarray(section.terrain1d, dtype=float)
+    kx = 111.320 * np.cos(np.deg2rad(float(np.mean(lat))))
+    ky = 110.574
+    found = []
+    for name, wp in waypoints.items():
+        dxs = (lon - float(wp["lon"])) * kx
+        dys = (lat - float(wp["lat"])) * ky
+        d2 = dxs * dxs + dys * dys
+        idx = int(np.argmin(d2))
+        offset = float(np.sqrt(d2[idx]))
+        if offset <= max_offset_km and 0 < idx < dist.size - 1:
+            found.append((float(dist[idx]), str(name), offset, float(terrain[idx])))
+    return sorted(found)
+
+
+def _draw_section_waypoints(ax, section, waypoints, max_offset_km: float, accent: str):
+    """Draw a dashed marker + rotated label where the section passes each waypoint."""
+    y_top = ax.get_ylim()[1]
+    for d_km, name, _offset, terr_m in _waypoints_on_section(section, waypoints, max_offset_km):
+        ax.axvline(d_km, color="0.15", lw=0.6, ls=(0, (4, 3)), alpha=0.7, zorder=5)
+        ax.plot(d_km, terr_m, marker="v", color=accent, ms=5, zorder=9)
+        ax.text(d_km, y_top, f"{name} ", rotation=90, va="top", ha="right",
+                fontsize=6, color="0.1", alpha=0.9, zorder=9,
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.55, "pad": 0.6})
+
+
 def _quiver_in_plane(ax, x2d, z2d, along, w, exagg, stride):
     """Draw the in-plane (along-section, exaggerated w) wind quiver."""
     sz, sx = stride
@@ -103,6 +142,8 @@ def plot_wrf_section(
     shallow_inset: bool = True,
     shallow_layer_m: float = 1000.0,
     locator_terrain=None,
+    waypoints: dict | None = None,
+    waypoint_offset_km: float = 6.0,
     figsize: tuple[float, float] = (11.0, 6.0),
     dpi: int = 300,
 ) -> Path:
@@ -157,6 +198,9 @@ def plot_wrf_section(
     ax.text(0.0, -0.09, section.termini[0], ha="left", va="top", **tkw)
     ax.text(1.0, -0.09, section.termini[1], ha="right", va="top", **tkw)
 
+    if waypoints:
+        _draw_section_waypoints(ax, section, waypoints, waypoint_offset_km, accent)
+
     if shallow_inset:
         _shallow_inset(ax, section, style, x2d, z2d, field, dist, terrain,
                        shallow_layer_m, contour_levels)
@@ -197,6 +241,9 @@ def plot_wrf_section_difference(
     annotation: str | None = None,
     y_pad_top_m: float = 1500.0,
     locator_terrain=None,
+    waypoints: dict | None = None,
+    waypoint_offset_km: float = 6.0,
+    smooth_sigma: float = 1.5,
     figsize: tuple[float, float] = (11.0, 6.0),
     dpi: int = 300,
 ) -> Path:
@@ -228,11 +275,18 @@ def plot_wrf_section_difference(
     fa = _interp_columns_to_heights(section_a.theta2d, section_a.height2d, target_heights)
     fb = _interp_columns_to_heights(section_b.theta2d, section_b.height2d, target_heights)
     diff = fa - fb
+    # A raw difference of two near-identical runs oscillates about zero, so a bare
+    # ``contour(levels=[0])`` becomes unreadable spaghetti.  NaN-aware smoothing reveals
+    # the coherent signal and gives a single clean zero line.
+    if smooth_sigma and smooth_sigma > 0:
+        from brc_tools.visualize.upperair import _nan_gaussian
+
+        diff = _nan_gaussian(diff, smooth_sigma)
 
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
     ax.set_facecolor("0.55")  # below-ground NaN cells read as terrain, not white
     mesh = ax.pcolormesh(dist, target_heights, diff, cmap=style.cmap,
-                         vmin=style.vmin, vmax=style.vmax, shading="nearest")
+                         vmin=style.vmin, vmax=style.vmax, shading="gouraud")
     fig.colorbar(mesh, ax=ax, shrink=0.85, extend="both", label=style.label)
     ax.contour(dist, target_heights, diff, levels=[0.0], colors="black", linewidths=0.5)
 
@@ -247,6 +301,9 @@ def plot_wrf_section_difference(
     tkw = dict(color=accent, fontsize=11, fontweight="bold", transform=ax.transAxes)
     ax.text(0.0, -0.09, section_a.termini[0], ha="left", va="top", **tkw)
     ax.text(1.0, -0.09, section_a.termini[1], ha="right", va="top", **tkw)
+
+    if waypoints:
+        _draw_section_waypoints(ax, section_a, waypoints, waypoint_offset_km, accent)
 
     if locator_terrain is not None:
         _locator_inset(ax, section_a, locator_terrain, accent)

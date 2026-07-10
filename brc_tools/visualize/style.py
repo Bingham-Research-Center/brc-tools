@@ -47,6 +47,9 @@ VAR_STYLES: dict[str, VarStyle] = {
     "w":              VarStyle("RdBu_r", r"$w$ (m s$^{-1}$)", -0.5, 0.5, diverging=True),
     "theta_crest":    VarStyle("RdYlBu_r", r"$\theta$ (K)", 285.0, 300.0),
     "temp_adv":       VarStyle("RdBu_r", r"T adv (K h$^{-1}$)", -3.0, 3.0, diverging=True),
+    # Air temperature on a mid-tropospheric pressure surface (default 600 hPa), for the
+    # synoptic warm/cold-advection map.  Feb Uinta-Basin 600 hPa air is ~ -20..-2 degC.
+    "temp_upper":     VarStyle("RdYlBu_r", r"$T$ ($^{\circ}$C)", -20.0, -2.0),
 }
 
 # Symmetric diverging limits for difference figures (case A minus case B).

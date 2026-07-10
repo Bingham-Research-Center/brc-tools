@@ -25,6 +25,7 @@ def plot_domain_panels(
     wind_ref: float = 5.0,
     terrain_contours: bool = True,
     waypoints: dict | None = None,
+    overlays: dict | None = None,
     extent: tuple[float, float, float, float] | None = None,
     suptitle: str,
     dpi: int = 300,
@@ -73,10 +74,17 @@ def plot_domain_panels(
             sx = max(1, u.shape[1] // 22)
             quiver = ax.quiver(lon[::sy, ::sx], lat[::sy, ::sx], u[::sy, ::sx], v[::sy, ::sx],
                                color="black", scale=wind_scale, width=0.004, alpha=0.7)
+        panel_extent = extent or (
+            float(lon.min()), float(lon.max()), float(lat.min()), float(lat.max())
+        )
+        if overlays and any(overlays.values()):
+            from brc_tools.visualize.basemap import add_reference_overlays
+
+            add_reference_overlays(ax, panel_extent, layers=overlays)
         if waypoints:
-            for name, wp in waypoints.items():
-                ax.plot(wp["lon"], wp["lat"], marker="^", color="black", ms=4, zorder=6)
-                ax.text(wp["lon"], wp["lat"], f" {name}", fontsize=6, zorder=6)
+            from brc_tools.visualize.basemap import draw_waypoints
+
+            draw_waypoints(ax, waypoints, panel_extent, zorder=6)
         if extent is not None:
             ax.set_xlim(extent[0], extent[1])
             ax.set_ylim(extent[2], extent[3])

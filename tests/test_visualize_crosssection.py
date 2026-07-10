@@ -6,9 +6,21 @@ from _wrf_synthetic import make_synthetic_wrf
 
 from brc_tools.nwp import wrf_output as wo
 from brc_tools.visualize.crosssection import (
+    _waypoints_on_section,
     plot_wrf_section,
     plot_wrf_section_difference,
 )
+
+
+def test_waypoints_on_section_keeps_near_and_drops_far():
+    ds = make_synthetic_wrf(nz=8, ny=12, nx=16)
+    sec = wo.build_section(ds, "EW")
+    mid = sec.lon_line.size // 2
+    on_line = {"lat": float(sec.lat_line[mid]), "lon": float(sec.lon_line[mid])}
+    far = {"lat": float(sec.lat_line[mid]) + 5.0, "lon": float(sec.lon_line[mid]) + 5.0}
+    hits = _waypoints_on_section(sec, {"On": on_line, "Off": far}, max_offset_km=5.0)
+    names = {name for _d, name, _off, _terr in hits}
+    assert "On" in names and "Off" not in names
 
 
 def test_plot_wrf_section_ew_with_insets(tmp_path, monkeypatch):

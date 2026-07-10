@@ -52,9 +52,31 @@ def below_ground_mask(target_m: float, terrain2d) -> np.ndarray:
     return target_m < np.asarray(terrain2d)
 
 
-def temperature_advection(temp2d, u2d, v2d, dx_m: float, dy_m: float) -> np.ndarray:
-    """Horizontal temperature advection ``-V . grad(T)`` (K s-1)."""
+def _nan_gaussian(field2d, sigma: float) -> np.ndarray:
+    """NaN-aware Gaussian smooth: normalise a zero-filled blur by a blurred mask."""
+    from scipy.ndimage import gaussian_filter
+
+    field2d = np.asarray(field2d, dtype=float)
+    finite = np.isfinite(field2d)
+    filled = gaussian_filter(np.where(finite, field2d, 0.0), sigma)
+    weight = gaussian_filter(finite.astype(float), sigma)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(weight > 0, filled / weight, np.nan)
+
+
+def temperature_advection(
+    temp2d, u2d, v2d, dx_m: float, dy_m: float, *, smooth_sigma: float = 0.0
+) -> np.ndarray:
+    """Horizontal temperature advection ``-V . grad(T)`` (K s-1).
+
+    ``smooth_sigma`` (grid cells) NaN-aware-smooths the temperature field *before* the
+    gradient — the physically correct way to tame the noise that a raw ``grad(T)`` picks
+    up on a fine (e.g. 333 m) mesh or near terrain, far cleaner than blurring the
+    advection product afterwards.
+    """
     temp2d = np.asarray(temp2d, dtype=float)
+    if smooth_sigma and smooth_sigma > 0:
+        temp2d = _nan_gaussian(temp2d, smooth_sigma)
     d_dy, d_dx = np.gradient(temp2d, dy_m, dx_m)
     return -(np.asarray(u2d) * d_dx + np.asarray(v2d) * d_dy)
 
@@ -74,6 +96,8 @@ def plot_height_surface(
     mask=None,
     adv_smooth_sigma: float = 1.0,
     waypoints: dict | None = None,
+    overlays: dict | None = None,
+    extent: tuple[float, float, float, float] | None = None,
     wind_barbs: bool = True,
     barb_stride: int = 20,
     title: str,
@@ -107,12 +131,7 @@ def plot_height_surface(
         adv = np.asarray(temp_adv2d, dtype=float) * 3600.0  # K h-1
         if adv_smooth_sigma and adv_smooth_sigma > 0:
             # NaN-aware Gaussian smoothing to tame noisy gradients near terrain
-            from scipy.ndimage import gaussian_filter
-
-            finite = np.isfinite(adv)
-            filled = gaussian_filter(np.where(finite, adv, 0.0), adv_smooth_sigma)
-            weight = gaussian_filter(finite.astype(float), adv_smooth_sigma)
-            adv = np.where(weight > 0, filled / weight, np.nan)
+            adv = _nan_gaussian(adv, adv_smooth_sigma)
         if mask is not None:
             adv = np.where(mask, np.nan, adv)
         levels = np.array([-3, -2, -1, -0.5, 0.5, 1, 2, 3], dtype=float)
@@ -134,11 +153,20 @@ def plot_height_surface(
             ax.contour(lon, lat, np.asarray(terrain), levels=levels_t,
                        colors="0.4", linewidths=0.25, alpha=0.4)
 
-    if waypoints:
-        for name, wp in waypoints.items():
-            ax.plot(wp["lon"], wp["lat"], marker="^", color="black", ms=4)
-            ax.text(wp["lon"], wp["lat"], f" {name}", fontsize=6)
+    view = extent or (float(lon.min()), float(lon.max()), float(lat.min()), float(lat.max()))
+    if overlays and any(overlays.values()):
+        from brc_tools.visualize.basemap import add_reference_overlays
 
+        add_reference_overlays(ax, view, layers=overlays)
+
+    if waypoints:
+        from brc_tools.visualize.basemap import draw_waypoints
+
+        draw_waypoints(ax, waypoints, view)
+
+    if extent is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
     ax.set_xlabel("longitude")
     ax.set_ylabel("latitude")
     ax.set_title(f"{title} | {target_label}")

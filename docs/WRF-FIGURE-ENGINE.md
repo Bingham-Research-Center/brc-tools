@@ -12,7 +12,8 @@ study is hardcoded.
 - CLI: `scripts/wrf_figures.py --config <case.toml>`.
 - Reader / derivations: `brc_tools/nwp/wrf_output.py` (already dataset-agnostic).
 - Renderers: `brc_tools/visualize/{crosssection,surface,domains,profile,upperair,
-  timeseries}.py` + `style.py`. These consume plain numpy and are reused unchanged.
+  timeseries}.py` + `style.py` + `basemap.py` (optional Natural-Earth overlays). These
+  consume plain numpy and are reused unchanged.
 
 The **case description is data, not code** — a per-study TOML lives in that study's
 repo (e.g. the pelican2013 case in `../wrf-nudge-ozone-air2026/cases/pelican2013.toml`),
@@ -39,6 +40,21 @@ Families: `domains, section, upperair, surface, difference, profile, skewt,
 heatdeficit` (or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
 the case's own repo owns the sbatch wrapper. Soundings need a network node — run
 `scripts/fetch_soundings.py` first and pass `--sounding-cache`.
+
+The `upperair` family renders **two** maps per time: the crest-height θ + wind + T-adv
+map on the inner nest, and a synoptic **temperature-advection map on a pressure surface**
+(`upper_pressure_hpa`, default 600 hPa) computed on the outer nest — 600 hPa sits well
+above the shallow inner nest, where a raw `grad(T)` on the 333 m mesh is dominated by
+noise, so the coarse nest + a pre-gradient smooth gives the clean warm/cold-advection
+pattern that caps the cold pool.
+
+**Map reference overlays** (US highways, rivers incl. the Green River, lakes/reservoirs,
+state borders) are opt-in per case via the `[map]` table and drawn on the surface /
+upper-air / domains maps. The engine stays cartopy-free for offline nodes, so the
+overlays are **fail-soft**: stage the Natural-Earth shapefiles once on a network node
+with `python scripts/fetch_basemap.py` (into `CARTOPY_DATA_DIR`); if a layer is not
+staged the figure simply renders without it. Waypoint labels are decluttered and points
+outside a cropped panel are dropped.
 
 ### Time selection: `--time` (valid hour) vs `--lead` (forecast hour)
 - `--time` filters on **valid hour-of-day** (`--time 12,18` keeps every output whose
@@ -110,6 +126,8 @@ annotation = "pelican2013 | brc-tools"
 crest_m = 2200.0                     # crest height for upper-air / heat-deficit
 profile_hours = [12]                 # hours for the θ(z) profile family
 sounding_hour = 12                   # analysis hour for station skew-Ts
+upper_pressure_hpa = 600.0           # pressure surface for the synoptic T-advection map
+upper_adv_domain = "outer"           # compute that map on "outer" (clean) | "inner" nest
 focus_point = { name = "Horsepool", lat = 40.144, lon = -109.467 }
 surface_vars = [                     # multi-domain surface panels (order preserved)
   { key = "theta2m", style = "theta_2m",      wind = true  },
@@ -119,9 +137,11 @@ surface_vars = [                     # multi-domain surface panels (order preser
   { key = "pblh",    style = "pblh",           wind = false },
 ]
 
-[waypoints]                          # markers overlaid on maps
+[waypoints]                          # markers on maps + labels along cross-sections
 Horsepool = { lat = 40.144, lon = -109.467 }
 Vernal    = { lat = 40.455, lon = -109.530 }
+# quote names with spaces: "Pelican Lake" = { lat = 40.1808, lon = -109.6810 }
+# A waypoint within ~6 km of a section line is labelled on that section at its distance.
 
 [soundings]
 stations = ["KSLC", "KGJT", "KRIW"]  # RAOB proxies (from brc_tools.api.soundings)
@@ -137,6 +157,13 @@ tag = "GFS-NAM"
 dir = "diff_gfs_nam"                 # output subdir (default: slug of tag)
 feedback = false                     # true tightens the diff colour limit (small-signal)
 sections = true                      # also emit EW/NS θ difference sections
+limit = 4.0                          # optional fixed ±K scale (shares one scale across a family)
+
+[map]                                # optional Natural-Earth reference overlays (fail-soft)
+states = true                        # state / province borders
+roads  = true                        # US highways (10m Major/Secondary Highway)
+rivers = true                        # river centrelines (incl. the Green River)
+lakes  = true                        # lakes / reservoirs
 
 [style]                              # optional; fixed shared scales are the default
 autoscale = false                    # true -> data-driven vmin/vmax (via shared_range)
@@ -145,7 +172,10 @@ autoscale = false                    # true -> data-driven vmin/vmax (via shared
 ```
 
 Recognised `surface_vars` keys: `theta2m`, `t2`, `wspd10`, `snow`, `pblh`. `style`
-values name entries in `brc_tools/visualize/style.py::VAR_STYLES`.
+values name entries in `brc_tools/visualize/style.py::VAR_STYLES`. A difference `limit`
+is a symmetric ±K colour bound; omit it to fall back to the built-in default (or the
+tighter `feedback` default). The `[map]` overlays need the shapefiles staged with
+`scripts/fetch_basemap.py` (see above); an unstaged layer is silently skipped.
 
 ## Colour scales
 

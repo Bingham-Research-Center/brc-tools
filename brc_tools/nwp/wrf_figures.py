@@ -52,6 +52,7 @@ from brc_tools.visualize.timeseries import plot_scalar_timeseries
 from brc_tools.visualize.upperair import (
     below_ground_mask,
     interp_to_height_surface,
+    interp_to_pressure_surface,
     plot_height_surface,
     temperature_advection,
 )
@@ -63,6 +64,17 @@ FAMILIES = [
 
 # Vertical extent for the theta(z) profile plot (m MSL); a generic default.
 _PROFILE_Y_MAX_M = 3300.0
+
+# Upper-air smoothing (grid cells).  The crest map is on the fine inner nest, so its
+# advection needs a firm pre-gradient smooth; the pressure map is on the coarse outer
+# nest already, so it needs only a light touch.
+_CREST_ADV_SMOOTH = 2.0
+_PRESSURE_ADV_SMOOTH = 1.5
+# View crop (deg lon, deg lat) around the focus point for the synoptic pressure map — the
+# advection is computed on the full outer nest, but shown over the basin + flanking ranges.
+_PRESSURE_VIEW_DEG = (1.5, 1.05)
+# Natural-Earth reference layers a case may switch on via its ``[map]`` table.
+_MAP_LAYERS = ("states", "roads", "rivers", "lakes")
 
 # Which raw wrfout variables each surface key needs.  A key is "available" if *any*
 # alternative group is fully present (theta_2m can come from TH2 or T2+PSFC).
@@ -106,6 +118,7 @@ class DiffPair:
     feedback: bool = False
     sections: bool = False
     dir: str | None = None  # output subdir; default derived from the tag slug
+    limit: float | None = None  # fixed symmetric diverging limit (K); else feedback default
 
 
 @dataclass(frozen=True)
@@ -144,6 +157,9 @@ class CaseConfig:
     style: StyleConfig
     profile_hours: tuple[int, ...]
     sounding_hour: int
+    upper_pressure_hpa: float = 600.0     # pressure surface for the synoptic T-adv map
+    upper_adv_domain: str = "outer"       # "outer" (clean synoptic) | "inner" (fine)
+    map_overlays: dict = field(default_factory=dict)  # {layer: bool} Natural-Earth refs
 
     # -- run-directory resolution (was the module-global run_dir/RUN_OVERRIDE) --
     def run_base(self, case: str) -> Path:
@@ -180,9 +196,12 @@ class CaseConfig:
                 feedback=bool(d.get("feedback", False)),
                 sections=bool(d.get("sections", False)),
                 dir=d.get("dir"),
+                limit=(float(d["limit"]) if d.get("limit") is not None else None),
             )
             for d in data.get("differences", [])
         ]
+        map_data = data.get("map", {})
+        map_overlays = {layer: bool(map_data.get(layer, False)) for layer in _MAP_LAYERS}
         style_data = data.get("style", {})
         overrides = {
             k: _varstyle_from_dict(v)
@@ -208,6 +227,9 @@ class CaseConfig:
             ),
             profile_hours=tuple(int(h) for h in case.get("profile_hours", [])),
             sounding_hour=int(case.get("sounding_hour", 12)),
+            upper_pressure_hpa=float(case.get("upper_pressure_hpa", 600.0)),
+            upper_adv_domain=str(case.get("upper_adv_domain", "outer")),
+            map_overlays=map_overlays,
         )
 
 
@@ -358,7 +380,7 @@ def task_section(cfg, run, innermost, case, label, valid, orient, out, skip_exis
         sec, out_png,
         locator_terrain=wo.surface_field(ds, "HGT"),
         title=f"{label} | d{innermost:02d} {orient} section | {valid:%Y-%m-%d %H}Z",
-        annotation=cfg.annotation,
+        annotation=cfg.annotation, waypoints=cfg.waypoints,
     )
 
 
@@ -381,12 +403,56 @@ def task_upperair(cfg, run, innermost, case, label, valid, out, skip_existing=Fa
     plot_height_surface(
         wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), th, u2, v2,
         out_png,
-        temp_adv2d=temperature_advection(tk, u2, v2, dx, dy), terrain=hgt,
+        temp_adv2d=temperature_advection(tk, u2, v2, dx, dy, smooth_sigma=_CREST_ADV_SMOOTH),
+        terrain=hgt,
         target_label=f"{int(crest)} m MSL", mask=below_ground_mask(crest, hgt),
+        adv_smooth_sigma=_CREST_ADV_SMOOTH,
         style=resolve_style("theta_crest", overrides=cfg.style.overrides,
                             autoscale=cfg.style.autoscale),
-        waypoints=cfg.waypoints,
+        waypoints=cfg.waypoints, overlays=cfg.map_overlays,
         title=f"{label} | crest theta + wind + T-adv | {valid:%H}Z", annotation=cfg.annotation,
+    )
+
+
+def task_upperair_pressure(cfg, run, domain, case, label, valid, out, skip_existing=False):
+    """Synoptic temperature-advection map on a pressure surface (default 600 hPa).
+
+    Computed on the *outer* nest by default: 600 hPa sits well above the shallow inner
+    nest, where a raw ``grad(T)`` on the 333 m mesh is dominated by noise.  The coarse
+    nest plus a pre-gradient smooth gives the clean warm/cold-advection pattern that caps
+    the cold pool.
+    """
+    p_hpa = float(cfg.upper_pressure_hpa)
+    out_png = out / f"p{int(p_hpa)}_advection_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, domain, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    lon2d, lat2d = wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT")
+    p = wo.pressure_pa(ds)
+    ue, ve = wo.earth_relative_winds(ds)
+    dx, dy = wo.dx_dy(ds)
+    target_pa = p_hpa * 100.0
+    tk = interp_to_pressure_surface(wo.temperature_k(ds), p, target_pa)
+    tc = tk - 273.15
+    u = interp_to_pressure_surface(ue, p, target_pa)
+    v = interp_to_pressure_surface(ve, p, target_pa)
+    dlon, dlat = _PRESSURE_VIEW_DEG
+    fx, fy = cfg.focus_point.lon, cfg.focus_point.lat
+    extent = (max(float(lon2d.min()), fx - dlon), min(float(lon2d.max()), fx + dlon),
+              max(float(lat2d.min()), fy - dlat), min(float(lat2d.max()), fy + dlat))
+    plot_height_surface(
+        lon2d, lat2d, tc, u, v, out_png,
+        temp_adv2d=temperature_advection(tk, u, v, dx, dy, smooth_sigma=_PRESSURE_ADV_SMOOTH),
+        terrain=None,  # d01 terrain contours are too busy here; overlays give the geography
+        target_label=f"{int(p_hpa)} hPa", mask=None,
+        adv_smooth_sigma=_PRESSURE_ADV_SMOOTH, extent=extent,
+        style=resolve_style("temp_upper", overrides=cfg.style.overrides,
+                            autoscale=cfg.style.autoscale),
+        waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+        title=f"{label} | d{domain:02d} {int(p_hpa)} hPa T + wind + T-adv | {valid:%H}Z",
+        annotation=cfg.annotation,
     )
 
 
@@ -415,12 +481,13 @@ def task_surface(cfg, run, domains, case, label, valid, sv, out, skip_existing=F
     style = resolve_style(sv.style, overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
     plot_domain_panels(
         panels, out_png, style=style,
-        wind=sv.wind, extent=extent, waypoints=cfg.waypoints,
+        wind=sv.wind, extent=extent, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
         suptitle=f"{label} | {sv.style} | d{innermost:02d} area | {valid:%H}Z",
     )
 
 
-def task_diff_map(cfg, run_a, run_b, innermost, tag, valid, out, feedback, skip_existing=False):
+def task_diff_map(cfg, run_a, run_b, innermost, tag, valid, out, feedback, limit=None,
+                  skip_existing=False):
     out_png = out / f"theta2m_{tag}_{valid:%H}z.png"
     srcs = [wo.wrfout_path(run_a, innermost, valid), wo.wrfout_path(run_b, innermost, valid)]
     if _skip_existing(out_png, srcs, skip_existing):
@@ -428,16 +495,18 @@ def task_diff_map(cfg, run_a, run_b, innermost, tag, valid, out, feedback, skip_
         return
     da = wo.open_wrfout(srcs[0])
     db = wo.open_wrfout(srcs[1])
+    lim = limit if limit is not None else (3.0 if feedback else 5.0)
     plot_field_difference(
         wo.surface_field(da, "XLONG"), wo.surface_field(da, "XLAT"),
         wo.theta_2m(da), wo.theta_2m(db), out_png,
-        var="theta", limit=3.0 if feedback else 5.0,
+        var="theta", limit=lim,
         title=f"{tag} | 2 m theta | d{innermost:02d} | {valid:%H}Z",
         terrain=wo.surface_field(da, "HGT"), annotation=cfg.annotation,
     )
 
 
-def task_diff_section(cfg, run_a, run_b, innermost, tag, valid, orient, out, skip_existing=False):
+def task_diff_section(cfg, run_a, run_b, innermost, tag, valid, orient, out, limit=None,
+                      skip_existing=False):
     out_png = out / f"section_{orient.lower()}_{tag}_{valid:%H}z.png"
     src_a = wo.wrfout_path(run_a, innermost, valid)
     src_b = wo.wrfout_path(run_b, innermost, valid)
@@ -449,8 +518,10 @@ def task_diff_section(cfg, run_a, run_b, innermost, tag, valid, orient, out, ski
     sec_b = wo.build_section(db, orient)
     plot_wrf_section_difference(
         sec_a, sec_b, out_png,
-        var="theta", title=f"{tag} | d{innermost:02d} {orient} theta | {valid:%H}Z",
+        var="theta", limit=limit,
+        title=f"{tag} | d{innermost:02d} {orient} theta | {valid:%H}Z",
         locator_terrain=wo.surface_field(db, "HGT"), annotation=cfg.annotation,
+        waypoints=cfg.waypoints,
     )
 
 
@@ -472,7 +543,8 @@ def task_domains(cfg, run, domains, out, skip_existing=False):
             lon, lat = wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT")
     plot_domain_boxes(
         outlines, out_png, terrain=terr, terrain_lonlat=(lon, lat),
-        waypoints=cfg.waypoints, title=f"{cfg.label} WRF nested domains",
+        waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+        title=f"{cfg.label} WRF nested domains",
     )
 
 
@@ -765,6 +837,11 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
                 tasks.append((f"{label} upperair {t:%H}Z", task_upperair,
                               (cfg, run, innermost, case, label, t,
                                out_dir(cfg, selection, "upperair", case), skip)))
+                adv_dom = outermost if cfg.upper_adv_domain == "outer" else innermost
+                tasks.append((f"{label} {int(cfg.upper_pressure_hpa)}hPa T-adv {t:%H}Z",
+                              task_upperair_pressure,
+                              (cfg, run, adv_dom, case, label, t,
+                               out_dir(cfg, selection, "upperair", case), skip)))
             if "surface" in fams:
                 for sv in rep.usable_surface_vars:
                     tasks.append((f"{label} {sv.key} {t:%H}Z", task_surface,
@@ -798,9 +875,11 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
             diff_times, _ = _select_times(reports[dp.a].times, selection, reports[dp.a].init)
             for t in diff_times:
                 tasks.append((f"{dp.tag} map {t:%H}Z", task_diff_map,
-                              (cfg, run_a, run_b, innermost, dp.tag, t, odir, dp.feedback, skip)))
+                              (cfg, run_a, run_b, innermost, dp.tag, t, odir,
+                               dp.feedback, dp.limit, skip)))
                 if dp.sections:
                     for orient in ("EW", "NS"):
                         tasks.append((f"{dp.tag} {orient} {t:%H}Z", task_diff_section,
-                                      (cfg, run_a, run_b, innermost, dp.tag, t, orient, odir, skip)))
+                                      (cfg, run_a, run_b, innermost, dp.tag, t, orient, odir,
+                                       dp.limit, skip)))
     return tasks
