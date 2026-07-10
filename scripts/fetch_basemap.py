@@ -7,11 +7,17 @@ by ``brc_tools.visualize.basemap``) need the Natural-Earth 10 m shapefiles cache
 path the batch job can read.  Compute nodes have no outbound network, so run this ONCE
 on a login / DTN node with internet; the SLURM figure job then reads the cache offline.
 
-By default it stages into ``CARTOPY_DATA_DIR`` (the same dir the pelican_figures SLURM
-wrapper exports) so the overlays light up with no further wiring::
+The stage target resolves ``BRC_TOOLS_BASEMAP_DIR`` (a persistent cache — e.g. group
+storage that survives scratch purges) → ``CARTOPY_DATA_DIR`` (cartopy-native) → a
+per-user scratch dir, so a one-time stage into durable storage keeps every later figure
+job wired with no re-fetch::
 
-    export CARTOPY_DATA_DIR=/scratch/general/vast/$USER/cartopy
+    export BRC_TOOLS_BASEMAP_DIR=/uufs/.../lawson-group6/jrlawson/brc-tools-data/cartopy
     python scripts/fetch_basemap.py
+
+A DTN has both internet *and* read-write group storage, so it can fetch straight into a
+persistent dir in one shot — see ``scripts/fetch_basemap.dtn.slurm``.  (Login nodes may
+mount group storage read-only; compute nodes lack internet — hence the DTN.)
 
 Idempotent: cartopy skips layers already present.  Fail-soft consumer side — a missing
 layer just means that overlay is absent, never a crash.
@@ -32,14 +38,25 @@ _LAYERS = [
     ("physical", "lakes"),
 ]
 
-_DEFAULT_DIR = f"/scratch/general/vast/{os.environ.get('USER', 'user')}/cartopy"
+_SCRATCH_DIR = f"/scratch/general/vast/{os.environ.get('USER', 'user')}/cartopy"
+
+
+def _default_dir() -> str:
+    """Resolve the stage target: persistent ``BRC_TOOLS_BASEMAP_DIR`` wins, then the
+    cartopy-native ``CARTOPY_DATA_DIR``, then a purgeable per-user scratch dir."""
+    return (
+        os.environ.get("BRC_TOOLS_BASEMAP_DIR")
+        or os.environ.get("CARTOPY_DATA_DIR")
+        or _SCRATCH_DIR
+    )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
-        "--data-dir", default=os.environ.get("CARTOPY_DATA_DIR", _DEFAULT_DIR),
-        help="cartopy data dir to stage into (default: $CARTOPY_DATA_DIR or scratch)",
+        "--data-dir", default=_default_dir(),
+        help="cartopy data dir to stage into "
+             "(default: $BRC_TOOLS_BASEMAP_DIR or $CARTOPY_DATA_DIR or scratch)",
     )
     ap.add_argument("--resolution", default="10m", help="Natural-Earth resolution")
     args = ap.parse_args()

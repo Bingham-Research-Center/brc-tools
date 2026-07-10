@@ -84,6 +84,7 @@ documented in `docs/WRF-FIGURE-ENGINE.md`; per-study case TOMLs live in the stud
 | `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
 | `BRC_TOOLS_HERBIE_CACHE` / `BRC_TOOLS_HRRR_CACHE` | NWP / HRRR GRIB cache dir override | optional |
+| `BRC_TOOLS_BASEMAP_DIR` | persistent Natural-Earth cache for figure map overlays (else `CARTOPY_DATA_DIR` → scratch); stage once via `scripts/fetch_basemap.dtn.slurm` | optional |
 | `BRC_TOOLS_LOCK_DIR` / `BRC_TOOLS_HTTP_IPV4_ONLY` | parallel-download lock dir / force IPv4 (CHPC DTN IPv6 workaround) | optional |
 
 All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var

@@ -45,12 +45,15 @@ repo (`../wrf-nudge-ozone-air2026/cases/pelican2013.toml`), not in brc-tools.
    then add `--sounding-cache <scratch>/snd.parquet`.
 5. **Map reference overlays (optional):** to draw US highways, rivers (incl. the Green
    River), lakes/reservoirs and state borders on the surface / upper-air / domains maps,
-   the case TOML carries a `[map]` table (`states/roads/rivers/lakes = true`). The engine
-   is cartopy-free and **fail-soft**: stage the Natural-Earth shapefiles **once on a
-   login/DTN (network) node** with `python scripts/fetch_basemap.py` (into
-   `CARTOPY_DATA_DIR`); any layer not staged is just omitted, so a compute node never
-   crashes for want of a shapefile. Waypoint labels are decluttered and off-panel points
-   dropped.
+   the case TOML carries a `[map]` table (`states/roads/rivers/lakes = true`). Stage the
+   Natural-Earth shapefiles **once into a persistent cache** so every later job reuses
+   them: `sbatch scripts/fetch_basemap.dtn.slurm` (a DTN is the one node with both
+   internet and read-write group storage — it fetches straight into
+   `$BRC_TOOLS_BASEMAP_DIR`). Point figure jobs at the cache by exporting
+   `BRC_TOOLS_BASEMAP_DIR` (falls back to `CARTOPY_DATA_DIR`, then scratch). The engine is
+   cartopy-free and **fail-soft**: any layer not staged is just omitted, so a compute node
+   never crashes for want of a shapefile. Waypoint labels are decluttered and off-panel
+   points dropped.
 6. **Submit on SLURM (never a login node):** the study repo owns the wrapper --
    `cd ~/gits/wrf-nudge-ozone-air2026 && sbatch slurm/pelican_figures.slurm --case <..> --run <..> [--figure <..>] [--lead <..>] [--skip-existing]`
    (args after the script forward to the driver; `--lead` overrides the wrapper's

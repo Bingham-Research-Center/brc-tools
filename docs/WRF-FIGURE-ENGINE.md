@@ -51,10 +51,13 @@ pattern that caps the cold pool.
 **Map reference overlays** (US highways, rivers incl. the Green River, lakes/reservoirs,
 state borders) are opt-in per case via the `[map]` table and drawn on the surface /
 upper-air / domains maps. The engine stays cartopy-free for offline nodes, so the
-overlays are **fail-soft**: stage the Natural-Earth shapefiles once on a network node
-with `python scripts/fetch_basemap.py` (into `CARTOPY_DATA_DIR`); if a layer is not
-staged the figure simply renders without it. Waypoint labels are decluttered and points
-outside a cropped panel are dropped.
+overlays are **fail-soft**: stage the Natural-Earth shapefiles once into a persistent
+cache (`BRC_TOOLS_BASEMAP_DIR`, else `CARTOPY_DATA_DIR`, else a scratch dir) and every
+later figure job reads them offline. A DTN is the only node with both internet and
+read-write group storage, so `sbatch scripts/fetch_basemap.dtn.slurm` fetches straight
+into durable storage in one shot (re-runnable to refresh); `python scripts/fetch_basemap.py`
+also works on any network node. If a layer is not staged the figure simply renders
+without it. Waypoint labels are decluttered and points outside a cropped panel are dropped.
 
 ### Time selection: `--time` (valid hour) vs `--lead` (forecast hour)
 - `--time` filters on **valid hour-of-day** (`--time 12,18` keeps every output whose

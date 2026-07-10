@@ -3,8 +3,9 @@
 The figure engine draws on plain lon/lat Matplotlib axes so it renders on offline
 compute nodes.  Highway / river / lake / state-border overlays are **opt-in** and
 **fail-soft**: they read Natural-Earth shapefiles via cartopy's shapereader *only if
-the data is already staged* (``CARTOPY_DATA_DIR`` or the cartopy default cache — stage
-it once with ``scripts/fetch_basemap.py``).  A missing shapefile, an absent cartopy /
+the data is already staged* (``BRC_TOOLS_BASEMAP_DIR``, ``CARTOPY_DATA_DIR`` or the
+cartopy default cache — stage it once with ``scripts/fetch_basemap.py``).  A missing
+shapefile, an absent cartopy /
 shapely, or a geometry error is swallowed so the figure still renders — just without
 the overlay, never a crash on an offline node.
 
@@ -16,6 +17,7 @@ a true cartopy GeoAxes instead.
 from __future__ import annotations
 
 import functools
+import os
 from pathlib import Path
 
 import numpy as np
@@ -41,23 +43,38 @@ _LINE_STYLE = {
 
 
 def _candidate_data_dirs() -> tuple[Path, ...]:
-    """cartopy data dirs to search, in order — ``CARTOPY_DATA_DIR`` first.
+    """cartopy data dirs to search, in order — env-driven persistent caches first.
 
-    cartopy files ``CARTOPY_DATA_DIR`` under ``config['pre_existing_data_dir']`` (a
-    read-only search path) and keeps ``config['data_dir']`` as its own writable default
-    (``~/.local/share/cartopy``), so a batch-staged layer lives under the former while the
-    stock ``states`` layer may sit under the latter — we must check both.
+    ``BRC_TOOLS_BASEMAP_DIR`` (a persistent group-storage cache) and the cartopy-native
+    ``CARTOPY_DATA_DIR`` are honoured directly from the environment first, so a staged
+    layer is found even when cartopy's config was not pre-seeded (e.g. the env var was
+    exported after ``import cartopy``).  cartopy then files ``CARTOPY_DATA_DIR`` under
+    ``config['pre_existing_data_dir']`` (a read-only search path) and keeps
+    ``config['data_dir']`` as its own writable default (``~/.local/share/cartopy``), so a
+    batch-staged layer lives under the former while the stock ``states`` layer may sit
+    under the latter — we check both too, then de-dup preserving order.
     """
+    dirs: list[Path] = []
+    for env in ("BRC_TOOLS_BASEMAP_DIR", "CARTOPY_DATA_DIR"):
+        val = os.environ.get(env)
+        if val:
+            dirs.append(Path(val))
     try:
         import cartopy
     except Exception:  # pragma: no cover - cartopy absent
-        return ()
-    dirs = []
-    for key in ("pre_existing_data_dir", "data_dir"):
-        val = cartopy.config.get(key)
-        if val:
-            dirs.append(Path(val))
-    return tuple(dirs)
+        cartopy = None
+    if cartopy is not None:
+        for key in ("pre_existing_data_dir", "data_dir"):
+            val = cartopy.config.get(key)
+            if val:
+                dirs.append(Path(val))
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for d in dirs:
+        if d not in seen:
+            seen.add(d)
+            ordered.append(d)
+    return tuple(ordered)
 
 
 @functools.lru_cache(maxsize=8)
