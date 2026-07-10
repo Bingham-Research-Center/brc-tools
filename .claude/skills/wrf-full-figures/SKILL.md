@@ -43,13 +43,21 @@ repo (`../wrf-nudge-ozone-air2026/cases/pelican2013.toml`), not in brc-tools.
 4. **Soundings (optional skew-T obs):** on a login/DTN node run
    `python scripts/fetch_soundings.py --time "<YYYY-MM-DD HH>" --out <scratch>/snd.parquet`,
    then add `--sounding-cache <scratch>/snd.parquet`.
-5. **Submit on SLURM (never a login node):** the study repo owns the wrapper --
+5. **Map reference overlays (optional):** to draw US highways, rivers (incl. the Green
+   River), lakes/reservoirs and state borders on the surface / upper-air / domains maps,
+   the case TOML carries a `[map]` table (`states/roads/rivers/lakes = true`). The engine
+   is cartopy-free and **fail-soft**: stage the Natural-Earth shapefiles **once on a
+   login/DTN (network) node** with `python scripts/fetch_basemap.py` (into
+   `CARTOPY_DATA_DIR`); any layer not staged is just omitted, so a compute node never
+   crashes for want of a shapefile. Waypoint labels are decluttered and off-panel points
+   dropped.
+6. **Submit on SLURM (never a login node):** the study repo owns the wrapper --
    `cd ~/gits/wrf-nudge-ozone-air2026 && sbatch slurm/pelican_figures.slurm --case <..> --run <..> [--figure <..>] [--lead <..>] [--skip-existing]`
    (args after the script forward to the driver; `--lead` overrides the wrapper's
    default `--time all`). Example — the 1-hour surface panels for every case, latest
    run: `sbatch slurm/pelican_figures.slurm --figure surface --lead 1`. Verify with
    `squeue -j <jobid>`.
-6. **Verify output:** on finish, check `<run>/full-figures/` and `pelican_figures_<jobid>.out`;
+7. **Verify output:** on finish, check `<run>/full-figures/` and `pelican_figures_<jobid>.out`;
    spot-check a couple of PNGs. The engine also prints a preflight report -- read it for named
    `[SKIP]`/`[WARN]` lines (missing variable, focus point off-grid, unavailable lead).
 
@@ -58,6 +66,15 @@ repo (`../wrf-nudge-ozone-air2026/cases/pelican2013.toml`), not in brc-tools.
   `MPLCONFIGDIR` on scratch; figures route out of every repo by default.
 - Redirect output with `--output-dir <path>` (nests `<case>/<family>/`).
 - Families: `domains, section, upperair, surface, difference, profile, skewt, heatdeficit, all`.
+- The `upperair` family renders **two** maps per time: the crest-level θ/wind/T-adv map on
+  the inner nest plus a synoptic **T-advection map on a pressure surface**
+  (`upper_pressure_hpa`, default 600 hPa, computed on `upper_adv_domain` — the coarse
+  "outer" nest gives a cleaner gradient than the 333 m mesh). No extra flags.
+- A `[[differences]]` block may pin a fixed symmetric colour scale with `limit = <K>` (one
+  scale shared across that difference family); `feedback = true` uses the tighter
+  small-signal default instead.
+- **Map overlays** (step 5) are opt-in via the case `[map]` table and fail-soft: an
+  unstaged Natural-Earth layer is silently skipped, never a crash.
 - Figure filenames encode the **valid hour** only (`…_13z.png`), so `--skip-existing`
   is safe for hourly (or coarser) output; a sub-hourly run would collide within an hour
   (see `docs/WRF-FIGURE-ENGINE.md`).
