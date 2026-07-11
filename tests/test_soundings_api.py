@@ -38,6 +38,7 @@ def _fake_siphon_igra2(monkeypatch, u_ms, v_ms):
     frame = pd.DataFrame(
         {
             "pressure": [1000.0, 900.0, 700.0],
+            "height": [110.0, 1000.0, 3000.0],
             "temperature": [12.0, 8.0, np.nan],   # top level junk (no temperature)
             "dewpoint": [9.0, np.nan, np.nan],
             "u_wind": u_ms,
@@ -58,6 +59,7 @@ def test_igra2_units_and_schema(monkeypatch):
     assert df.columns == sc.CANONICAL_COLUMNS
     assert df.height == 2                         # the no-temperature level is dropped
     assert df["pressure_hpa"].to_list() == [1000.0, 900.0]   # sorted surface->top
+    assert df["height_m"].to_list() == [110.0, 1000.0]       # geopotential height carried
     # m/s -> knots conversion applied to IGRA2 winds.
     assert df["u_kt"][0] == pytest.approx(5.0 * sc.MS_TO_KT)
     assert df["v_kt"][1] == pytest.approx(2.0 * sc.MS_TO_KT)
@@ -73,6 +75,7 @@ def test_auto_falls_back_to_wyoming(monkeypatch):
     def wyo(site, valid):
         return {
             "pressure_hpa": np.array([1000.0, 850.0]),
+            "height_m": np.array([100.0, 1500.0]),
             "temperature_c": np.array([12.0, 5.0]),
             "dewpoint_c": np.array([9.0, 0.0]),
             "u_kt": np.array([5.0, 10.0]),
@@ -84,6 +87,7 @@ def test_auto_falls_back_to_wyoming(monkeypatch):
     df = soundings.fetch_sounding("KSLC", VALID, provider="auto")
     assert df["provider"][0] == "wyoming"
     assert df["u_kt"][0] == pytest.approx(5.0)     # knots kept verbatim
+    assert df["height_m"].to_list() == [100.0, 1500.0]  # geopotential height carried
 
 
 def test_returns_none_when_all_providers_fail(monkeypatch):

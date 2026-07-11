@@ -18,8 +18,12 @@ Providers
                  404), so ``igra2`` is the reliable default.
 
 Canonical schema (one row per level, sorted surface->top)
-    station str | valid_time datetime(UTC, naive) | pressure_hpa | temperature_c
-    | dewpoint_c | u_kt | v_kt | provider str
+    station str | valid_time datetime(UTC, naive) | pressure_hpa | height_m
+    | temperature_c | dewpoint_c | u_kt | v_kt | provider str
+
+``height_m`` is the reported geopotential height (m); both archives carry it and
+the theta(z) profile plot needs it, so it is kept in the canonical frame (the
+skew-T ignores it).
 
 Times are treated as UTC throughout (naive, matching the wrfout filename stamps
 the figure batch parses); no tz object is attached.
@@ -34,7 +38,7 @@ from datetime import datetime
 MS_TO_KT = 1.9438444924406
 
 CANONICAL_COLUMNS = [
-    "station", "valid_time", "pressure_hpa",
+    "station", "valid_time", "pressure_hpa", "height_m",
     "temperature_c", "dewpoint_c", "u_kt", "v_kt", "provider",
 ]
 
@@ -82,6 +86,7 @@ def _fetch_igra2(site_id: str, valid: datetime) -> dict:
     df, _header = IGRAUpperAir.request_data(valid, site_id)
     return {
         "pressure_hpa": df["pressure"].to_numpy(),
+        "height_m": df["height"].to_numpy(),          # reported geopotential height
         "temperature_c": df["temperature"].to_numpy(),
         "dewpoint_c": df["dewpoint"].to_numpy(),
         "u_kt": df["u_wind"].to_numpy() * MS_TO_KT,   # IGRA2 winds are m/s
@@ -95,6 +100,7 @@ def _fetch_wyoming(site_id: str, valid: datetime) -> dict:
     df = WyomingUpperAir.request_data(valid, site_id)
     return {
         "pressure_hpa": df["pressure"].to_numpy(),
+        "height_m": df["height"].to_numpy(),          # reported geopotential height
         "temperature_c": df["temperature"].to_numpy(),
         "dewpoint_c": df["dewpoint"].to_numpy(),
         "u_kt": df["u_wind"].to_numpy(),              # Wyoming winds already knots
