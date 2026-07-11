@@ -36,7 +36,7 @@ PY=~/software/pkg/miniforge3/envs/brc-tools-2026/bin/python
 "$PY" scripts/wrf_figures.py --config <case.toml> --case nam --figure surface --lead 1 --skip-existing
 ```
 
-Families: `domains, section, upperair, surface, difference, profile, skewt,
+Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz,
 heatdeficit` (or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
 the case's own repo owns the sbatch wrapper. Soundings need a network node — run
 `scripts/fetch_soundings.py` first and pass `--sounding-cache`.
@@ -47,6 +47,19 @@ map on the inner nest, and a synoptic **temperature-advection map on a pressure 
 above the shallow inner nest, where a raw `grad(T)` on the 333 m mesh is dominated by
 noise, so the coarse nest + a pre-gradient smooth gives the clean warm/cold-advection
 pattern that caps the cold pool.
+
+The `thetaz` family is a **skew-T alternative**: potential temperature against height
+(`plot_theta_wind_profile`), one model curve per spin-up hour overlaid on the observed
+radiosonde, with a wind-barb side panel and shaded static-stability bands (dotted
+verticals are dry adiabats = neutral; a curve tilting right with height is stable). It
+renders one figure per RAOB proxy station (`[soundings] stations`) **per selected case**
+(each case's outer-domain column differs, so — unlike the station skew-T — it is not
+restricted to `ic_cases`). The model hours are `sounding_hour + [soundings] spinup_leads`
+(default `[0, 1]`, i.e. 12Z + 13Z); the observed launch is at `sounding_hour`. Pass
+`--sounding-cache` for the obs overlay (model-only, still valid, without it). The
+observed geopotential height rides in the sounding schema (`height_m`); a cache written
+before that column existed is filled hydrostatically. Output → per-case
+`full-figures/thetaz/thetaz_<station>_<case>.png`.
 
 **Map reference overlays** (US highways, rivers incl. the Green River, lakes/reservoirs,
 state borders) are opt-in per case via the `[map]` table and drawn on the surface /

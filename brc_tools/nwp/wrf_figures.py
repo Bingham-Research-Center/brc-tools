@@ -44,6 +44,7 @@ from brc_tools.visualize.profile import (
     CachedSounding,
     plot_skewt,
     plot_theta_profiles,
+    plot_theta_wind_profile,
     sounding_from_column,
 )
 from brc_tools.visualize.style import VarStyle, resolve_style
@@ -59,7 +60,7 @@ from brc_tools.visualize.upperair import (
 
 FAMILIES = [
     "domains", "section", "upperair", "surface",
-    "difference", "profile", "skewt", "heatdeficit",
+    "difference", "profile", "skewt", "thetaz", "heatdeficit",
 ]
 
 # Vertical extent for the theta(z) profile plot (m MSL); a generic default.
@@ -157,6 +158,7 @@ class CaseConfig:
     style: StyleConfig
     profile_hours: tuple[int, ...]
     sounding_hour: int
+    spinup_leads: tuple[int, ...] = (0, 1)  # model hours (after sounding_hour) on the theta(z) plot
     upper_pressure_hpa: float = 600.0     # pressure surface for the synoptic T-adv map
     upper_adv_domain: str = "outer"       # "outer" (clean synoptic) | "inner" (fine)
     map_overlays: dict = field(default_factory=dict)  # {layer: bool} Natural-Earth refs
@@ -227,6 +229,7 @@ class CaseConfig:
             ),
             profile_hours=tuple(int(h) for h in case.get("profile_hours", [])),
             sounding_hour=int(case.get("sounding_hour", 12)),
+            spinup_leads=tuple(int(h) for h in soundings.get("spinup_leads", [0, 1])),
             upper_pressure_hpa=float(case.get("upper_pressure_hpa", 600.0)),
             upper_adv_domain=str(case.get("upper_adv_domain", "outer")),
             map_overlays=map_overlays,
@@ -637,6 +640,43 @@ def task_skewt_station(
     )
 
 
+def task_thetaz_station(
+    cfg, run, outermost, case, label, station_name, model_valids, obs_valid, out,
+    sounding_cache, skip_existing=False,
+):
+    """θ(z)-with-wind profile at a RAOB proxy: model spin-up hours vs the observed sounding.
+
+    A skew-T alternative -- potential temperature against height, one curve per model
+    ``model_valids`` hour (the spin-up overlay) plus the ``obs_valid`` radiosonde,
+    with wind barbs and shaded static-stability bands.  Model columns come from the
+    outer domain (where the proxy stations sit); obs is the cached RAOB (``None`` if
+    no cache, in which case the plot is model-only).
+    """
+    from brc_tools.api.soundings import STATIONS
+
+    out_png = out / f"thetaz_{station_name}_{case}.png"
+    srcs = [wo.wrfout_path(run, outermost, t) for t in model_valids]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    st = STATIONS[station_name]
+    models = {}
+    for t in model_valids:
+        ds = wo.open_wrfout(wo.wrfout_path(run, outermost, t))
+        models[f"{t:%H}Z"] = sounding_from_column(
+            wo.extract_column(ds, st.lat, st.lon),
+            source=label, station=station_name, valid_time=t,
+        )
+    obs = CachedSounding(sounding_cache).get(station_name, obs_valid) if sounding_cache else None
+    hours = ", ".join(f"{t:%H}Z" for t in model_valids)
+    plot_theta_wind_profile(
+        models, out_png, obs=obs, crest_m=cfg.crest_m,
+        title=(f"{label} — θ(z) spin-up at {station_name} ({st.location}) d{outermost:02d}\n"
+               f"model {hours} vs RAOB {obs_valid:%Y-%m-%d %H}Z"),
+        annotation=cfg.annotation,
+    )
+
+
 def task_heatdeficit(cfg, case_runs, out, skip_existing=False):
     out_png = out / "heat_deficit_timeseries.png"
     times_by_case = {
@@ -891,6 +931,21 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
                                   (cfg, run, outermost, case, label, stn, t,
                                    out_dir(cfg, selection, "skewt", None),
                                    selection.sounding_cache, skip)))
+        # θ(z) spin-up profiles at each RAOB proxy: model over the spin-up window vs the
+        # single (sounding-hour) observed launch.  Rendered per selected case (each case's
+        # outer-domain column differs), so it is not restricted to ic_cases like the skew-T.
+        if "thetaz" in fams and cfg.sounding_stations:
+            launch = next((t for t in rep.times if t.hour == cfg.sounding_hour), None)
+            if launch is not None:
+                present = set(rep.times)
+                model_valids = [t for t in (launch + timedelta(hours=L) for L in cfg.spinup_leads)
+                                if t in present]
+                if model_valids:
+                    for stn in cfg.sounding_stations:
+                        tasks.append((f"{label} thetaz {stn}", task_thetaz_station,
+                                      (cfg, run, outermost, case, label, stn, model_valids, launch,
+                                       out_dir(cfg, selection, "thetaz", case),
+                                       selection.sounding_cache, skip)))
 
     # --- difference families ---
     if "difference" in fams:

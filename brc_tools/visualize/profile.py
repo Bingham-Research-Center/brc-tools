@@ -25,7 +25,13 @@ import numpy as np
 
 @dataclass
 class Sounding:
-    """A vertical sounding in plain units (hPa, deg C, knots)."""
+    """A vertical sounding in plain units (hPa, m, deg C, knots).
+
+    ``height_m`` is geopotential height (m MSL); it is optional because the skew-T
+    works in pressure coordinates, but the theta(z) profile plot needs it (model
+    columns and both RAOB archives supply it; a cache written before the schema
+    gained the column leaves it ``None``, and the plot reconstructs hydrostatically).
+    """
 
     pressure_hpa: np.ndarray
     temperature_c: np.ndarray
@@ -35,6 +41,7 @@ class Sounding:
     source: str
     station: str
     valid_time: datetime | None = None
+    height_m: np.ndarray | None = None
 
 
 class SoundingSource(Protocol):
@@ -55,6 +62,7 @@ def sounding_from_column(col, *, source: str = "WRF", station: str = "",
         source=source,
         station=station,
         valid_time=valid_time,
+        height_m=np.asarray(col.height_asl),
     )
 
 
@@ -100,6 +108,7 @@ class LiveSounding:
             source="RAOB",
             station=station,
             valid_time=valid_time,
+            height_m=df["height_m"].to_numpy() if "height_m" in df.columns else None,
         )
 
 
@@ -135,6 +144,7 @@ class CachedWyomingSounding:
             source="RAOB",
             station=station,
             valid_time=valid_time,
+            height_m=sub["height_m"].to_numpy() if "height_m" in sub.columns else None,
         )
 
 
@@ -263,5 +273,213 @@ def plot_skewt(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# theta(z) profile with wind + stability (skew-T alternative)
+# --------------------------------------------------------------------------- #
+_KAPPA = 0.2854      # R_d / c_p
+_RD = 287.05         # J kg-1 K-1
+_G = 9.80665         # m s-2
+
+
+def _theta_k(snd: Sounding) -> np.ndarray:
+    """Potential temperature (K) from a sounding's T (deg C) and p (hPa)."""
+    t = np.asarray(snd.temperature_c, float) + 273.15
+    p = np.asarray(snd.pressure_hpa, float)
+    return t * (1000.0 / p) ** _KAPPA
+
+
+def _hydrostatic_height(p_hpa: np.ndarray, t_c: np.ndarray, z0: float) -> np.ndarray:
+    """Geopotential height (m) from p (hPa, surface->top) and T (deg C), anchored at ``z0``.
+
+    Fallback for a sounding whose reported height is missing (e.g. a cache written
+    before the schema carried ``height_m``); integrates the hypsometric equation.
+    """
+    p = np.asarray(p_hpa, float) * 100.0
+    tk = np.asarray(t_c, float) + 273.15
+    z = np.empty_like(p)
+    z[0] = z0
+    for k in range(1, len(p)):
+        tbar = 0.5 * (tk[k] + tk[k - 1])
+        z[k] = z[k - 1] + (_RD * tbar / _G) * np.log(p[k - 1] / p[k])
+    return z
+
+
+def _heights(snd: Sounding, z0_fallback: float) -> np.ndarray:
+    """Sounding geopotential heights (m), reconstructed hydrostatically if absent."""
+    if snd.height_m is not None and np.isfinite(np.asarray(snd.height_m, float)).any():
+        return np.asarray(snd.height_m, float)
+    return _hydrostatic_height(snd.pressure_hpa, snd.temperature_c, z0_fallback)
+
+
+def _smooth(a: np.ndarray, w: int = 5) -> np.ndarray:
+    """Centred running mean (odd window), edge-padded — de-noises the dθ/dz banding."""
+    a = np.asarray(a, float)
+    if a.size < w:
+        return a
+    k = np.ones(w) / w
+    return np.convolve(np.pad(a, w // 2, mode="edge"), k, mode="valid")
+
+
+def _stability_bands(z, theta, z_top, *, min_thick=80.0, merge_gap=120.0):
+    """Contiguous ``(z0, z1, kind)`` bands from a *smoothed* profile's local dθ/dz.
+
+    ``kind`` in {'inversion','unstable'}; stable/neutral layers are left unshaded.
+    Thresholds (K/km): inversion >= 5, unstable <= -0.5.  Thin bands (< ``min_thick`` m)
+    are dropped and same-kind bands within ``merge_gap`` m are merged, so the shading
+    marks layers rather than every level-to-level flicker.
+    """
+    z = np.asarray(z, float)
+    th = _smooth(np.asarray(theta, float))
+    dthdz = np.diff(th) / np.maximum(np.diff(z), 1.0) * 1000.0  # K/km
+    kind = np.where(dthdz >= 5.0, "inversion", np.where(dthdz <= -0.5, "unstable", ""))
+    raw: list[tuple[float, float, str]] = []
+    for k, zk, z1 in zip(kind, z[:-1], z[1:]):
+        if not k or zk > z_top:
+            continue
+        z1 = min(float(z1), z_top)
+        if raw and raw[-1][2] == k and zk - raw[-1][1] <= merge_gap:
+            raw[-1] = (raw[-1][0], z1, k)
+        else:
+            raw.append((float(zk), z1, k))
+    return [b for b in raw if b[1] - b[0] >= min_thick]
+
+
+def _profile_barbs(ax, x, z, u, v, z_top, color):
+    z, u, v = np.asarray(z, float), np.asarray(u, float), np.asarray(v, float)
+    m = np.isfinite(z) & np.isfinite(u) & np.isfinite(v) & (z <= z_top)
+    z, u, v = z[m], u[m], v[m]
+    if z.size == 0:
+        return
+    targets = np.linspace(z.min(), z.max(), 14)
+    idx = np.unique([int(np.abs(z - t).argmin()) for t in targets])
+    ax.barbs(np.full(idx.size, x), z[idx], u[idx], v[idx],
+             length=6, color=color, linewidth=0.7, zorder=5)
+
+
+def plot_theta_wind_profile(
+    models: dict[str, Sounding],
+    out_path: str | Path,
+    *,
+    obs: Sounding | None = None,
+    title: str,
+    crest_m: float | None = None,
+    y_top_m: float = 5500.0,
+    annotation: str | None = None,
+    figsize: tuple[float, float] = (8.2, 8.0),
+    dpi: int = 300,
+) -> Path:
+    """Potential-temperature-with-height profile (a skew-T alternative).
+
+    Overlays one or more model columns (``models`` maps a short label -> Sounding,
+    e.g. the spin-up hours ``{"12Z": .., "13Z": ..}``) and an optional observed
+    radiosonde on a θ(x)-vs-height(y) plot, with a wind-barb side panel and shaded,
+    labelled static-stability bands (dotted verticals are dry adiabats = neutral;
+    a curve tilting right with height is statically stable).  All winds are knots.
+
+    The first model in ``models`` is the reference for the stability shading and the
+    change-shading (filled between the first and last model curve).
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    from brc_tools.visualize.timeseries import DEFAULT_RUN_STYLES
+
+    if not models:
+        raise ValueError("plot_theta_wind_profile needs at least one model sounding")
+
+    out = Path(out_path)
+    labels = list(models)
+    z0 = min(float(_heights(m, 0.0)[0]) for m in models.values())
+    m_z = {lab: _heights(snd, z0) for lab, snd in models.items()}
+    m_th = {lab: _theta_k(snd) for lab, snd in models.items()}
+    primary = labels[0]
+
+    # Manual layout (not constrained_layout): the narrow wind panel can collapse it
+    # under the larger publication fonts, and with savefig bbox='tight' that blows the
+    # figure width up — a fixed margin is robust.
+    fig, (ax, axw) = plt.subplots(
+        1, 2, figsize=figsize, sharey=True,
+        gridspec_kw=dict(width_ratios=[4.2, 1.0]),
+    )
+    fig.subplots_adjust(left=0.09, right=0.985, top=0.90, bottom=0.075, wspace=0.06)
+
+    band_c = {"inversion": "#d1495b", "unstable": "#4b8bbe"}
+    for zb0, zb1, kind in _stability_bands(m_z[primary], m_th[primary], y_top_m):
+        ax.axhspan(zb0, zb1, color=band_c[kind], alpha=0.10, zorder=0, lw=0)
+    for th in np.arange(260, 360, 5):
+        ax.axvline(th, color="0.6", ls=":", lw=0.6, zorder=1)
+
+    for i, lab in enumerate(labels):
+        st = DEFAULT_RUN_STYLES.get(i, {"color": "black", "ls": "-", "lw": 1.8})
+        ax.plot(m_th[lab], m_z[lab], color=st["color"], ls=st.get("ls", "-"),
+                lw=2.0, marker="o", ms=2.5, label=f"WRF {lab}", zorder=4)
+    if len(labels) >= 2:
+        zc = np.linspace(z0, y_top_m, 120)
+        a = np.interp(zc, m_z[labels[0]], m_th[labels[0]])
+        b = np.interp(zc, m_z[labels[-1]], m_th[labels[-1]])
+        ax.fill_betweenx(zc, a, b, color="0.55", alpha=0.18, zorder=2,
+                         label=f"{labels[0]}→{labels[-1]} change")
+    if obs is not None:
+        oz, oth = _heights(obs, z0), _theta_k(obs)
+        obs_lab = f"RAOB obs {obs.valid_time:%H}Z" if obs.valid_time else "RAOB (obs)"
+        ax.plot(oth, oz, color="k", lw=1.6, marker="D", ms=3.5, mfc="white",
+                label=obs_lab, zorder=4)
+    if crest_m is not None:
+        ax.axhline(crest_m, color="k", lw=0.7, ls="--", zorder=1)
+        ax.text(ax.get_xlim()[1], crest_m, " crest", fontsize=7, va="bottom", ha="right")
+
+    # wind panel: model columns then obs, evenly spaced
+    profs = [(lab, models[lab], DEFAULT_RUN_STYLES.get(i, {}).get("color", "black"))
+             for i, lab in enumerate(labels)]
+    if obs is not None:
+        profs.append(("obs", obs, "k"))
+    xs = np.linspace(0.28, 0.82, len(profs))
+    for x, (lab, snd, color) in zip(xs, profs):
+        _profile_barbs(axw, x, _heights(snd, z0), snd.u_kt, snd.v_kt, y_top_m, color)
+    axw.set_xlim(0.15, 0.95)
+    axw.set_xticks(list(xs))
+    axw.set_xticklabels([lab for lab, _s, _c in profs], fontsize=8)
+    axw.set_title("wind (kt)", fontsize=9)
+    axw.tick_params(left=False)
+    for s in ("top", "right", "left"):
+        axw.spines[s].set_visible(False)
+
+    ax.set_ylim(z0 - 50.0, y_top_m)
+    vis = [m_th[lab][m_z[lab] <= y_top_m] for lab in labels]
+    if obs is not None:
+        vis.append(_theta_k(obs)[_heights(obs, z0) <= y_top_m])
+    vis = np.concatenate([v for v in vis if v.size])
+    ax.set_xlim(float(np.nanmin(vis)) - 1.5, float(np.nanmax(vis)) + 2.5)
+    ax.set_xlabel(r"potential temperature  $\theta$  (K)")
+    ax.set_ylabel("height (m MSL)")
+    ax.set_title(title, fontsize=10)
+    ax.grid(True, axis="y", alpha=0.25)
+
+    handles, _ = ax.get_legend_handles_labels()
+    handles += [Patch(fc=band_c["inversion"], alpha=0.25, label="inversion (very stable)"),
+                Patch(fc=band_c["unstable"], alpha=0.25, label="unstable (dθ/dz<0)")]
+    ax.legend(handles=handles, loc="lower right", fontsize=7.5, framealpha=0.9)
+    ax.text(0.015, 0.985,
+            "dotted verticals = dry adiabats (constant θ, neutral)\n"
+            f"curve tilting right with height ⇒ statically stable\n"
+            f"shaded bands = stability of the {primary} WRF column",
+            transform=ax.transAxes, va="top", ha="left", fontsize=7, alpha=0.8)
+    if annotation:
+        ax.text(0.99, 0.985, annotation, transform=ax.transAxes, ha="right", va="top",
+                fontsize=6, alpha=0.6)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # Force a full-figure save: the publication style sets savefig.bbox='tight', whose
+    # size estimate balloons the width for this two-axes wind-panel layout. The fixed
+    # subplots_adjust margins above already frame the figure, so 'standard' is right.
+    with matplotlib.rc_context({"savefig.bbox": "standard"}):
+        fig.savefig(out, dpi=dpi)
     plt.close(fig)
     return out
