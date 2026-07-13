@@ -17,7 +17,7 @@ brc_tools/        installable package
   nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB)
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
-  visualize/      planview + timeseries panels; grid.py (field/section plots — brc-wrf seam); figure-engine modules (surface/section/upperair/profile/domains/basemap/style)
+  visualize/      planview + timeseries panels; grid.py (field/section plots — brc-wrf seam); figure-engine modules (surface/section/upperair/profile/domains/heatdeficit/basemap/style)
   download/       Synoptic obs script, push_data uploader, HRRR helpers
   api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB, auth-free)
   utils/          lookups, small helpers
@@ -38,7 +38,7 @@ figures/          generated output (gitignored)
 - `docs/ENVIRONMENT-SETUP.md` — conda/venv setup · `docs/CROSS-REPO-SYNC.md` — sibling-repo sync protocol
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-staging cold-start SSOT**; detail in `docs/WRF-INPUT-STAGING.md`; two-stream draft `docs/WRF-GEFS-NAM-FIELD-MAP.md` (parked)
-- `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the study repo; SSOT index → `../wrf-nudge-ozone-air2026/EXPERIMENT-FIGURE-INVENTORY.md`
+- `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the active study repo; SSOT index → `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When editing a topic, edit its canonical doc above; do not duplicate into CLAUDE.md.
@@ -68,11 +68,11 @@ load-bearing. The publication figure engine built on it (`wrf_figures.py` over
 - **JSON filenames**: `generate_json_fpath()` → `{prefix}_{YYYYMMDD_HHMM}Z.json`.
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
-- **Heavy jobs run on SLURM, not login nodes.** Involved processing (WRF figure batches, multi-file analysis, staging) runs as CHPC SLURM jobs — ship a `scripts/*.slurm` wrapper (see `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly since the login env doesn't carry. Study-specific figure wrappers live in the study repo (e.g. `../wrf-nudge-ozone-air2026/slurm/pelican_figures.slurm` → the generic `scripts/wrf_figures.py`). Details: `docs/CHPC-REFERENCE.md`.
+- **Heavy jobs run on SLURM, not login nodes.** Involved processing (WRF figure batches, multi-file analysis, staging) runs as CHPC SLURM jobs — ship a `scripts/*.slurm` wrapper (see `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly since the login env doesn't carry. Study-specific figure wrappers live in the active study repo (e.g. `../latex-jrl-mjd-mdpiair-2026/verification/slurm/pelican_figures.slurm` → the generic `scripts/wrf_figures.py`). Details: `docs/CHPC-REFERENCE.md`.
 - **Don't reinvent NWP downloads — check Herbie first.** Brian Blaylock's Herbie ([herbie.readthedocs.io](https://herbie.readthedocs.io)) ships hardened, on-rails model templates (`herbie/models/*.py`) for most NOAA/NCEI sources — prefer them over hand-rolled fetches. Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`). A hand-rolled GET is the exception and must justify why Herbie doesn't fit (today: `nam_analysis`/`rap_analysis`/`gfs_analysis`, which Herbie can't retrieve for 2013).
 - **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa for pressure; units are per-alias in `lookups.toml` `synoptic_units`). Convert at the boundary (e.g. Pa→hPa) only for display.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Read it; don't duplicate its contents into docs.
-- **Navigate, don't dredge.** Ingest high-value tokens, not whole trees. Never blind-`cat`/read entire figure, GRIB, or `run_*` output dirs (the WRF archive is ~30 GB of near-duplicate PNGs) — `ls | wc -l` or glob first, then read the one file you need; load a doc/TOML only when its topic is in play (see Doc map). For WRF run/figure locations + completeness, read the SSOT index `../wrf-nudge-ozone-air2026/EXPERIMENT-FIGURE-INVENTORY.md`, not the archive tree.
+- **Navigate, don't dredge.** Ingest high-value tokens, not whole trees. Never blind-`cat`/read entire figure, GRIB, or `run_*` output dirs (the WRF archive is ~30 GB of near-duplicate PNGs) — `ls | wc -l` or glob first, then read the one file you need; load a doc/TOML only when its topic is in play (see Doc map). For WRF run/figure locations + completeness, read the SSOT index `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`, not the archive tree.
 
 ## Environment variables
 | Var | Purpose | Required? |
@@ -97,14 +97,15 @@ pytest tests/
 ```
 Use a conda env with the deps (herbie, polars, pandas, matplotlib, cfgrib, requests).
 Preferred: the dedicated **`brc-tools-2026`** env (`mamba env create -f environment.yml`;
-herbie 2026.3.0 — validated, 174 passed / 2 skipped); the shared `clyfar-nov2025` also works. Fresh
+herbie 2026.3.0 — validated, 180 passed / 2 skipped); the shared `clyfar-nov2025` also works. Fresh
 setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).
 - `clyfar` — ozone forecast; imports `brc_tools.download.push_data`.
 - `brc-wrf` — WRF runs; consumes brc-tools staging (`manifest`/`contract` sidecars) + imports `brc_tools.visualize.grid`.
-- `wrf-nudge-ozone-air2026` — pelican2013 WRF study; owns the case TOMLs + run/figure inventory (SSOT for run/figure locations), consumes the brc-tools figure engine.
+- `latex-jrl-mjd-mdpiair-2026` — **active** pelican2013 WRF study + manuscript; owns the case TOMLs (`verification/config/figures/`) + run/figure inventory (SSOT for run/figure locations), consumes the brc-tools figure engine.
+- `wrf-nudge-ozone-air2026` — frozen/read-only predecessor of the above; case TOMLs were copied byte-for-byte into the active repo. Do not use.
 - `brc-knowledge` — canonical CHPC infra + validated Slurm run scripts (referenced, not imported).
 - `preprint-clyfar-v0p9` — LaTeX manuscript.
 

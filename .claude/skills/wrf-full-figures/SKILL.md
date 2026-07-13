@@ -9,13 +9,15 @@ Drives the dataset-agnostic engine `scripts/wrf_figures.py --config <case.toml>`
 to render terrain-following cross-sections, multi-domain surface panels, GFS/NAM & feedback
 differences, theta(z)/skew-T profiles, crest upper-air, a domains map, and the cold-pool
 heat-deficit series -> `<run>/full-figures/` on lawson-group6. Engine + TOML schema:
-`docs/WRF-FIGURE-ENGINE.md`. The pelican2013 study's case config lives in the experiment
-repo (`../wrf-nudge-ozone-air2026/cases/pelican2013.toml`), not in brc-tools.
+`docs/WRF-FIGURE-ENGINE.md`. The pelican2013 study's case config lives in the active study
+repo (`../latex-jrl-mjd-mdpiair-2026/verification/config/figures/pelican2013.toml`), not in
+brc-tools. (The older `wrf-nudge-ozone-air2026` repo is frozen/read-only — do not use it.)
 
 ## Steps
 1. **Pick case config + run** (ask the user):
-   - Default study: `--config ~/gits/wrf-nudge-ozone-air2026/cases/pelican2013.toml`.
-   - Case keys within that config -> `--case gfs|nam|nam_oneway|nam_terrain5m|nam_terrain3s|all`.
+   - Default study: `--config ~/gits/latex-jrl-mjd-mdpiair-2026/verification/config/figures/pelican2013.toml`
+     (also `pelican2013_1km.toml` = 24 h 1 km rung, `pelican2013_d04.toml` = 111 m rung).
+   - Case keys within the main config -> `--case gfs|gfs_oneway|nam|nam_oneway|nam_terrain5m|nam_terrain3s|nam_terrain3s_slope|nam_terrain3s_slope_myj|nam_twoway_terrain3s|all`.
    - Specific run dir -> `--run <run_YYYYMMDDT...Z>` (default: latest); list with
      `ls $BRC_WRF_ARCHIVE/<case_dir>/full6h/`.
    - **New case/run:** add a `[runs.<key>]` block (and optionally `[[differences]]`) to the
@@ -55,7 +57,8 @@ repo (`../wrf-nudge-ozone-air2026/cases/pelican2013.toml`), not in brc-tools.
    never crashes for want of a shapefile. Waypoint labels are decluttered and off-panel
    points dropped.
 6. **Submit on SLURM (never a login node):** the study repo owns the wrapper --
-   `cd ~/gits/wrf-nudge-ozone-air2026 && sbatch slurm/pelican_figures.slurm --case <..> --run <..> [--figure <..>] [--lead <..>] [--skip-existing]`
+   `cd ~/gits/latex-jrl-mjd-mdpiair-2026 && sbatch verification/slurm/pelican_figures.slurm --case <..> --run <..> [--figure <..>] [--lead <..>] [--skip-existing]`
+   (render the 1 km / d04 rung by exporting `PELICAN_FIGURE_CONFIG=<...toml>` before sbatch)
    (args after the script forward to the driver; `--lead` overrides the wrapper's
    default `--time all`). Example — the 1-hour surface panels for every case, latest
    run: `sbatch slurm/pelican_figures.slurm --figure surface --lead 1`. Verify with
@@ -68,7 +71,9 @@ repo (`../wrf-nudge-ozone-air2026/cases/pelican2013.toml`), not in brc-tools.
 - The slurm wrapper sets the `brc-tools-2026` python, `PYTHONPATH=~/gits/brc-tools`, and
   `MPLCONFIGDIR` on scratch; figures route out of every repo by default.
 - Redirect output with `--output-dir <path>` (nests `<case>/<family>/`).
-- Families: `domains, section, upperair, surface, difference, profile, skewt, heatdeficit, all`.
+- Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz, heatdeficit, heatdeficit_map, all`.
+  `heatdeficit_map` renders the spatial cold-pool heat-deficit field (per case) + a diff map
+  per `[[differences]]` pair; nest via `heatdeficit_domain` (pelican2013 = `d02`).
 - The `upperair` family renders **two** maps per time: the crest-level θ/wind/T-adv map on
   the inner nest plus a synoptic **T-advection map on a pressure surface**
   (`upper_pressure_hpa`, default 600 hPa, computed on `upper_adv_domain` — the coarse

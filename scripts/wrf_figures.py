@@ -10,8 +10,8 @@ rather than a silent per-figure error.
 
 Examples
 --------
-    # everything for the pelican2013 case (config lives in the experiment repo)
-    python scripts/wrf_figures.py --config ../wrf-nudge-ozone-air2026/cases/pelican2013.toml
+    # everything for the pelican2013 case (config lives in the active study repo)
+    python scripts/wrf_figures.py --config ../latex-jrl-mjd-mdpiair-2026/verification/config/figures/pelican2013.toml
 
     # a subset
     python scripts/wrf_figures.py --config <case.toml> \
