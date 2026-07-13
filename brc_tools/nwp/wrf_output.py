@@ -465,3 +465,46 @@ def cold_pool_heat_deficit(col: WRFColumn, crest_m: float) -> float:
     p = col.pressure_hpa[mask] * 100.0  # Pa
     integrand = np.clip(theta_crest - col.theta[mask], 0.0, None)
     return float(abs((CP / G) * trapezoid(integrand, p)))
+
+
+def heat_deficit_field(ds, crest_m: float) -> np.ndarray:
+    """Whiteman valley heat deficit (J m-2) below ``crest_m``, over the whole grid.
+
+    The spatial (2-D) companion to :func:`cold_pool_heat_deficit`: for every column,
+
+        H = (c_p / g) * integral_{p_sfc}^{p_crest} max(theta_crest - theta, 0) dp
+
+    with ``theta_crest`` the potential temperature linearly interpolated to ``crest_m``
+    per column and the integrand zeroed above the crest.  Returns a ``(ny, nx)`` array of
+    non-negative heat deficit (positive = a low layer colder than the crest-level air, i.e.
+    a trapped cold pool).  Columns whose surface already lies at/above the crest -- the
+    surrounding ranges -- come back ~0.
+
+    The crest is an approximate upper boundary: the integrand is evaluated on the model
+    levels and forced to zero at the first level above the crest rather than exactly at
+    ``crest_m``.  Because the integrand -> 0 as theta -> theta_crest, that error sits where
+    the signal is smallest and is negligible against the pool depth.
+    """
+    from scipy.integrate import trapezoid
+
+    theta = potential_temperature(ds)        # (nz, ny, nx) K
+    z = geopotential_height_mass(ds)         # (nz, ny, nx) m ASL
+    p = pressure_pa(ds)                      # (nz, ny, nx) Pa
+    nz = z.shape[0]
+
+    below = z <= crest_m                     # (nz, ny, nx)
+    # last mass level at/below the crest per column, clamped so the k+1 gather stays valid.
+    k = np.clip(below.sum(axis=0) - 1, 0, nz - 2)   # (ny, nx)
+
+    def _gather(a, idx):
+        return np.take_along_axis(a, idx[np.newaxis], axis=0)[0]
+
+    z0, z1 = _gather(z, k), _gather(z, k + 1)
+    t0, t1 = _gather(theta, k), _gather(theta, k + 1)
+    w = np.clip((crest_m - z0) / np.maximum(z1 - z0, 1e-6), 0.0, 1.0)
+    theta_crest = t0 + w * (t1 - t0)         # (ny, nx) theta at crest height
+
+    integrand = np.where(below, np.clip(theta_crest[np.newaxis] - theta, 0.0, None), 0.0)
+    # trapz over pressure (which decreases with height); abs() fixes the sign, matching the
+    # single-column diagnostic.  Columns with < 2 sub-crest levels integrate to ~0.
+    return np.abs((CP / G) * trapezoid(integrand, x=p, axis=0))

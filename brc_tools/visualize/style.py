@@ -50,6 +50,10 @@ VAR_STYLES: dict[str, VarStyle] = {
     # Air temperature on a mid-tropospheric pressure surface (default 600 hPa), for the
     # synoptic warm/cold-advection map.  Feb Uinta-Basin 600 hPa air is ~ -20..-2 degC.
     "temp_upper":     VarStyle("RdYlBu_r", r"$T$ ($^{\circ}$C)", -20.0, -2.0),
+    # Cold-pool heat-deficit plan-view field (MJ m^-2).  Sequential, fixed 0..8 so the
+    # spatial pool is directly comparable across cases and forecast hours; the pelican2013
+    # control peaks near 8 MJ m^-2.
+    "heat_deficit":   VarStyle("viridis", r"cold-pool heat deficit (MJ m$^{-2}$)", 0.0, 8.0, extend="max"),
 }
 
 # Symmetric diverging limits for difference figures (case A minus case B).

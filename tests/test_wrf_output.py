@@ -115,6 +115,30 @@ def test_cold_pool_diagnostics_positive(ds):
     assert wo.cold_pool_heat_deficit(col, crest_m=1900.0) > 0
 
 
+def test_heat_deficit_field_positive_and_consistent():
+    """The vectorised field is non-negative and equals a hand-rolled single-column integral."""
+    from scipy.integrate import trapezoid
+
+    ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
+    crest = 1900.0
+    field = wo.heat_deficit_field(ds, crest)
+    assert field.shape == (6, 6)
+    assert np.all(np.isfinite(field))
+    assert np.all(field >= 0.0) and np.any(field > 0.0)
+
+    # cross-check the vectorised value at its peak against the same integral computed
+    # for that one column with np.interp (independent of the gather-based interpolation).
+    theta = wo.potential_temperature(ds)
+    z = wo.geopotential_height_mass(ds)
+    p = wo.pressure_pa(ds)
+    j, i = np.unravel_index(int(np.argmax(field)), field.shape)
+    zc, tc, pc = z[:, j, i], theta[:, j, i], p[:, j, i]
+    theta_crest = float(np.interp(crest, zc, tc))
+    integrand = np.where(zc <= crest, np.clip(theta_crest - tc, 0.0, None), 0.0)
+    expected = abs((wo.CP / wo.G) * trapezoid(integrand, pc))
+    assert field[j, i] == pytest.approx(expected, rel=1e-6)
+
+
 def test_discover_domains(tmp_path):
     for name in (
         "wrfout_d01_2013-02-02_12:00:00",

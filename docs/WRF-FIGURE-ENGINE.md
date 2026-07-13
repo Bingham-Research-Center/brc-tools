@@ -12,11 +12,12 @@ study is hardcoded.
 - CLI: `scripts/wrf_figures.py --config <case.toml>`.
 - Reader / derivations: `brc_tools/nwp/wrf_output.py` (already dataset-agnostic).
 - Renderers: `brc_tools/visualize/{crosssection,surface,domains,profile,upperair,
-  timeseries}.py` + `style.py` + `basemap.py` (optional Natural-Earth overlays). These
-  consume plain numpy and are reused unchanged.
+  timeseries,heatdeficit}.py` + `style.py` + `basemap.py` (optional Natural-Earth
+  overlays). These consume plain numpy and are reused unchanged.
 
 The **case description is data, not code** — a per-study TOML lives in that study's
-repo (e.g. the pelican2013 case in `../wrf-nudge-ozone-air2026/cases/pelican2013.toml`),
+repo (e.g. the pelican2013 case in
+`../latex-jrl-mjd-mdpiair-2026/verification/config/figures/pelican2013.toml`),
 never in brc-tools. brc-tools owns only the generalized engine + CLI.
 
 ## Running
@@ -37,7 +38,7 @@ PY=~/software/pkg/miniforge3/envs/brc-tools-2026/bin/python
 ```
 
 Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz,
-heatdeficit` (or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
+heatdeficit, heatdeficit_map` (or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
 the case's own repo owns the sbatch wrapper. Soundings need a network node — run
 `scripts/fetch_soundings.py` first and pass `--sounding-cache`.
 
@@ -60,6 +61,22 @@ restricted to `ic_cases`). The model hours are `sounding_hour + [soundings] spin
 observed geopotential height rides in the sounding schema (`height_m`); a cache written
 before that column existed is filled hydrostatically. Output → per-case
 `full-figures/thetaz/thetaz_<station>_<case>.png`.
+
+The `heatdeficit_map` family is the **spatial** cold-pool diagnostic (companion to the
+`heatdeficit` time series): the Whiteman valley heat deficit (`heat_deficit_field`,
+MJ m⁻², the grid-wide extension of the single-column `cold_pool_heat_deficit`) rendered
+as a plan-view map. It emits **two kinds** of figure: a per-case *field* map (sequential
+`viridis`, fixed 0–8 MJ m⁻² so the pool is comparable across cases/hours) → per-case
+`full-figures/heatdeficit_map/heatdeficit_<case>_<HH>z.png`; and, reusing the same
+`[[differences]]` pairs as the `difference` family, a case-minus-case *difference* map
+(symmetric `RdBu_r`, red = first case has the deeper pool) → shared
+`compare/heatdeficit_map/heatdeficit_<tag>_<HH>z.png`. The field renders on the nest named
+by `heatdeficit_domain` (`inner`/`outer`/`dNN`; default `inner` — pelican2013 sets `d02`,
+the 1 km nest that spans the whole basin + rim). Each difference pair may pin a fixed
+symmetric scale with `hd_limit` (MJ m⁻²); without it the limit is the robust 99th
+percentile of that figure. The crest is an approximate upper integration boundary (the
+integrand → 0 there, so the error sits where the signal is smallest). This is the
+productized form of the mechanism-decomposition heat-deficit prototype.
 
 **Map reference overlays** (US highways, rivers incl. the Green River, lakes/reservoirs,
 state borders) are opt-in per case via the `[map]` table and drawn on the surface /
@@ -150,6 +167,7 @@ profile_hours = [12]                 # hours for the θ(z) profile family
 sounding_hour = 12                   # analysis hour for station skew-Ts
 upper_pressure_hpa = 600.0           # pressure surface for the synoptic T-advection map
 upper_adv_domain = "outer"           # compute that map on "outer" (clean) | "inner" nest
+heatdeficit_domain = "d02"           # nest for the heatdeficit_map field: "inner"|"outer"|"dNN" (default inner)
 focus_point = { name = "Horsepool", lat = 40.144, lon = -109.467 }
 surface_vars = [                     # multi-domain surface panels (order preserved)
   { key = "theta2m", style = "theta_2m",      wind = true  },
@@ -180,6 +198,7 @@ dir = "diff_gfs_nam"                 # output subdir (default: slug of tag)
 feedback = false                     # true tightens the diff colour limit (small-signal)
 sections = true                      # also emit EW/NS θ difference sections
 limit = 4.0                          # optional fixed ±K scale (shares one scale across a family)
+hd_limit = 2.5                       # optional fixed ±MJ m⁻² scale for the heatdeficit_map diff
 
 [map]                                # optional Natural-Earth reference overlays (fail-soft)
 states = true                        # state / province borders

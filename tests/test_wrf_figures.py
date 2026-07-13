@@ -130,6 +130,29 @@ def test_engine_renders_on_non_pelican_shape(tmp_path, monkeypatch):
     assert pngs and pngs[0].stat().st_size > 0
 
 
+def test_heatdeficit_map_emits_and_renders(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["heatdeficit_map"], time="12",
+        output_dir=str(tmp_path / "out"),
+    )
+    tasks = wf.build_tasks(cfg, sel)
+
+    # the field family does not depend on the focus point, so it emits even though the
+    # test case's focus point is off-grid; it renders on the innermost nest by default.
+    hd = [t for t in tasks if t[1] is wf.task_heatdeficit_map]
+    assert hd, "expected heatdeficit_map field tasks"
+    # args: (cfg, run, dom, case, label, valid, out, skip_existing)
+    assert all(args[2] == 2 for _n, _fn, args in hd)
+
+    use_publication_style()
+    _name, fn, args = hd[0]
+    fn(*args)
+    pngs = list(Path(args[6]).glob("*.png"))
+    assert pngs and pngs[0].stat().st_size > 0
+
+
 def test_build_tasks_lead_selects_forecast_hour(tmp_path, monkeypatch):
     # run inits at 12Z (earliest wrfout); --lead 1 => the 13Z valid time.
     cfg = _make_case(tmp_path, monkeypatch)

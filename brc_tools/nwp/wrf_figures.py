@@ -40,6 +40,10 @@ from brc_tools.visualize.crosssection import (
     plot_wrf_section_difference,
 )
 from brc_tools.visualize.domains import plot_domain_boxes
+from brc_tools.visualize.heatdeficit import (
+    plot_heatdeficit_difference,
+    plot_heatdeficit_field,
+)
 from brc_tools.visualize.profile import (
     CachedSounding,
     plot_skewt,
@@ -60,7 +64,7 @@ from brc_tools.visualize.upperair import (
 
 FAMILIES = [
     "domains", "section", "upperair", "surface",
-    "difference", "profile", "skewt", "thetaz", "heatdeficit",
+    "difference", "profile", "skewt", "thetaz", "heatdeficit", "heatdeficit_map",
 ]
 
 # Vertical extent for the theta(z) profile plot (m MSL); a generic default.
@@ -120,6 +124,7 @@ class DiffPair:
     sections: bool = False
     dir: str | None = None  # output subdir; default derived from the tag slug
     limit: float | None = None  # fixed symmetric diverging limit (K); else feedback default
+    hd_limit: float | None = None  # fixed symmetric limit (MJ m-2) for the heatdeficit_map diff
 
 
 @dataclass(frozen=True)
@@ -161,6 +166,7 @@ class CaseConfig:
     spinup_leads: tuple[int, ...] = (0, 1)  # model hours (after sounding_hour) on the theta(z) plot
     upper_pressure_hpa: float = 600.0     # pressure surface for the synoptic T-adv map
     upper_adv_domain: str = "outer"       # "outer" (clean synoptic) | "inner" (fine)
+    heatdeficit_domain: str = "inner"     # nest for the heatdeficit_map field: "inner"|"outer"|"dNN"
     map_overlays: dict = field(default_factory=dict)  # {layer: bool} Natural-Earth refs
 
     # -- run-directory resolution (was the module-global run_dir/RUN_OVERRIDE) --
@@ -199,6 +205,7 @@ class CaseConfig:
                 sections=bool(d.get("sections", False)),
                 dir=d.get("dir"),
                 limit=(float(d["limit"]) if d.get("limit") is not None else None),
+                hd_limit=(float(d["hd_limit"]) if d.get("hd_limit") is not None else None),
             )
             for d in data.get("differences", [])
         ]
@@ -232,6 +239,7 @@ class CaseConfig:
             spinup_leads=tuple(int(h) for h in soundings.get("spinup_leads", [0, 1])),
             upper_pressure_hpa=float(case.get("upper_pressure_hpa", 600.0)),
             upper_adv_domain=str(case.get("upper_adv_domain", "outer")),
+            heatdeficit_domain=str(case.get("heatdeficit_domain", "inner")),
             map_overlays=map_overlays,
         )
 
@@ -288,6 +296,24 @@ def _slug(text: str) -> str:
 
 def _focus_slug(cfg: CaseConfig) -> str:
     return _slug(cfg.focus_point.name) or "focus"
+
+
+def _resolve_domain(spec: str, rep: PreflightReport) -> int | None:
+    """Map a domain spec to a nest present in ``rep``: ``inner``/``outer``/``dNN``/``NN``.
+
+    Returns ``None`` when an explicit nest is requested but absent (the caller name-skips
+    it, consistent with the fail-soft preflight).
+    """
+    s = str(spec).strip().lower()
+    if s in ("inner", ""):
+        return rep.innermost
+    if s == "outer":
+        return rep.outermost
+    try:
+        want = int(s.lstrip("d"))
+    except ValueError:
+        return rep.innermost
+    return want if want in rep.domains else None
 
 
 def _section_domain(
@@ -710,6 +736,44 @@ def task_heatdeficit(cfg, case_runs, out, skip_existing=False):
     )
 
 
+def task_heatdeficit_map(cfg, run, dom, case, label, valid, out, skip_existing=False):
+    """Per-case plan-view of the cold-pool heat-deficit field (MJ m-2) on nest ``dom``."""
+    out_png = out / f"heatdeficit_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    field_mj = wo.heat_deficit_field(ds, cfg.crest_m) / 1e6
+    style = resolve_style("heat_deficit", overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
+    plot_heatdeficit_field(
+        wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), field_mj, out_png,
+        style=style, crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
+        title=f"{label} | cold-pool heat deficit | d{dom:02d} | {valid:%Y-%m-%d %H}Z",
+        annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+    )
+
+
+def task_heatdeficit_map_diff(cfg, run_a, run_b, dom, tag, valid, out, hd_limit=None,
+                              skip_existing=False):
+    """Paired heat-deficit difference map (case a minus case b, MJ m-2) on nest ``dom``."""
+    out_png = out / f"heatdeficit_{tag}_{valid:%H}z.png"
+    srcs = [wo.wrfout_path(run_a, dom, valid), wo.wrfout_path(run_b, dom, valid)]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    da = wo.open_wrfout(srcs[0])
+    db = wo.open_wrfout(srcs[1])
+    fa = wo.heat_deficit_field(da, cfg.crest_m) / 1e6
+    fb = wo.heat_deficit_field(db, cfg.crest_m) / 1e6
+    plot_heatdeficit_difference(
+        wo.surface_field(da, "XLONG"), wo.surface_field(da, "XLAT"), fa, fb, out_png,
+        limit=hd_limit, crest_terrain=wo.surface_field(da, "HGT"), crest_m=cfg.crest_m,
+        title=f"{tag} | Δ cold-pool heat deficit | d{dom:02d} | {valid:%H}Z",
+        annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # preflight validation
 # --------------------------------------------------------------------------- #
@@ -897,6 +961,9 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
         sec_dom, sec_tag, sec_reason = _section_domain(selection, rep)
         if "section" in fams and sec_dom is None:
             print(f"  [SKIP] {case}: section-domain {selection.section_domain} — {sec_reason}")
+        hd_dom = _resolve_domain(cfg.heatdeficit_domain, rep) if "heatdeficit_map" in fams else None
+        if "heatdeficit_map" in fams and hd_dom is None:
+            print(f"  [SKIP] {case}: heatdeficit_map — domain {cfg.heatdeficit_domain} not present")
         for t in sel_times:
             if "section" in fams and sec_dom is not None:
                 for orient in ("EW", "NS"):
@@ -917,6 +984,10 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
                     tasks.append((f"{label} {sv.key} {t:%H}Z", task_surface,
                                   (cfg, run, rep.domains, case, label, t, sv,
                                    out_dir(cfg, selection, "surface", case), skip)))
+            if "heatdeficit_map" in fams and hd_dom is not None:
+                tasks.append((f"{label} heatdeficit map {t:%H}Z", task_heatdeficit_map,
+                              (cfg, run, hd_dom, case, label, t,
+                               out_dir(cfg, selection, "heatdeficit_map", case), skip)))
             if "skewt" in fams and rep.point_ok:
                 tasks.append((f"{label} skewt {cfg.focus_point.name} {t:%H}Z", task_skewt,
                               (cfg, run, innermost, case, label, t,
@@ -967,4 +1038,21 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
                         tasks.append((f"{dp.tag} {orient} {t:%H}Z", task_diff_section,
                                       (cfg, run_a, run_b, innermost, dp.tag, t, orient, odir,
                                        dp.limit, skip)))
+
+    # --- heat-deficit difference maps (reuse the difference pairs; own compare subdir) ---
+    if "heatdeficit_map" in fams:
+        usable_set = set(usable_cases)
+        for dp in cfg.differences:
+            if not ({dp.a, dp.b} <= usable_set):
+                continue
+            hd_dom = _resolve_domain(cfg.heatdeficit_domain, reports[dp.a])
+            if hd_dom is None:
+                continue
+            run_a = cfg.resolve_run_dir(dp.a, selection.run_override)
+            run_b = cfg.resolve_run_dir(dp.b, selection.run_override)
+            odir = out_dir(cfg, selection, "heatdeficit_map", None)
+            diff_times, _ = _select_times(reports[dp.a].times, selection, reports[dp.a].init)
+            for t in diff_times:
+                tasks.append((f"{dp.tag} HD map {t:%H}Z", task_heatdeficit_map_diff,
+                              (cfg, run_a, run_b, hd_dom, dp.tag, t, odir, dp.hd_limit, skip)))
     return tasks
