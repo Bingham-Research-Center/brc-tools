@@ -36,6 +36,7 @@ figures/          generated output (gitignored)
 - `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload)
 - `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
 - `docs/ENVIRONMENT-SETUP.md` — conda/venv setup · `docs/CROSS-REPO-SYNC.md` — sibling-repo sync protocol
+- `docs/MODIS-CONTEXT-RENDERER.md` — portable NASA CMR/GIBS MODIS timing, rendering, cache, and provenance workflow
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-staging cold-start SSOT**; detail in `docs/WRF-INPUT-STAGING.md`; two-stream draft `docs/WRF-GEFS-NAM-FIELD-MAP.md` (parked)
 - `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the active study repo; SSOT index → `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`
@@ -85,6 +86,7 @@ load-bearing. The publication figure engine built on it (`wrf_figures.py` over
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
 | `BRC_TOOLS_HERBIE_CACHE` / `BRC_TOOLS_HRRR_CACHE` | NWP / HRRR GRIB cache dir override | optional |
 | `BRC_TOOLS_BASEMAP_DIR` | persistent Natural-Earth cache for figure map overlays (else `CARTOPY_DATA_DIR` → scratch); stage once via `scripts/fetch_basemap.dtn.slurm` | optional |
+| `BRC_TOOLS_MODIS_CACHE` | host-local NASA CMR metadata and GIBS corrected-reflectance PNG cache; supports offline rerendering | optional |
 | `BRC_TOOLS_LOCK_DIR` / `BRC_TOOLS_HTTP_IPV4_ONLY` | parallel-download lock dir / force IPv4 (CHPC DTN IPv6 workaround) | optional |
 
 All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var

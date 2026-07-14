@@ -11,6 +11,8 @@ Project documentation. Topical files only — agent context lives in
 - **CROSS-REPO-SYNC.md** — protocol for keeping the four sibling repos aligned.
 - **WEBSITE-INTEGRATION.md** — BasinWX upload contract (endpoint, auth, dataTypes, schemas).
 - **ENVIRONMENT-SETUP.md** — venv/conda setup for new team members.
+- **MODIS-CONTEXT-RENDERER.md** — host-neutral NASA CMR/GIBS MODIS timing,
+  rendering, caching, and provenance workflow.
 - **WRF-INPUT-STAGING.md** — WRF/WPS GRIB staging reference: status, proof evidence, and microtasks (the playbook is the handoff).
 - **WRF-STAGING-STATE-PLAYBOOK.md** — the single WRF cold-start handoff + state packet (start here for the WRF lane).
 - **WRF-GEFS-NAM-FIELD-MAP.md** — DRAFT GEFS/NAM two-stream field-map (parked, not proven).

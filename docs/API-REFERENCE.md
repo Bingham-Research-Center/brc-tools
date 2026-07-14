@@ -177,6 +177,29 @@ See `CASE-STUDY-GUIDE.md` for usage patterns.
 
 ---
 
+## brc_tools.satellite.modis — MODIS context imagery
+
+```python
+from datetime import datetime, timezone
+
+from brc_tools.satellite.modis import render_context
+
+result = render_context(
+    datetime(2013, 2, 2, 18, tzinfo=timezone.utc),
+    (-111.8, 39.2, -108.2, 41.5),
+    "/tmp/modis_uinta_20130202_near1800",
+)
+```
+
+`discover_granules()` queries NASA CMR for daytime Terra/Aqua Level-1B swaths
+covering the map center and selects the midpoint closest to the requested UTC time.
+`fetch_gibs_image()` retrieves a georeferenced daily corrected-reflectance PNG.
+`render_context()` orchestrates discovery, cached fetches, PNG/PDF rendering, and a
+JSON provenance sidecar. See `MODIS-CONTEXT-RENDERER.md` for the CLI, cache, offline,
+and interpretation contracts.
+
+---
+
 ## Configuration: lookups.toml
 
 Central registry at `brc_tools/nwp/lookups.toml`. Defines:
