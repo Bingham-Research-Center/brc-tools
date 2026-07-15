@@ -84,8 +84,9 @@ def plot_deficitflux_map(
         color="white", edgecolor="0.2", linewidth=0.3,
         width=0.0035, scale_units="width", scale=20 * _QUIVER_KEY_MW, zorder=5,
     )
-    ax.quiverkey(q, 0.88, 1.03, _QUIVER_KEY_MW, rf"{_QUIVER_KEY_MW:g} MW m$^{{-1}}$",
-                 labelpos="E", coordinates="axes", fontproperties={"size": 7})
+    # below the axes (the title row is already full), arrow right of its label
+    ax.quiverkey(q, 0.93, -0.09, _QUIVER_KEY_MW, rf"{_QUIVER_KEY_MW:g} MW m$^{{-1}}$",
+                 labelpos="W", coordinates="axes", fontproperties={"size": 7})
     _draw_transects(ax, transects, lon, lat)
     _decorate(ax, lon, lat, crest_terrain=crest_terrain, crest_m=crest_m,
               waypoints=waypoints, overlays=overlays)
@@ -117,8 +118,10 @@ def plot_deficitflux_divergence(
     """Advective heat-deficit tendency ``-div(F)`` (MJ m^-2 h^-1), diverging map.
 
     Red = advection deepening the pool (matching the heat-deficit difference maps,
-    where red = deeper).  ``smooth_sigma`` (grid cells) is display-only smoothing —
-    at 111 m the raw divergence is grid-scale noisy, like the upper-air advection.
+    where red = deeper).  ``smooth_sigma`` (grid cells) is display-only smoothing;
+    the engine derives it from a *physical* scale (``deficitflux_smooth_km`` / DX)
+    because the raw divergence is saturated gravity-wave noise at 111 m — a
+    fixed cell count would under-smooth fine nests and blur coarse ones.
     """
     import matplotlib
 

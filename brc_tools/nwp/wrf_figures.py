@@ -189,6 +189,7 @@ class CaseConfig:
     upper_adv_domain: str = "outer"       # "outer" (clean synoptic) | "inner" (fine)
     heatdeficit_domain: str = "inner"     # nest for the heatdeficit_map field: "inner"|"outer"|"dNN"
     deficitflux_domain: str = "inner"     # nest for the deficitflux families: "inner"|"outer"|"dNN"
+    deficitflux_smooth_km: float = 1.0    # display smoothing scale for -div(F), km (0 = raw)
     transects: list[TransectSpec] = field(default_factory=list)  # deficitflux_transect lines
     # Nests that ALSO get free-standing single-domain surface figures (the multidomain
     # panel squeezes 4 nests into one row, so an innermost-only version reads better
@@ -276,6 +277,7 @@ class CaseConfig:
             upper_adv_domain=str(case.get("upper_adv_domain", "outer")),
             heatdeficit_domain=str(case.get("heatdeficit_domain", "inner")),
             deficitflux_domain=str(case.get("deficitflux_domain", "inner")),
+            deficitflux_smooth_km=float(case.get("deficitflux_smooth_km", 1.0)),
             transects=transects,
             surface_single_domains=tuple(str(s) for s in case.get("surface_single_domains", [])),
             map_overlays=map_overlays,
@@ -867,9 +869,14 @@ def task_deficitflux_div(cfg, run, dom, case, label, valid, out, skip_existing=F
     adv_mj_h = -wo.deficit_flux_divergence(ds, cfg.crest_m) * 3600.0 / 1e6
     style = resolve_style("deficit_advection", overrides=cfg.style.overrides,
                           autoscale=cfg.style.autoscale)
+    # display smoothing in grid cells from the physical scale (raw -div(F) is
+    # gravity-wave noise at 111 m; a fixed cell count would not be nest-fair)
+    dx, _dy = wo.dx_dy(ds)
+    sigma = (cfg.deficitflux_smooth_km * 1000.0 / dx) if cfg.deficitflux_smooth_km > 0 else 0.0
     plot_deficitflux_divergence(
         wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), adv_mj_h, out_png,
-        style=style, crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
+        style=style, smooth_sigma=sigma,
+        crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
         title=f"{label} | advective dH/dt | d{dom:02d} | {valid:%Y-%m-%d %H}Z",
         annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
     )
