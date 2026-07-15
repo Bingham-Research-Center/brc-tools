@@ -139,6 +139,60 @@ def test_heat_deficit_field_positive_and_consistent():
     assert field[j, i] == pytest.approx(expected, rel=1e-6)
 
 
+def test_deficit_flux_uniform_wind_equals_u_times_H():
+    """With uniform winds (U=5, V=2), F = (5H, 2H) exactly — the analytic check."""
+    ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
+    crest = 1900.0
+    H = wo.heat_deficit_field(ds, crest)
+    fx, fy = wo.deficit_flux_field(ds, crest)
+    np.testing.assert_allclose(fx, 5.0 * H, rtol=1e-12)
+    np.testing.assert_allclose(fy, 2.0 * H, rtol=1e-12)
+    # grid-relative path identical here (SINALPHA == 0)
+    gx, gy = wo.deficit_flux_field(ds, crest, earth_relative=False)
+    np.testing.assert_allclose(gx, fx)
+    np.testing.assert_allclose(gy, fy)
+
+
+def test_deficit_flux_divergence_uniform_wind_is_advection_of_H():
+    """Uniform wind: div(uH, vH) = u*dH/dx + v*dH/dy under the same discrete operator."""
+    ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
+    crest = 1900.0
+    H = wo.heat_deficit_field(ds, crest)
+    dx, dy = wo.dx_dy(ds)
+    expected = 5.0 * np.gradient(H, dx, axis=1) + 2.0 * np.gradient(H, dy, axis=0)
+    div = wo.deficit_flux_divergence(ds, crest)
+    np.testing.assert_allclose(div, expected, rtol=1e-9, atol=1e-6)
+
+
+def test_cold_pool_depth_field():
+    ds = make_synthetic_wrf(nz=4, ny=6, nx=6)
+    depth = wo.cold_pool_depth_field(ds, 1900.0)
+    assert depth.shape == (6, 6)
+    assert np.all(depth >= 0.0)
+    # column (0,0): terrain 1500 m, mass levels 1550/1650/1750/1850 m, theta 280..286 K;
+    # theta_crest(1900) = 286 K -> deficit > 0 up to the 1750 m level = 250 m AGL.
+    assert depth[0, 0] == pytest.approx(250.0)
+
+
+def test_transect_deficit_flux_normal_convention():
+    """West->east transect: the rightward normal points south, so F.n = -Fy = -2H."""
+    ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
+    crest = 1900.0
+    H = wo.heat_deficit_field(ds, crest)
+    tf = wo.transect_deficit_flux(ds, crest, 40.0, -110.0, 40.0, -109.5, label="EW")
+    assert tf.label == "EW"
+    assert tf.dist_m[0] == 0.0 and tf.dist_m[-1] > 40_000.0  # ~0.5 deg lon at 40N
+    np.testing.assert_allclose(tf.normal_en, (0.0, -1.0), atol=1e-12)
+    np.testing.assert_allclose(tf.f_normal, -2.0 * H[tf.j, tf.i], rtol=1e-12)
+    assert tf.total_w < 0.0  # deficit moves north (V > 0): leftward across an EW walk
+
+
+def test_transect_deficit_flux_zero_length_raises():
+    ds = make_synthetic_wrf()
+    with pytest.raises(ValueError):
+        wo.transect_deficit_flux(ds, 1900.0, 40.0, -110.0, 40.0, -110.0)
+
+
 def test_discover_domains(tmp_path):
     for name in (
         "wrfout_d01_2013-02-02_12:00:00",

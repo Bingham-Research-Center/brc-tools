@@ -467,6 +467,43 @@ def cold_pool_heat_deficit(col: WRFColumn, crest_m: float) -> float:
     return float(abs((CP / G) * trapezoid(integrand, p)))
 
 
+@dataclass
+class _DeficitKernel:
+    """Shared crest-referenced deficit integrand for H, its transport F, and depth."""
+
+    integrand: np.ndarray  # (nz, ny, nx) max(theta_crest - theta, 0), zeroed above crest
+    pressure_pa: np.ndarray  # (nz, ny, nx) Pa
+    height_asl: np.ndarray  # (nz, ny, nx) m ASL, mass levels
+    theta_crest: np.ndarray  # (ny, nx) K, theta interpolated to crest_m per column
+
+
+def _deficit_kernel(ds, crest_m: float) -> _DeficitKernel:
+    """Crest-referenced deficit integrand, factored out so :func:`heat_deficit_field`,
+    :func:`deficit_flux_field` and :func:`cold_pool_depth_field` share one convention
+    (identical ``theta_crest`` interpolation, below-crest mask, and clipping)."""
+    theta = potential_temperature(ds)        # (nz, ny, nx) K
+    z = geopotential_height_mass(ds)         # (nz, ny, nx) m ASL
+    p = pressure_pa(ds)                      # (nz, ny, nx) Pa
+    nz = z.shape[0]
+
+    below = z <= crest_m                     # (nz, ny, nx)
+    # last mass level at/below the crest per column, clamped so the k+1 gather stays valid.
+    k = np.clip(below.sum(axis=0) - 1, 0, nz - 2)   # (ny, nx)
+
+    def _gather(a, idx):
+        return np.take_along_axis(a, idx[np.newaxis], axis=0)[0]
+
+    z0, z1 = _gather(z, k), _gather(z, k + 1)
+    t0, t1 = _gather(theta, k), _gather(theta, k + 1)
+    w = np.clip((crest_m - z0) / np.maximum(z1 - z0, 1e-6), 0.0, 1.0)
+    theta_crest = t0 + w * (t1 - t0)         # (ny, nx) theta at crest height
+
+    integrand = np.where(below, np.clip(theta_crest[np.newaxis] - theta, 0.0, None), 0.0)
+    return _DeficitKernel(
+        integrand=integrand, pressure_pa=p, height_asl=z, theta_crest=theta_crest
+    )
+
+
 def heat_deficit_field(ds, crest_m: float) -> np.ndarray:
     """Whiteman valley heat deficit (J m-2) below ``crest_m``, over the whole grid.
 
@@ -487,24 +524,139 @@ def heat_deficit_field(ds, crest_m: float) -> np.ndarray:
     """
     from scipy.integrate import trapezoid
 
-    theta = potential_temperature(ds)        # (nz, ny, nx) K
-    z = geopotential_height_mass(ds)         # (nz, ny, nx) m ASL
-    p = pressure_pa(ds)                      # (nz, ny, nx) Pa
-    nz = z.shape[0]
-
-    below = z <= crest_m                     # (nz, ny, nx)
-    # last mass level at/below the crest per column, clamped so the k+1 gather stays valid.
-    k = np.clip(below.sum(axis=0) - 1, 0, nz - 2)   # (ny, nx)
-
-    def _gather(a, idx):
-        return np.take_along_axis(a, idx[np.newaxis], axis=0)[0]
-
-    z0, z1 = _gather(z, k), _gather(z, k + 1)
-    t0, t1 = _gather(theta, k), _gather(theta, k + 1)
-    w = np.clip((crest_m - z0) / np.maximum(z1 - z0, 1e-6), 0.0, 1.0)
-    theta_crest = t0 + w * (t1 - t0)         # (ny, nx) theta at crest height
-
-    integrand = np.where(below, np.clip(theta_crest[np.newaxis] - theta, 0.0, None), 0.0)
+    kern = _deficit_kernel(ds, crest_m)
     # trapz over pressure (which decreases with height); abs() fixes the sign, matching the
     # single-column diagnostic.  Columns with < 2 sub-crest levels integrate to ~0.
-    return np.abs((CP / G) * trapezoid(integrand, x=p, axis=0))
+    return np.abs((CP / G) * trapezoid(kern.integrand, x=kern.pressure_pa, axis=0))
+
+
+def deficit_flux_field(
+    ds, crest_m: float, *, earth_relative: bool = True
+) -> tuple[np.ndarray, np.ndarray]:
+    """Integrated deficit transport (W m-1): the heat-deficit analogue of IVT.
+
+        F = (c_p / g) * integral_{p_sfc}^{p_crest} max(theta_crest - theta, 0) * u_h dp
+
+    The wind-weighted companion of :func:`heat_deficit_field` (same kernel, so the pair
+    closes a budget: dH/dt = -div(F) + diabatic residual; the vertical boundary term
+    vanishes because the integrand -> 0 at the crest).  Clipping the deficit at zero
+    confines the transport to cold-pool air — an unclipped integral would be dominated
+    by the free troposphere.  Returns ``(Fx, Fy)`` in W per metre of transect width:
+    earth-relative for maps (default), grid-relative for divergence / along-grid
+    sections.  The deficit-weighted transport velocity is ``F / H`` (mask small H).
+    """
+    from scipy.integrate import trapezoid
+
+    kern = _deficit_kernel(ds, crest_m)
+    u, v = earth_relative_winds(ds) if earth_relative else grid_relative_winds(ds)
+    # sign-preserving (no abs, unlike H): pressure decreases with height, so the
+    # leading minus integrates surface->crest; the wind components carry the sign.
+    fx = -(CP / G) * trapezoid(kern.integrand * u, x=kern.pressure_pa, axis=0)
+    fy = -(CP / G) * trapezoid(kern.integrand * v, x=kern.pressure_pa, axis=0)
+    return fx, fy
+
+
+def deficit_flux_divergence(ds, crest_m: float) -> np.ndarray:
+    """div(F) of the deficit transport (W m-2); ``-div(F)`` is the advective dH/dt.
+
+    Uses grid-relative components on the mass grid with the WRF map-factor form
+    ``m^2 * [d(Fx/m)/dx + d(Fy/m)/dy]`` (``MAPFAC_M`` ~ 1.0004 over the Uinta Basin,
+    but the form is exact; identity when the field is absent).  Central differences
+    via ``np.gradient``.
+    """
+    fx, fy = deficit_flux_field(ds, crest_m, earth_relative=False)
+    m = surface_field(ds, "MAPFAC_M") if "MAPFAC_M" in ds else np.ones_like(fx)
+    dx, dy = dx_dy(ds)
+    return m * m * (np.gradient(fx / m, dx, axis=1) + np.gradient(fy / m, dy, axis=0))
+
+
+def cold_pool_depth_field(ds, crest_m: float, *, min_deficit_k: float = 0.0) -> np.ndarray:
+    """Cold-pool depth (m AGL): top of the layer colder than the crest-level air.
+
+    Height AGL of the highest model level whose deficit exceeds ``min_deficit_k``
+    (level-discretised; 0 where no level qualifies).  A byproduct of the shared
+    kernel, so depth, H and F carry one crest convention.
+    """
+    kern = _deficit_kernel(ds, crest_m)
+    pos = kern.integrand > min_deficit_k
+    top = pos.shape[0] - 1 - np.argmax(pos[::-1], axis=0)   # highest True per column
+    z_agl = kern.height_asl - surface_field(ds, "HGT")[np.newaxis]
+    depth = np.take_along_axis(z_agl, top[np.newaxis], axis=0)[0]
+    return np.where(pos.any(axis=0), depth, 0.0)
+
+
+@dataclass
+class TransectFlux:
+    """Deficit transport through a vertical plane along a lat/lon line (canyon export)."""
+
+    lats: np.ndarray  # (n,) sample latitudes along a->b
+    lons: np.ndarray  # (n,) sample longitudes
+    j: np.ndarray  # (n,) nearest mass-grid row per sample
+    i: np.ndarray  # (n,) nearest mass-grid column per sample
+    dist_m: np.ndarray  # (n,) along-transect distance from a
+    f_normal: np.ndarray  # (n,) F . n_hat, W m-1
+    total_w: float  # Phi = integral F . n_hat ds, W
+    normal_en: tuple[float, float]  # unit normal (east, north), rightward of a->b
+    label: str = ""
+
+
+def transect_deficit_flux(
+    ds,
+    crest_m: float,
+    lat_a: float,
+    lon_a: float,
+    lat_b: float,
+    lon_b: float,
+    *,
+    spacing_m: float | None = None,
+    label: str = "",
+) -> TransectFlux:
+    """Deficit transport through the vertical plane over the a->b line (W).
+
+    Samples earth-relative ``F`` at the nearest column every ``spacing_m`` (default:
+    grid ``min(dx, dy)``) and integrates the normal component,
+    ``Phi = integral F . n_hat ds``, with ``n_hat`` the rightward normal walking
+    a->b — positive ``Phi`` exports cold-pool air to the walker's right.  Flat-earth
+    metric, fine for basin-scale (< ~100 km) transects.
+    """
+    from scipy.integrate import trapezoid
+    from scipy.spatial import cKDTree
+
+    # local flat-earth metres per degree (mid-latitude approximations)
+    coslat = np.cos(np.deg2rad(0.5 * (lat_a + lat_b)))
+    ex = (lon_b - lon_a) * 111_320.0 * coslat
+    ey = (lat_b - lat_a) * 110_540.0
+    length = float(np.hypot(ex, ey))
+    if length == 0.0:
+        raise ValueError("transect endpoints coincide")
+
+    dx, dy = dx_dy(ds)
+    spacing = spacing_m if spacing_m is not None else min(dx, dy)
+    n = max(int(np.ceil(length / spacing)) + 1, 2)
+    frac = np.linspace(0.0, 1.0, n)
+    lats = lat_a + frac * (lat_b - lat_a)
+    lons = lon_a + frac * (lon_b - lon_a)
+    tx, ty = ex / length, ey / length
+    nx_e, ny_n = ty, -tx  # rightward normal to the a->b direction
+
+    # one KD-tree for all samples (nearest_column_index would rebuild it per point)
+    xlat = surface_field(ds, "XLAT")
+    xlon = surface_field(ds, "XLONG")
+    tree = cKDTree(np.column_stack([xlat.ravel(), xlon.ravel()]))
+    _, idx = tree.query(np.column_stack([lats, lons]))
+    jj, ii = np.unravel_index(np.asarray(idx, dtype=int), xlat.shape)
+
+    fx, fy = deficit_flux_field(ds, crest_m)  # earth-relative
+    f_normal = fx[jj, ii] * nx_e + fy[jj, ii] * ny_n
+    dist = frac * length
+    return TransectFlux(
+        lats=lats,
+        lons=lons,
+        j=jj,
+        i=ii,
+        dist_m=dist,
+        f_normal=f_normal,
+        total_w=float(trapezoid(f_normal, dist)),
+        normal_en=(nx_e, ny_n),
+        label=label,
+    )
