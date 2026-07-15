@@ -29,6 +29,7 @@ annotation = "synthetic | test"
 crest_m = 1700.0
 profile_hours = [12]
 sounding_hour = 12
+surface_single_domains = ["inner"]
 focus_point = { name = "OffGrid", lat = 10.0, lon = 10.0 }
 surface_vars = [
   { key = "theta2m", style = "theta_2m",      wind = true  },
@@ -158,6 +159,27 @@ def test_heatdeficit_map_emits_and_renders(tmp_path, monkeypatch):
     _name, fn, args = hd[0]
     fn(*args)
     pngs = list(Path(args[6]).glob("*.png"))
+    assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_surface_single_domain_emits_and_renders(tmp_path, monkeypatch):
+    """surface_single_domains adds free-standing per-nest figures beside the panels."""
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["surface"], time="12", output_dir=str(tmp_path / "out")
+    )
+    tasks = wf.build_tasks(cfg, sel)
+
+    singles = [t for t in tasks if t[1] is wf.task_surface_single]
+    assert singles, "expected single-domain surface tasks"
+    # args: (cfg, run, dom, case, label, valid, sv, out, skip); "inner" resolves to d02
+    assert all(args[2] == 2 for _n, _fn, args in singles)
+
+    use_publication_style()
+    _name, fn, args = singles[0]
+    fn(*args)
+    pngs = list(Path(args[7]).glob("*_d02_12z.png"))
     assert pngs and pngs[0].stat().st_size > 0
 
 

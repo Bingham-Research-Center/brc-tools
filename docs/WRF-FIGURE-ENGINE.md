@@ -188,6 +188,9 @@ upper_pressure_hpa = 600.0           # pressure surface for the synoptic T-advec
 upper_adv_domain = "outer"           # compute that map on "outer" (clean) | "inner" nest
 heatdeficit_domain = "d02"           # nest for the heatdeficit_map field: "inner"|"outer"|"dNN" (default inner)
 deficitflux_domain = "inner"         # nest for the deficitflux_* families (default inner)
+surface_single_domains = ["inner"]   # nests that ALSO get free-standing single-nest surface
+                                     # figures ({key}_{case}_dNN_{HH}z.png) beside the
+                                     # multidomain panel; default [] = panels only
 focus_point = { name = "Horsepool", lat = 40.144, lon = -109.467 }
 surface_vars = [                     # multi-domain surface panels (order preserved)
   { key = "theta2m", style = "theta_2m",      wind = true  },

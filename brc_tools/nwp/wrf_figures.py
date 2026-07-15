@@ -190,6 +190,10 @@ class CaseConfig:
     heatdeficit_domain: str = "inner"     # nest for the heatdeficit_map field: "inner"|"outer"|"dNN"
     deficitflux_domain: str = "inner"     # nest for the deficitflux families: "inner"|"outer"|"dNN"
     transects: list[TransectSpec] = field(default_factory=list)  # deficitflux_transect lines
+    # Nests that ALSO get free-standing single-domain surface figures (the multidomain
+    # panel squeezes 4 nests into one row, so an innermost-only version reads better
+    # standalone).  Empty (default) = multidomain panels only, the historical output.
+    surface_single_domains: tuple[str, ...] = ()
     map_overlays: dict = field(default_factory=dict)  # {layer: bool} Natural-Earth refs
 
     # -- run-directory resolution (was the module-global run_dir/RUN_OVERRIDE) --
@@ -273,6 +277,7 @@ class CaseConfig:
             heatdeficit_domain=str(case.get("heatdeficit_domain", "inner")),
             deficitflux_domain=str(case.get("deficitflux_domain", "inner")),
             transects=transects,
+            surface_single_domains=tuple(str(s) for s in case.get("surface_single_domains", [])),
             map_overlays=map_overlays,
         )
 
@@ -571,6 +576,30 @@ def task_surface(cfg, run, domains, case, label, valid, sv, out, skip_existing=F
         panels, out_png, style=style,
         wind=sv.wind, extent=extent, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
         suptitle=f"{label} | {sv.style} | d{innermost:02d} area | {valid:%H}Z",
+    )
+
+
+def task_surface_single(cfg, run, dom, case, label, valid, sv, out, skip_existing=False):
+    """Free-standing single-nest surface figure (companion to the multidomain panel)."""
+    out_png = out / f"{sv.key}_{case}_d{dom:02d}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    panel = {
+        "label": f"d{dom:02d} ({wo.grid_spacing_label(ds)})",
+        "lon": wo.surface_field(ds, "XLONG"), "lat": wo.surface_field(ds, "XLAT"),
+        "field": _surface_field_for(ds, sv.key), "terrain": wo.surface_field(ds, "HGT"),
+    }
+    if sv.wind:
+        panel["u"] = wo.surface_field(ds, "U10")
+        panel["v"] = wo.surface_field(ds, "V10")
+    style = resolve_style(sv.style, overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
+    plot_domain_panels(
+        [panel], out_png, style=style,
+        wind=sv.wind, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+        suptitle=f"{label} | {sv.style} | d{dom:02d} | {valid:%H}Z",
     )
 
 
@@ -1097,6 +1126,14 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
         dfx_dom = _resolve_domain(cfg.deficitflux_domain, rep) if dfx_fams else None
         if dfx_fams and dfx_dom is None:
             print(f"  [SKIP] {case}: deficitflux — domain {cfg.deficitflux_domain} not present")
+        ss_doms: list[int] = []
+        if "surface" in fams:
+            for spec in cfg.surface_single_domains:
+                d = _resolve_domain(spec, rep)
+                if d is None:
+                    print(f"  [SKIP] {case}: surface single-domain {spec} not present")
+                elif d not in ss_doms:
+                    ss_doms.append(d)
         for t in sel_times:
             if "section" in fams and sec_dom is not None:
                 for orient in ("EW", "NS"):
@@ -1117,6 +1154,11 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
                     tasks.append((f"{label} {sv.key} {t:%H}Z", task_surface,
                                   (cfg, run, rep.domains, case, label, t, sv,
                                    out_dir(cfg, selection, "surface", case), skip)))
+                for dom in ss_doms:
+                    for sv in rep.usable_surface_vars:
+                        tasks.append((f"{label} {sv.key} d{dom:02d} {t:%H}Z", task_surface_single,
+                                      (cfg, run, dom, case, label, t, sv,
+                                       out_dir(cfg, selection, "surface", case), skip)))
             if "heatdeficit_map" in fams and hd_dom is not None:
                 tasks.append((f"{label} heatdeficit map {t:%H}Z", task_heatdeficit_map,
                               (cfg, run, hd_dom, case, label, t,
