@@ -299,7 +299,10 @@ def plot_deficit_budget(
 
     fig.suptitle(title)
     if annotation:
-        fig.text(0.01, 0.005, annotation, fontsize=6, color="0.4", ha="left", va="bottom")
+        # Reserve a footer strip so provenance text cannot collide with the shared
+        # time-axis label when constrained layout tightens the two-row left column.
+        fig.get_layout_engine().set(rect=(0.0, 0.05, 1.0, 0.93))
+        fig.text(0.01, 0.012, annotation, fontsize=6, color="0.4", ha="left", va="bottom")
     fig.autofmt_xdate(rotation=25)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi)
