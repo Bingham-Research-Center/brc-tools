@@ -96,3 +96,5 @@ CLAUDE.local.md
 .coverage
 .pytest_cache/
 htmlcov/
+# BasinWX export staging (legacy repo-local default; now ~/.cache/brc-tools/basinwx)
+data/basinwx/

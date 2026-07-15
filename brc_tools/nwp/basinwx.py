@@ -23,7 +23,8 @@ DEFAULT_MAX_FXX = 18
 DEFAULT_RUN_COUNT = 3
 DEFAULT_STRIDE = 2
 DEFAULT_UPLOAD_BUCKET = "forecasts"
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[2] / "data" / "basinwx"
+# staging dir for generated JSON — runtime output stays out of the repo checkout
+DEFAULT_OUTPUT_DIR = Path("~/.cache/brc-tools/basinwx").expanduser()
 
 SURFACE_EXPORT_VARIABLES = [
     "temp_2m",

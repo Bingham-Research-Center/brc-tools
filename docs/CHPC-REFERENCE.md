@@ -67,7 +67,9 @@ export DATA_UPLOAD_API_KEY="<32-char-hex>"   # required for BasinWX uploads
 
 CLI: `scripts/export_hrrr_surface_layers.py`. Use `--server-url` to
 override the config-file URL — this is what lets dev/prod cron entries
-diverge.
+diverge. JSON stages to `~/.cache/brc-tools/basinwx` by default
+(`--output-dir` to override) before upload — it no longer lands in the
+repo checkout's `data/basinwx/`.
 
 ```bash
 30 * * * * source ~/.bashrc && conda activate brc-tools && cd ~/gits/brc-tools && \
