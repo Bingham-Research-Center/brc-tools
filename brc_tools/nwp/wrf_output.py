@@ -707,7 +707,7 @@ def deficit_bulk_fields(
 
 @dataclass
 class TransectFlux:
-    """Deficit transport through a vertical plane along a lat/lon line (canyon export)."""
+    """Signed horizontal transport through a vertical plane along a lat/lon line."""
 
     lats: np.ndarray  # (n,) sample latitudes along a->b
     lons: np.ndarray  # (n,) sample longitudes
@@ -720,9 +720,10 @@ class TransectFlux:
     label: str = ""
 
 
-def transect_deficit_flux(
+def integrate_flux_transect(
     ds,
-    crest_m: float,
+    flux_x_w_m: np.ndarray,
+    flux_y_w_m: np.ndarray,
     lat_a: float,
     lon_a: float,
     lat_b: float,
@@ -731,13 +732,13 @@ def transect_deficit_flux(
     spacing_m: float | None = None,
     label: str = "",
 ) -> TransectFlux:
-    """Deficit transport through the vertical plane over the a->b line (W).
+    """Integrate an earth-relative horizontal flux field across an a->b line.
 
-    Samples earth-relative ``F`` at the nearest column every ``spacing_m`` (default:
-    grid ``min(dx, dy)``) and integrates the normal component,
+    ``flux_x_w_m`` and ``flux_y_w_m`` are eastward and northward components on the
+    WRF mass grid. The function samples the nearest column every ``spacing_m``
+    (default: grid ``min(dx, dy)``) and integrates the normal component,
     ``Phi = integral F . n_hat ds``, with ``n_hat`` the rightward normal walking
-    a->b — positive ``Phi`` exports cold-pool air to the walker's right.  Flat-earth
-    metric, fine for basin-scale (< ~100 km) transects.
+    a->b. Flat-earth metric, fine for basin-scale (< ~100 km) transects.
     """
     from scipy.integrate import trapezoid
     from scipy.spatial import cKDTree
@@ -766,7 +767,12 @@ def transect_deficit_flux(
     _, idx = tree.query(np.column_stack([lats, lons]))
     jj, ii = np.unravel_index(np.asarray(idx, dtype=int), xlat.shape)
 
-    fx, fy = deficit_flux_field(ds, crest_m)  # earth-relative
+    fx = np.asarray(flux_x_w_m)
+    fy = np.asarray(flux_y_w_m)
+    if fx.shape != xlat.shape or fy.shape != xlat.shape:
+        raise ValueError(
+            f"flux fields must match mass-grid shape {xlat.shape}; got {fx.shape}, {fy.shape}"
+        )
     f_normal = fx[jj, ii] * nx_e + fy[jj, ii] * ny_n
     dist = frac * length
     return TransectFlux(
@@ -778,5 +784,37 @@ def transect_deficit_flux(
         f_normal=f_normal,
         total_w=float(trapezoid(f_normal, dist)),
         normal_en=(nx_e, ny_n),
+        label=label,
+    )
+
+
+def transect_deficit_flux(
+    ds,
+    crest_m: float,
+    lat_a: float,
+    lon_a: float,
+    lat_b: float,
+    lon_b: float,
+    *,
+    spacing_m: float | None = None,
+    label: str = "",
+) -> TransectFlux:
+    """Deficit transport through the vertical plane over the a->b line (W).
+
+    Positive ``Phi`` transports cold-pool heat deficit to the walker's right.
+    Use :func:`integrate_flux_transect` when a caller already has the earth-relative
+    deficit-flux fields and needs several transects without recomputing the column
+    integral.
+    """
+    fx, fy = deficit_flux_field(ds, crest_m)
+    return integrate_flux_transect(
+        ds,
+        fx,
+        fy,
+        lat_a,
+        lon_a,
+        lat_b,
+        lon_b,
+        spacing_m=spacing_m,
         label=label,
     )

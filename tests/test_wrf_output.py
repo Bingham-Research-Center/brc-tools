@@ -204,6 +204,16 @@ def test_transect_deficit_flux_normal_convention():
     np.testing.assert_allclose(tf.f_normal, -2.0 * H[tf.j, tf.i], rtol=1e-12)
     assert tf.total_w < 0.0  # deficit moves north (V > 0): leftward across an EW walk
 
+    # Reusing an already-computed field is exactly equivalent and avoids repeating
+    # the vertical column integral when several transects share one valid time.
+    fx, fy = wo.deficit_flux_field(ds, crest)
+    reused = wo.integrate_flux_transect(
+        ds, fx, fy, 40.0, -110.0, 40.0, -109.5, label="EW"
+    )
+    assert reused.total_w == pytest.approx(tf.total_w)
+    np.testing.assert_array_equal(reused.j, tf.j)
+    np.testing.assert_array_equal(reused.i, tf.i)
+
 
 def test_transect_deficit_flux_zero_length_raises():
     ds = make_synthetic_wrf()
