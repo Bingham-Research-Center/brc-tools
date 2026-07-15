@@ -268,6 +268,8 @@ def plot_deficit_budget(
                   fontsize=7, color="0.35", ha="left", va="top")
 
     finite = np.isfinite(storage) & np.isfinite(convergence)
+    if spinup_end is not None:
+        finite &= np.asarray([valid >= spinup_end for valid in interval_times])
     if finite.any():
         color = mdates.date2num(np.asarray(interval_times, dtype=object)[finite])
         scat = ax_s.scatter(convergence[finite], storage[finite], c=color, cmap="viridis", s=28)
@@ -283,7 +285,11 @@ def plot_deficit_budget(
         else:
             corr = float("nan")
         rmse = float(np.sqrt(np.mean(np.square(unresolved[finite]))))
-        ax_s.set_title(f"10-min interval comparison\nr={corr:.2f}; residual RMSE={rmse:.2f}")
+        comparison_label = "retained 10-min" if spinup_end is not None else "10-min"
+        ax_s.set_title(
+            f"{comparison_label} interval comparison\n"
+            f"r={corr:.2f}; residual RMSE={rmse:.2f}"
+        )
         cb = fig.colorbar(scat, ax=ax_s, shrink=0.72)
         cb.set_label("interval midpoint (UTC)")
         cb.ax.yaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
