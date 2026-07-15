@@ -45,6 +45,10 @@ fig = plot_planview_evolution(ds, "wind_speed_10m", cmap="YlOrRd")
 
 See `scripts/` for full case study examples.
 
+Historical satellite context uses the portable NASA CMR/GIBS renderer documented in
+[`docs/MODIS-CONTEXT-RENDERER.md`](docs/MODIS-CONTEXT-RENDERER.md); it does not require
+WRF, Slurm, GDAL, or an Earthdata login.
+
 ## Claude Code skills
 
 Repo-local skills (slash commands) live in `.claude/skills/`:
