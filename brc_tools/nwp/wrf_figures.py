@@ -26,6 +26,7 @@ dataset-agnostic and are reused unchanged; nothing here touches the brc-wrf-faci
 
 from __future__ import annotations
 
+import csv
 import os
 import re
 from dataclasses import dataclass, field
@@ -38,6 +39,12 @@ from brc_tools.nwp import wrf_output as wo
 from brc_tools.visualize.crosssection import (
     plot_wrf_section,
     plot_wrf_section_difference,
+)
+from brc_tools.visualize.deficitflux import (
+    plot_deficit_budget,
+    plot_deficit_bulk_diagnostics,
+    plot_deficitflux_divergence,
+    plot_deficitflux_map,
 )
 from brc_tools.visualize.domains import plot_domain_boxes
 from brc_tools.visualize.heatdeficit import (
@@ -65,6 +72,8 @@ from brc_tools.visualize.upperair import (
 FAMILIES = [
     "domains", "section", "upperair", "surface",
     "difference", "profile", "skewt", "thetaz", "heatdeficit", "heatdeficit_map",
+    "deficitflux_map", "deficitflux_div", "deficitflux_transect",
+    "deficitbulk_map", "deficit_budget",
 ]
 
 # Vertical extent for the theta(z) profile plot (m MSL); a generic default.
@@ -136,6 +145,22 @@ class RunSpec:
 
 
 @dataclass(frozen=True)
+class TransectSpec:
+    """A named A->B lat/lon line for the ``deficitflux_transect`` family (canyon gate).
+
+    Sign convention follows :func:`brc_tools.nwp.wrf_output.transect_deficit_flux`:
+    positive export is to the right when walking A->B.
+    """
+
+    name: str
+    label: str
+    lat_a: float
+    lon_a: float
+    lat_b: float
+    lon_b: float
+
+
+@dataclass(frozen=True)
 class StyleConfig:
     """Per-case colour-scale policy.  Fixed shared scales stay the default."""
 
@@ -167,6 +192,17 @@ class CaseConfig:
     upper_pressure_hpa: float = 600.0     # pressure surface for the synoptic T-adv map
     upper_adv_domain: str = "outer"       # "outer" (clean synoptic) | "inner" (fine)
     heatdeficit_domain: str = "inner"     # nest for the heatdeficit_map field: "inner"|"outer"|"dNN"
+    deficitflux_domain: str = "inner"     # nest for the deficitflux families: "inner"|"outer"|"dNN"
+    deficitflux_smooth_km: float = 1.0    # display smoothing scale for -div(F), km (0 = raw)
+    deficit_active_min_k: float = 0.25    # minimum deficit defining the diagnosed active layer
+    deficit_min_heat_mj_m2: float = 0.1   # H threshold for F/H and bulk diagnostics
+    deficit_budget_margin_cells: int = 0  # symmetric edge crop for area-mean storage/convergence
+    deficit_spinup_hours: float = 0.0     # shaded context interval from the first valid time
+    transects: list[TransectSpec] = field(default_factory=list)  # deficitflux_transect lines
+    # Nests that ALSO get free-standing single-domain surface figures (the multidomain
+    # panel squeezes 4 nests into one row, so an innermost-only version reads better
+    # standalone).  Empty (default) = multidomain panels only, the historical output.
+    surface_single_domains: tuple[str, ...] = ()
     map_overlays: dict = field(default_factory=dict)  # {layer: bool} Natural-Earth refs
 
     # -- run-directory resolution (was the module-global run_dir/RUN_OVERRIDE) --
@@ -209,6 +245,14 @@ class CaseConfig:
             )
             for d in data.get("differences", [])
         ]
+        transects = [
+            TransectSpec(
+                name=t["name"], label=t.get("label", t["name"]),
+                lat_a=float(t["lat_a"]), lon_a=float(t["lon_a"]),
+                lat_b=float(t["lat_b"]), lon_b=float(t["lon_b"]),
+            )
+            for t in data.get("transects", [])
+        ]
         map_data = data.get("map", {})
         map_overlays = {layer: bool(map_data.get(layer, False)) for layer in _MAP_LAYERS}
         style_data = data.get("style", {})
@@ -240,6 +284,14 @@ class CaseConfig:
             upper_pressure_hpa=float(case.get("upper_pressure_hpa", 600.0)),
             upper_adv_domain=str(case.get("upper_adv_domain", "outer")),
             heatdeficit_domain=str(case.get("heatdeficit_domain", "inner")),
+            deficitflux_domain=str(case.get("deficitflux_domain", "inner")),
+            deficitflux_smooth_km=float(case.get("deficitflux_smooth_km", 1.0)),
+            deficit_active_min_k=float(case.get("deficit_active_min_k", 0.25)),
+            deficit_min_heat_mj_m2=float(case.get("deficit_min_heat_mj_m2", 0.1)),
+            deficit_budget_margin_cells=int(case.get("deficit_budget_margin_cells", 0)),
+            deficit_spinup_hours=float(case.get("deficit_spinup_hours", 0.0)),
+            transects=transects,
+            surface_single_domains=tuple(str(s) for s in case.get("surface_single_domains", [])),
             map_overlays=map_overlays,
         )
 
@@ -296,6 +348,22 @@ def _slug(text: str) -> str:
 
 def _focus_slug(cfg: CaseConfig) -> str:
     return _slug(cfg.focus_point.name) or "focus"
+
+
+def _valid_tag(valid: datetime) -> str:
+    """Collision-safe compact valid-time tag, preserving legacy hourly names."""
+    if valid.second:
+        return valid.strftime("%H%M%Sz")
+    if valid.minute:
+        return valid.strftime("%H%Mz")
+    return valid.strftime("%Hz")
+
+
+def _valid_label(valid: datetime, *, include_date: bool = False) -> str:
+    """Human-readable valid time with minute/second precision only when needed."""
+    clock = "%H:%M:%S" if valid.second else ("%H:%M" if valid.minute else "%H")
+    prefix = "%Y-%m-%d " if include_date else ""
+    return valid.strftime(prefix + clock) + "Z"
 
 
 def _resolve_domain(spec: str, rep: PreflightReport) -> int | None:
@@ -375,8 +443,8 @@ def _skip_existing(out_png: Path, srcs: list[Path], enabled: bool) -> bool:
     True only when ``enabled`` and the figure already exists and is at least as new
     as every source wrfout it derives from (mtime).  A source rewritten by a later
     WRF run is thus newer than the figure, so the figure regenerates ("move to newer
-    output").  Keyed on the hour-only filename, so it is safe for hourly (or coarser)
-    output; sub-hourly cadence would collide (see docs/WRF-FIGURE-ENGINE.md).
+    output"). Per-valid-time callers use :func:`_valid_tag`, so sub-hourly products
+    remain distinct while historical hourly names are unchanged.
     """
     if not enabled or not out_png.exists():
         return False
@@ -424,7 +492,7 @@ def task_section(cfg, run, dom, case, label, valid, orient, out, skip_existing=F
     # ``domain_tag`` is "" for the default innermost nest (legacy filename) and "_dNN"
     # when --section-domain targets a coarser nest, so the override coexists with the
     # default set instead of clobbering it.
-    out_png = out / f"section_{orient.lower()}_{case}{domain_tag}_{valid:%H}z.png"
+    out_png = out / f"section_{orient.lower()}_{case}{domain_tag}_{_valid_tag(valid)}.png"
     src = wo.wrfout_path(run, dom, valid)
     if _skip_existing(out_png, [src], skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -434,14 +502,14 @@ def task_section(cfg, run, dom, case, label, valid, orient, out, skip_existing=F
     plot_wrf_section(
         sec, out_png,
         locator_terrain=wo.surface_field(ds, "HGT"),
-        title=f"{label} | d{dom:02d} {orient} section | {valid:%Y-%m-%d %H}Z",
+        title=f"{label} | d{dom:02d} {orient} section | {_valid_label(valid, include_date=True)}",
         annotation=cfg.annotation, waypoints=cfg.waypoints,
     )
 
 
 def task_upperair(cfg, run, innermost, case, label, valid, out, skip_existing=False):
     crest = cfg.crest_m
-    out_png = out / f"crest{int(crest)}_{case}_{valid:%H}z.png"
+    out_png = out / f"crest{int(crest)}_{case}_{_valid_tag(valid)}.png"
     src = wo.wrfout_path(run, innermost, valid)
     if _skip_existing(out_png, [src], skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -465,7 +533,7 @@ def task_upperair(cfg, run, innermost, case, label, valid, out, skip_existing=Fa
         style=resolve_style("theta_crest", overrides=cfg.style.overrides,
                             autoscale=cfg.style.autoscale),
         waypoints=cfg.waypoints, overlays=cfg.map_overlays,
-        title=f"{label} | crest theta + wind + T-adv | {valid:%H}Z", annotation=cfg.annotation,
+        title=f"{label} | crest theta + wind + T-adv | {_valid_label(valid)}", annotation=cfg.annotation,
     )
 
 
@@ -478,7 +546,7 @@ def task_upperair_pressure(cfg, run, domain, case, label, valid, out, skip_exist
     the cold pool.
     """
     p_hpa = float(cfg.upper_pressure_hpa)
-    out_png = out / f"p{int(p_hpa)}_advection_{case}_{valid:%H}z.png"
+    out_png = out / f"p{int(p_hpa)}_advection_{case}_{_valid_tag(valid)}.png"
     src = wo.wrfout_path(run, domain, valid)
     if _skip_existing(out_png, [src], skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -506,13 +574,13 @@ def task_upperair_pressure(cfg, run, domain, case, label, valid, out, skip_exist
         style=resolve_style("temp_upper", overrides=cfg.style.overrides,
                             autoscale=cfg.style.autoscale),
         waypoints=cfg.waypoints, overlays=cfg.map_overlays,
-        title=f"{label} | d{domain:02d} {int(p_hpa)} hPa T + wind + T-adv | {valid:%H}Z",
+        title=f"{label} | d{domain:02d} {int(p_hpa)} hPa T + wind + T-adv | {_valid_label(valid)}",
         annotation=cfg.annotation,
     )
 
 
 def task_surface(cfg, run, domains, case, label, valid, sv, out, skip_existing=False):
-    out_png = out / f"{sv.key}_{case}_multidomain_{valid:%H}z.png"
+    out_png = out / f"{sv.key}_{case}_multidomain_{_valid_tag(valid)}.png"
     srcs = [wo.wrfout_path(run, dom, valid) for dom in domains]
     if _skip_existing(out_png, srcs, skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -537,13 +605,37 @@ def task_surface(cfg, run, domains, case, label, valid, sv, out, skip_existing=F
     plot_domain_panels(
         panels, out_png, style=style,
         wind=sv.wind, extent=extent, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
-        suptitle=f"{label} | {sv.style} | d{innermost:02d} area | {valid:%H}Z",
+        suptitle=f"{label} | {sv.style} | d{innermost:02d} area | {_valid_label(valid)}",
+    )
+
+
+def task_surface_single(cfg, run, dom, case, label, valid, sv, out, skip_existing=False):
+    """Free-standing single-nest surface figure (companion to the multidomain panel)."""
+    out_png = out / f"{sv.key}_{case}_d{dom:02d}_{_valid_tag(valid)}.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    panel = {
+        "label": f"d{dom:02d} ({wo.grid_spacing_label(ds)})",
+        "lon": wo.surface_field(ds, "XLONG"), "lat": wo.surface_field(ds, "XLAT"),
+        "field": _surface_field_for(ds, sv.key), "terrain": wo.surface_field(ds, "HGT"),
+    }
+    if sv.wind:
+        panel["u"] = wo.surface_field(ds, "U10")
+        panel["v"] = wo.surface_field(ds, "V10")
+    style = resolve_style(sv.style, overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
+    plot_domain_panels(
+        [panel], out_png, style=style,
+        wind=sv.wind, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+        suptitle=f"{label} | {sv.style} | d{dom:02d} | {_valid_label(valid)}",
     )
 
 
 def task_diff_map(cfg, run_a, run_b, innermost, tag, valid, out, feedback, limit=None,
                   skip_existing=False):
-    out_png = out / f"theta2m_{tag}_{valid:%H}z.png"
+    out_png = out / f"theta2m_{tag}_{_valid_tag(valid)}.png"
     srcs = [wo.wrfout_path(run_a, innermost, valid), wo.wrfout_path(run_b, innermost, valid)]
     if _skip_existing(out_png, srcs, skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -555,14 +647,14 @@ def task_diff_map(cfg, run_a, run_b, innermost, tag, valid, out, feedback, limit
         wo.surface_field(da, "XLONG"), wo.surface_field(da, "XLAT"),
         wo.theta_2m(da), wo.theta_2m(db), out_png,
         var="theta", limit=lim,
-        title=f"{tag} | 2 m theta | d{innermost:02d} | {valid:%H}Z",
+        title=f"{tag} | 2 m theta | d{innermost:02d} | {_valid_label(valid)}",
         terrain=wo.surface_field(da, "HGT"), annotation=cfg.annotation,
     )
 
 
 def task_diff_section(cfg, run_a, run_b, innermost, tag, valid, orient, out, limit=None,
                       skip_existing=False):
-    out_png = out / f"section_{orient.lower()}_{tag}_{valid:%H}z.png"
+    out_png = out / f"section_{orient.lower()}_{tag}_{_valid_tag(valid)}.png"
     src_a = wo.wrfout_path(run_a, innermost, valid)
     src_b = wo.wrfout_path(run_b, innermost, valid)
     if _skip_existing(out_png, [src_a, src_b], skip_existing):
@@ -574,7 +666,7 @@ def task_diff_section(cfg, run_a, run_b, innermost, tag, valid, orient, out, lim
     plot_wrf_section_difference(
         sec_a, sec_b, out_png,
         var="theta", limit=limit,
-        title=f"{tag} | d{innermost:02d} {orient} theta | {valid:%H}Z",
+        title=f"{tag} | d{innermost:02d} {orient} theta | {_valid_label(valid)}",
         locator_terrain=wo.surface_field(db, "HGT"), annotation=cfg.annotation,
         waypoints=cfg.waypoints,
     )
@@ -604,7 +696,7 @@ def task_domains(cfg, run, domains, out, skip_existing=False):
 
 
 def task_profiles(cfg, case_runs, valid, out, skip_existing=False):
-    out_png = out / f"theta_profiles_{_focus_slug(cfg)}_{valid:%H}z.png"
+    out_png = out / f"theta_profiles_{_focus_slug(cfg)}_{_valid_tag(valid)}.png"
     srcs = [wo.wrfout_path(run, innermost, valid) for _case, _label, run, innermost in case_runs]
     if _skip_existing(out_png, srcs, skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -617,14 +709,14 @@ def task_profiles(cfg, case_runs, valid, out, skip_existing=False):
     plot_theta_profiles(
         cols, out_png,
         terrain_m=ref_terrain, crest_m=cfg.crest_m, y_max_m=_PROFILE_Y_MAX_M,
-        title=rf"$\theta(z)$ at {cfg.focus_point.name} | {valid:%Y-%m-%d %H}Z",
+        title=rf"$\theta(z)$ at {cfg.focus_point.name} | {_valid_label(valid, include_date=True)}",
         annotation=cfg.annotation,
     )
 
 
 def task_skewt(cfg, run, innermost, case, label, valid, out, skip_existing=False):
     """Focus-point (innermost) model skew-T -- the cold-pool structure (model-only)."""
-    out_png = out / f"skewt_{_focus_slug(cfg)}_{case}_{valid:%H}z.png"
+    out_png = out / f"skewt_{_focus_slug(cfg)}_{case}_{_valid_tag(valid)}.png"
     src = wo.wrfout_path(run, innermost, valid)
     if _skip_existing(out_png, [src], skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -636,7 +728,7 @@ def task_skewt(cfg, run, innermost, case, label, valid, out, skip_existing=False
     )
     plot_skewt(
         model, out_png,
-        title=f"{label} skew-T | {cfg.focus_point.name} (d{innermost:02d}) | {valid:%Y-%m-%d %H}Z",
+        title=f"{label} skew-T | {cfg.focus_point.name} (d{innermost:02d}) | {_valid_label(valid, include_date=True)}",
         annotation=cfg.annotation,
     )
 
@@ -647,7 +739,7 @@ def task_skewt_station(
     """Model outermost-domain column at a RAOB proxy site, overlaid on that sounding."""
     from brc_tools.api.soundings import STATIONS
 
-    out_png = out / f"skewt_{station_name}_{case}_{valid:%H}z.png"
+    out_png = out / f"skewt_{station_name}_{case}_{_valid_tag(valid)}.png"
     src = wo.wrfout_path(run, outermost, valid)
     if _skip_existing(out_png, [src], skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -661,7 +753,7 @@ def task_skewt_station(
     obs = CachedSounding(sounding_cache).get(station_name, valid) if sounding_cache else None
     plot_skewt(
         model, out_png, obs=obs,
-        title=f"{label} vs RAOB | {station_name} ({st.location}) d{outermost:02d} | {valid:%H}Z",
+        title=f"{label} vs RAOB | {station_name} ({st.location}) d{outermost:02d} | {_valid_label(valid)}",
         annotation=cfg.annotation,
     )
 
@@ -689,12 +781,12 @@ def task_thetaz_station(
     models = {}
     for t in model_valids:
         ds = wo.open_wrfout(wo.wrfout_path(run, outermost, t))
-        models[f"{t:%H}Z"] = sounding_from_column(
+        models[_valid_label(t)] = sounding_from_column(
             wo.extract_column(ds, st.lat, st.lon),
             source=label, station=station_name, valid_time=t,
         )
     obs = CachedSounding(sounding_cache).get(station_name, obs_valid) if sounding_cache else None
-    hours = ", ".join(f"{t:%H}Z" for t in model_valids)
+    hours = ", ".join(_valid_label(t) for t in model_valids)
     plot_theta_wind_profile(
         models, out_png, obs=obs, crest_m=cfg.crest_m,
         title=(f"{label} — θ(z) spin-up at {station_name} ({st.location}) d{outermost:02d}\n"
@@ -738,7 +830,7 @@ def task_heatdeficit(cfg, case_runs, out, skip_existing=False):
 
 def task_heatdeficit_map(cfg, run, dom, case, label, valid, out, skip_existing=False):
     """Per-case plan-view of the cold-pool heat-deficit field (MJ m-2) on nest ``dom``."""
-    out_png = out / f"heatdeficit_{case}_{valid:%H}z.png"
+    out_png = out / f"heatdeficit_{case}_{_valid_tag(valid)}.png"
     src = wo.wrfout_path(run, dom, valid)
     if _skip_existing(out_png, [src], skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -749,7 +841,7 @@ def task_heatdeficit_map(cfg, run, dom, case, label, valid, out, skip_existing=F
     plot_heatdeficit_field(
         wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), field_mj, out_png,
         style=style, crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
-        title=f"{label} | cold-pool heat deficit | d{dom:02d} | {valid:%Y-%m-%d %H}Z",
+        title=f"{label} | cold-pool heat deficit | d{dom:02d} | {_valid_label(valid, include_date=True)}",
         annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
     )
 
@@ -757,7 +849,7 @@ def task_heatdeficit_map(cfg, run, dom, case, label, valid, out, skip_existing=F
 def task_heatdeficit_map_diff(cfg, run_a, run_b, dom, tag, valid, out, hd_limit=None,
                               skip_existing=False):
     """Paired heat-deficit difference map (case a minus case b, MJ m-2) on nest ``dom``."""
-    out_png = out / f"heatdeficit_{tag}_{valid:%H}z.png"
+    out_png = out / f"heatdeficit_{tag}_{_valid_tag(valid)}.png"
     srcs = [wo.wrfout_path(run_a, dom, valid), wo.wrfout_path(run_b, dom, valid)]
     if _skip_existing(out_png, srcs, skip_existing):
         print(f"  [skip] {out_png.name} up to date")
@@ -769,8 +861,237 @@ def task_heatdeficit_map_diff(cfg, run_a, run_b, dom, tag, valid, out, hd_limit=
     plot_heatdeficit_difference(
         wo.surface_field(da, "XLONG"), wo.surface_field(da, "XLAT"), fa, fb, out_png,
         limit=hd_limit, crest_terrain=wo.surface_field(da, "HGT"), crest_m=cfg.crest_m,
-        title=f"{tag} | Δ cold-pool heat deficit | d{dom:02d} | {valid:%H}Z",
+        title=f"{tag} | Δ cold-pool heat deficit | d{dom:02d} | {_valid_label(valid)}",
         annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+    )
+
+
+def task_deficitflux_map(cfg, run, dom, case, label, valid, out, skip_existing=False):
+    """Deficit transport F (quivers) over the heat-deficit field on nest ``dom``."""
+    out_png = out / f"deficitflux_{case}_{_valid_tag(valid)}.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    h_mj = wo.heat_deficit_field(ds, cfg.crest_m) / 1e6
+    fx, fy = wo.deficit_flux_field(ds, cfg.crest_m)  # earth-relative, W m-1
+    style = resolve_style("heat_deficit", overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
+    plot_deficitflux_map(
+        wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), h_mj, fx, fy, out_png,
+        style=style, crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
+        title=f"{label} | deficit transport F over H | d{dom:02d} | {_valid_label(valid, include_date=True)}",
+        annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+        transects=cfg.transects,
+    )
+
+
+def task_deficitflux_div(cfg, run, dom, case, label, valid, out, skip_existing=False):
+    """Horizontal heat-deficit flux convergence ``-div(F)`` on nest ``dom``."""
+    out_png = out / f"deficitflux_div_{case}_{_valid_tag(valid)}.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    adv_mj_h = -wo.deficit_flux_divergence(ds, cfg.crest_m) * 3600.0 / 1e6
+    style = resolve_style("deficit_advection", overrides=cfg.style.overrides,
+                          autoscale=cfg.style.autoscale)
+    # display smoothing in grid cells from the physical scale (raw -div(F) is
+    # gravity-wave noise at 111 m; a fixed cell count would not be nest-fair)
+    dx, _dy = wo.dx_dy(ds)
+    sigma = (cfg.deficitflux_smooth_km * 1000.0 / dx) if cfg.deficitflux_smooth_km > 0 else 0.0
+    plot_deficitflux_divergence(
+        wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), adv_mj_h, out_png,
+        style=style, smooth_sigma=sigma,
+        crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
+        title=f"{label} | horizontal deficit-flux convergence | d{dom:02d} | {_valid_label(valid, include_date=True)}",
+        annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+    )
+
+
+def task_deficitbulk_map(cfg, run, dom, case, label, valid, out, skip_existing=False):
+    """Exploratory layer depth, deficit-weighted speed, and bulk-Froude maps."""
+    out_png = out / f"deficitbulk_{case}_{_valid_tag(valid)}.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    try:
+        bulk = wo.deficit_bulk_fields(
+            ds,
+            cfg.crest_m,
+            min_deficit_k=cfg.deficit_active_min_k,
+            min_heat_deficit_j_m2=cfg.deficit_min_heat_mj_m2 * 1e6,
+        )
+        styles = tuple(
+            resolve_style(key, overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
+            for key in ("deficit_depth", "deficit_speed", "deficit_froude")
+        )
+        plot_deficit_bulk_diagnostics(
+            wo.surface_field(ds, "XLONG"),
+            wo.surface_field(ds, "XLAT"),
+            bulk.depth_m,
+            np.hypot(bulk.velocity_x_m_s, bulk.velocity_y_m_s),
+            bulk.froude,
+            out_png,
+            styles=styles,
+            crest_terrain=wo.surface_field(ds, "HGT"),
+            crest_m=cfg.crest_m,
+            title=(f"{label} | exploratory deficit-layer diagnostics | d{dom:02d} | "
+                   f"{_valid_label(valid, include_date=True)}"),
+            annotation=(f"{cfg.annotation} | active deficit >= {cfg.deficit_active_min_k:g} K; "
+                        f"F/H masked below H={cfg.deficit_min_heat_mj_m2:g} MJ m-2"),
+            waypoints=cfg.waypoints,
+            overlays=cfg.map_overlays,
+        )
+    finally:
+        ds.close()
+
+
+def _area_weighted_interior_mean(field, area, margin_cells: int) -> float:
+    """Area-weighted finite mean after a symmetric grid-cell edge crop."""
+    field = np.asarray(field, dtype=float)
+    area = np.asarray(area, dtype=float)
+    margin = max(int(margin_cells), 0)
+    if margin and (2 * margin >= field.shape[0] or 2 * margin >= field.shape[1]):
+        raise ValueError(
+            f"deficit_budget_margin_cells={margin} removes the full {field.shape} grid"
+        )
+    view = (slice(margin, -margin), slice(margin, -margin)) if margin else (...,)
+    values = field[view]
+    weights = area[view]
+    finite = np.isfinite(values) & np.isfinite(weights) & (weights > 0.0)
+    if not finite.any():
+        return float("nan")
+    return float(np.average(values[finite], weights=weights[finite]))
+
+
+def task_deficit_budget(cfg, run, dom, case, label, out, skip_existing=False):
+    """Area-mean H storage, horizontal convergence, and unresolved tendency."""
+    out_png = out / f"deficit_budget_{case}.png"
+    out_csv = out / f"deficit_budget_{case}.csv"
+    times = wo.list_valid_times(run, dom)
+    srcs = [wo.wrfout_path(run, dom, valid) for valid in times]
+    if (_skip_existing(out_png, srcs, skip_existing)
+            and _skip_existing(out_csv, srcs, skip_existing)):
+        print(f"  [skip] {out_png.name} and {out_csv.name} up to date")
+        return
+    if len(times) < 2:
+        print(f"  [SKIP] {label}: deficit budget requires at least two valid times")
+        return
+
+    heat: list[float] = []
+    convergence: list[float] = []
+    for src in srcs:
+        ds = wo.open_wrfout(src)
+        try:
+            area = wo.grid_cell_area_m2(ds)
+            heat.append(
+                _area_weighted_interior_mean(
+                    wo.heat_deficit_field(ds, cfg.crest_m) / 1e6,
+                    area,
+                    cfg.deficit_budget_margin_cells,
+                )
+            )
+            convergence.append(
+                _area_weighted_interior_mean(
+                    -wo.deficit_flux_divergence(ds, cfg.crest_m) * 3600.0 / 1e6,
+                    area,
+                    cfg.deficit_budget_margin_cells,
+                )
+            )
+        finally:
+            ds.close()
+
+    heat_arr = np.asarray(heat, dtype=float)
+    convergence_arr = np.asarray(convergence, dtype=float)
+    dt_hours = np.asarray(
+        [(b - a).total_seconds() / 3600.0 for a, b in zip(times[:-1], times[1:])],
+        dtype=float,
+    )
+    interval_times = [a + (b - a) / 2 for a, b in zip(times[:-1], times[1:])]
+    storage = np.diff(heat_arr) / dt_hours
+    interval_convergence = 0.5 * (convergence_arr[:-1] + convergence_arr[1:])
+    unresolved = storage - interval_convergence
+
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_csv, "w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow([
+            "interval_start_utc", "interval_end_utc", "interval_midpoint_utc",
+            "heat_start_mj_m2", "heat_end_mj_m2", "storage_mj_m2_h",
+            "horizontal_convergence_mj_m2_h", "unresolved_mj_m2_h",
+            "edge_margin_cells",
+        ])
+        for i, midpoint in enumerate(interval_times):
+            writer.writerow([
+                times[i].isoformat(), times[i + 1].isoformat(), midpoint.isoformat(),
+                f"{heat_arr[i]:.9g}", f"{heat_arr[i + 1]:.9g}", f"{storage[i]:.9g}",
+                f"{interval_convergence[i]:.9g}", f"{unresolved[i]:.9g}",
+                cfg.deficit_budget_margin_cells,
+            ])
+
+    spinup_end = (
+        times[0] + timedelta(hours=cfg.deficit_spinup_hours)
+        if cfg.deficit_spinup_hours > 0.0 else None
+    )
+    plot_deficit_budget(
+        times,
+        heat_arr,
+        interval_times,
+        storage,
+        interval_convergence,
+        unresolved,
+        out_png,
+        title=(f"{label} | crest-referenced heat-deficit tendency diagnostic | d{dom:02d}"),
+        spinup_end=spinup_end,
+        annotation=(f"{cfg.annotation} | {cfg.deficit_budget_margin_cells}-cell edge crop; "
+                    "unresolved = storage - horizontal convergence"),
+    )
+
+
+def task_deficitflux_transect(cfg, dfx_runs, tr, out, skip_existing=False):
+    """Deficit transport Phi(t) through one configured transect, a line per case (GW)."""
+    out_png = out / f"deficitflux_transect_{tr.name}.png"
+    times_by_case = {
+        label: wo.list_valid_times(run, dom) for _case, label, run, dom in dfx_runs
+    }
+    srcs = [
+        wo.wrfout_path(run, dom, t)
+        for _case, label, run, dom in dfx_runs
+        for t in times_by_case[label]
+    ]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    series = {}
+    for _case, label, run, dom in dfx_runs:
+        times = times_by_case[label]
+        if not times:
+            continue
+        ds0 = wo.open_wrfout(wo.wrfout_path(run, dom, times[0]))
+        if not (wo.point_in_domain(ds0, tr.lat_a, tr.lon_a)
+                and wo.point_in_domain(ds0, tr.lat_b, tr.lon_b)):
+            print(f"  [SKIP] {label}: transect {tr.name} endpoints outside d{dom:02d}")
+            continue
+        phis = []
+        for t in times:
+            ds = wo.open_wrfout(wo.wrfout_path(run, dom, t))
+            tf = wo.transect_deficit_flux(
+                ds, cfg.crest_m, tr.lat_a, tr.lon_a, tr.lat_b, tr.lon_b, label=tr.name
+            )
+            phis.append(tf.total_w / 1e9)
+        series[label] = (times, np.array(phis))
+    if not series:
+        print(f"  [SKIP] transect {tr.name}: no case renders it")
+        return
+    plot_scalar_timeseries(
+        series, out_png,
+        ylabel=r"deficit transport $\Phi$ (GW)",
+        title=(f"Crest-referenced deficit transport — {tr.label} (crest {int(cfg.crest_m)} m)\n"
+               "positive = transport to the right of A$\\rightarrow$B"),
     )
 
 
@@ -949,6 +1270,20 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
     if "heatdeficit" in fams and case_runs:
         tasks.append(("heat deficit series", task_heatdeficit,
                       (cfg, case_runs, out_dir(cfg, selection, "heatdeficit", None), skip)))
+    if "deficitflux_transect" in fams and cfg.transects:
+        dfx_runs = []
+        for c in usable_cases:
+            dom = _resolve_domain(cfg.deficitflux_domain, reports[c])
+            if dom is None:
+                print(f"  [SKIP] {c}: deficitflux_transect — domain {cfg.deficitflux_domain} not present")
+                continue
+            dfx_runs.append((c, cfg.runs[c].label,
+                             cfg.resolve_run_dir(c, selection.run_override), dom))
+        if dfx_runs:
+            for tr in cfg.transects:
+                tasks.append((f"deficit flux transect {tr.name}", task_deficitflux_transect,
+                              (cfg, dfx_runs, tr,
+                               out_dir(cfg, selection, "deficitflux_transect", None), skip)))
 
     # --- per-case families ---
     for case in usable_cases:
@@ -964,6 +1299,24 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
         hd_dom = _resolve_domain(cfg.heatdeficit_domain, rep) if "heatdeficit_map" in fams else None
         if "heatdeficit_map" in fams and hd_dom is None:
             print(f"  [SKIP] {case}: heatdeficit_map — domain {cfg.heatdeficit_domain} not present")
+        dfx_fams = {
+            "deficitflux_map", "deficitflux_div", "deficitbulk_map", "deficit_budget"
+        } & set(fams)
+        dfx_dom = _resolve_domain(cfg.deficitflux_domain, rep) if dfx_fams else None
+        if dfx_fams and dfx_dom is None:
+            print(f"  [SKIP] {case}: deficitflux — domain {cfg.deficitflux_domain} not present")
+        ss_doms: list[int] = []
+        if "surface" in fams:
+            for spec in cfg.surface_single_domains:
+                d = _resolve_domain(spec, rep)
+                if d is None:
+                    print(f"  [SKIP] {case}: surface single-domain {spec} not present")
+                elif d not in ss_doms:
+                    ss_doms.append(d)
+        if "deficit_budget" in fams and dfx_dom is not None:
+            tasks.append((f"{label} deficit budget", task_deficit_budget,
+                          (cfg, run, dfx_dom, case, label,
+                           out_dir(cfg, selection, "deficit_budget", case), skip)))
         for t in sel_times:
             if "section" in fams and sec_dom is not None:
                 for orient in ("EW", "NS"):
@@ -984,10 +1337,27 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
                     tasks.append((f"{label} {sv.key} {t:%H}Z", task_surface,
                                   (cfg, run, rep.domains, case, label, t, sv,
                                    out_dir(cfg, selection, "surface", case), skip)))
+                for dom in ss_doms:
+                    for sv in rep.usable_surface_vars:
+                        tasks.append((f"{label} {sv.key} d{dom:02d} {t:%H}Z", task_surface_single,
+                                      (cfg, run, dom, case, label, t, sv,
+                                       out_dir(cfg, selection, "surface", case), skip)))
             if "heatdeficit_map" in fams and hd_dom is not None:
                 tasks.append((f"{label} heatdeficit map {t:%H}Z", task_heatdeficit_map,
                               (cfg, run, hd_dom, case, label, t,
                                out_dir(cfg, selection, "heatdeficit_map", case), skip)))
+            if "deficitflux_map" in fams and dfx_dom is not None:
+                tasks.append((f"{label} deficit flux map {t:%H}Z", task_deficitflux_map,
+                              (cfg, run, dfx_dom, case, label, t,
+                               out_dir(cfg, selection, "deficitflux_map", case), skip)))
+            if "deficitflux_div" in fams and dfx_dom is not None:
+                tasks.append((f"{label} deficit flux div {t:%H}Z", task_deficitflux_div,
+                              (cfg, run, dfx_dom, case, label, t,
+                               out_dir(cfg, selection, "deficitflux_div", case), skip)))
+            if "deficitbulk_map" in fams and dfx_dom is not None:
+                tasks.append((f"{label} deficit bulk {_valid_label(t)}", task_deficitbulk_map,
+                              (cfg, run, dfx_dom, case, label, t,
+                               out_dir(cfg, selection, "deficitbulk_map", case), skip)))
             if "skewt" in fams and rep.point_ok:
                 tasks.append((f"{label} skewt {cfg.focus_point.name} {t:%H}Z", task_skewt,
                               (cfg, run, innermost, case, label, t,

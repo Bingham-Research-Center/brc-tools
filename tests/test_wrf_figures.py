@@ -29,6 +29,7 @@ annotation = "synthetic | test"
 crest_m = 1700.0
 profile_hours = [12]
 sounding_hour = 12
+surface_single_domains = ["inner"]
 focus_point = { name = "OffGrid", lat = 10.0, lon = 10.0 }
 surface_vars = [
   { key = "theta2m", style = "theta_2m",      wind = true  },
@@ -44,6 +45,14 @@ ic_cases = []
 
 [runs]
 main = { dir = "maincase", label = "Main" }
+
+[[transects]]
+name = "gate"
+label = "Test Gate"
+lat_a = 45.2
+lon_a = -119.8
+lat_b = 45.6
+lon_b = -119.4
 """
 
 
@@ -150,6 +159,99 @@ def test_heatdeficit_map_emits_and_renders(tmp_path, monkeypatch):
     _name, fn, args = hd[0]
     fn(*args)
     pngs = list(Path(args[6]).glob("*.png"))
+    assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_surface_single_domain_emits_and_renders(tmp_path, monkeypatch):
+    """surface_single_domains adds free-standing per-nest figures beside the panels."""
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["surface"], time="12", output_dir=str(tmp_path / "out")
+    )
+    tasks = wf.build_tasks(cfg, sel)
+
+    singles = [t for t in tasks if t[1] is wf.task_surface_single]
+    assert singles, "expected single-domain surface tasks"
+    # args: (cfg, run, dom, case, label, valid, sv, out, skip); "inner" resolves to d02
+    assert all(args[2] == 2 for _n, _fn, args in singles)
+
+    use_publication_style()
+    _name, fn, args = singles[0]
+    fn(*args)
+    pngs = list(Path(args[7]).glob("*_d02_12z.png"))
+    assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_deficitflux_families_emit_and_render(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["deficitflux_map", "deficitflux_div"],
+        time="12", output_dir=str(tmp_path / "out"),
+    )
+    tasks = wf.build_tasks(cfg, sel)
+
+    maps = [t for t in tasks if t[1] is wf.task_deficitflux_map]
+    divs = [t for t in tasks if t[1] is wf.task_deficitflux_div]
+    assert maps and divs, "expected deficitflux map + div tasks"
+    # args: (cfg, run, dom, case, label, valid, out, skip_existing); innermost by default
+    assert all(args[2] == 2 for _n, _fn, args in maps + divs)
+
+    use_publication_style()
+    for _name, fn, args in (maps[0], divs[0]):
+        fn(*args)
+        pngs = list(Path(args[6]).glob("*.png"))
+        assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_subhourly_valid_tags_are_collision_safe():
+    assert wf._valid_tag(datetime(2013, 2, 2, 12)) == "12z"
+    assert wf._valid_tag(datetime(2013, 2, 2, 12, 10)) == "1210z"
+    assert wf._valid_tag(datetime(2013, 2, 2, 12, 10, 30)) == "121030z"
+    assert wf._valid_label(datetime(2013, 2, 2, 12, 10)) == "12:10Z"
+
+
+def test_deficitbulk_and_budget_emit_and_render(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["deficitbulk_map", "deficit_budget"],
+        time="12", output_dir=str(tmp_path / "out"),
+    )
+    tasks = wf.build_tasks(cfg, sel)
+    bulk = [t for t in tasks if t[1] is wf.task_deficitbulk_map]
+    budget = [t for t in tasks if t[1] is wf.task_deficit_budget]
+    assert bulk and len(budget) == 1
+
+    use_publication_style()
+    _name, fn, args = bulk[0]
+    fn(*args)
+    assert list(Path(args[6]).glob("deficitbulk_main_12z.png"))
+
+    _name, fn, args = budget[0]
+    fn(*args)
+    assert list(Path(args[5]).glob("deficit_budget_main.png"))
+    assert list(Path(args[5]).glob("deficit_budget_main.csv"))
+
+
+def test_deficitflux_transect_emits_and_renders(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    assert [t.name for t in cfg.transects] == ["gate"]
+    sel = wf.Selection(
+        cases=["main"], families=["deficitflux_transect"], output_dir=str(tmp_path / "out")
+    )
+    tasks = wf.build_tasks(cfg, sel)
+
+    # one task per configured transect; independent of the (off-grid) focus point
+    tr = [t for t in tasks if t[1] is wf.task_deficitflux_transect]
+    assert len(tr) == 1
+
+    use_publication_style()
+    _name, fn, args = tr[0]  # args: (cfg, dfx_runs, transect, out, skip_existing)
+    fn(*args)
+    pngs = list(Path(args[3]).glob("*.png"))
     assert pngs and pngs[0].stat().st_size > 0
 
 

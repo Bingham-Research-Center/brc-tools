@@ -71,9 +71,12 @@ brc-tools. (The older `wrf-nudge-ozone-air2026` repo is frozen/read-only — do 
 - The slurm wrapper sets the `brc-tools-2026` python, `PYTHONPATH=~/gits/brc-tools`, and
   `MPLCONFIGDIR` on scratch; figures route out of every repo by default.
 - Redirect output with `--output-dir <path>` (nests `<case>/<family>/`).
-- Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz, heatdeficit, heatdeficit_map, all`.
+- Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz, heatdeficit, heatdeficit_map, deficitflux_map, deficitflux_div, deficitflux_transect, all`.
   `heatdeficit_map` renders the spatial cold-pool heat-deficit field (per case) + a diff map
   per `[[differences]]` pair; nest via `heatdeficit_domain` (pelican2013 = `d02`).
+  The `deficitflux_*` trio renders cold-pool **advection**: flux quivers over the deficit
+  (`deficitflux_map`), advective dH/dt (`deficitflux_div`), and canyon-gate export Φ(t)
+  through `[[transects]]` lines (`deficitflux_transect`); nest via `deficitflux_domain`.
 - The `upperair` family renders **two** maps per time: the crest-level θ/wind/T-adv map on
   the inner nest plus a synoptic **T-advection map on a pressure surface**
   (`upper_pressure_hpa`, default 600 hPa, computed on `upper_adv_domain` — the coarse

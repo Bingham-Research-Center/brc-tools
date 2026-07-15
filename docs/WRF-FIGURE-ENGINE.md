@@ -37,8 +37,10 @@ PY=~/software/pkg/miniforge3/envs/brc-tools-2026/bin/python
 "$PY" scripts/wrf_figures.py --config <case.toml> --case nam --figure surface --lead 1 --skip-existing
 ```
 
-Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz,
-heatdeficit, heatdeficit_map` (or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
+Families are `domains`, `section`, `upperair`, `surface`, `difference`, `profile`,
+`skewt`, `thetaz`, `heatdeficit`, `heatdeficit_map`, `deficitflux_map`,
+`deficitflux_div`, `deficitflux_transect`, `deficitbulk_map`, and `deficit_budget`
+(or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
 the case's own repo owns the sbatch wrapper. Soundings need a network node — run
 `scripts/fetch_soundings.py` first and pass `--sounding-cache`.
 
@@ -77,6 +79,38 @@ symmetric scale with `hd_limit` (MJ m⁻²); without it the limit is the robust 
 percentile of that figure. The crest is an approximate upper integration boundary (the
 integrand → 0 there, so the error sits where the signal is smallest). This is the
 productized form of the mechanism-decomposition heat-deficit prototype.
+
+The **deficit-transport families** are horizontal-transport companions of
+`heatdeficit_map`,
+built on the integrated deficit transport `F = (c_p/g)∫max(θ_crest−θ,0)·u_h dp`
+(`deficit_flux_field`, W m⁻¹ — the IVT analogue of the heat deficit). `−∇h·F` is the
+horizontal flux-convergence contribution to storage. The remainder after subtracting
+that term from finite-difference `dH/dt` is deliberately labelled **unresolved**, not
+diabatic: the local time-varying crest reference, clipped-layer motion, vertical and
+boundary terms, and numerical error can also contribute.
+
+- `deficitflux_map` — F quivers (MW m⁻¹, fixed 5 MW quiver key) over the heat-deficit
+  field → per-case `full-figures/deficitflux_map/deficitflux_<case>_<HH>z.png`. Any
+  configured `[[transects]]` lines are drawn for context.
+- `deficitflux_div` — horizontal convergence `−∇h·F` (MJ m⁻² h⁻¹,
+  `deficit_advection` style, fixed ±2, red = convergence increasing deficit;
+  display-only Gaussian smoothing) →
+  per-case `full-figures/deficitflux_div/deficitflux_div_<case>_<HH>z.png`.
+- `deficitflux_transect` — signed deficit transport Φ(t) = ∫F·n̂ ds (GW) through each
+  named `[[transects]]` A→B line, one line per case, positive = transport to the
+  right walking A→B → shared `compare/deficitflux_transect/deficitflux_transect_<name>.png`.
+- `deficitbulk_map` — a three-panel exploratory diagnostic of active-layer depth,
+  deficit-weighted speed `|F|/H`, and a reduced-gravity bulk Froude proxy. The Froude
+  panel is not a hydraulic-control diagnosis → per-case
+  `full-figures/deficitbulk_map/deficitbulk_<case>_<HH>z.png`.
+- `deficit_budget` — area-mean `H`, interval storage, horizontal convergence, and the
+  unresolved remainder, plus a CSV with the exact interval values → per-case
+  `full-figures/deficit_budget/deficit_budget_<case>.{png,csv}`.
+
+All five render on the nest named by `deficitflux_domain` (`inner`/`outer`/`dNN`;
+default `inner`). Transect endpoints outside the nest are a named `[SKIP]` per case.
+Per-valid-time filenames retain the legacy `<HH>z` tag for exact-hour output and use
+`<HHMM>z` (or `<HHMMSS>z`) when needed, so sub-hourly runs never overwrite products.
 
 **Map reference overlays** (US highways, rivers incl. the Green River, lakes/reservoirs,
 state borders) are opt-in per case via the `[map]` table and drawn on the surface /
@@ -168,6 +202,14 @@ sounding_hour = 12                   # analysis hour for station skew-Ts
 upper_pressure_hpa = 600.0           # pressure surface for the synoptic T-advection map
 upper_adv_domain = "outer"           # compute that map on "outer" (clean) | "inner" nest
 heatdeficit_domain = "d02"           # nest for the heatdeficit_map field: "inner"|"outer"|"dNN" (default inner)
+deficitflux_domain = "inner"         # nest for the deficitflux_* families (default inner)
+deficit_active_min_k = 0.25          # active-layer deficit threshold for bulk maps
+deficit_min_heat_mj_m2 = 0.1         # mask F/H below this H threshold
+deficit_budget_margin_cells = 15     # symmetric edge crop for budget spatial means
+deficit_spinup_hours = 2.0           # context interval shaded from first valid time
+surface_single_domains = ["inner"]   # nests that ALSO get free-standing single-nest surface
+                                     # figures ({key}_{case}_dNN_{HH}z.png) beside the
+                                     # multidomain panel; default [] = panels only
 focus_point = { name = "Horsepool", lat = 40.144, lon = -109.467 }
 surface_vars = [                     # multi-domain surface panels (order preserved)
   { key = "theta2m", style = "theta_2m",      wind = true  },
@@ -199,6 +241,14 @@ feedback = false                     # true tightens the diff colour limit (smal
 sections = true                      # also emit EW/NS θ difference sections
 limit = 4.0                          # optional fixed ±K scale (shares one scale across a family)
 hd_limit = 2.5                       # optional fixed ±MJ m⁻² scale for the heatdeficit_map diff
+
+[[transects]]                        # A→B lines for deficitflux_transect (canyon gates)
+name = "ashley_gate"                 # filename slug; also labels the line on deficitflux_map
+label = "Ashley Creek canyon mouth"  # figure title
+lat_a = 40.52                        # walk A→B: positive Φ = export to the right
+lon_a = -109.60                      # (NB one key per line — semicolons are not TOML)
+lat_b = 40.50
+lon_b = -109.55
 
 [map]                                # optional Natural-Earth reference overlays (fail-soft)
 states = true                        # state / province borders
