@@ -38,7 +38,8 @@ PY=~/software/pkg/miniforge3/envs/brc-tools-2026/bin/python
 ```
 
 Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz,
-heatdeficit, heatdeficit_map` (or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
+heatdeficit, heatdeficit_map, deficitflux_map, deficitflux_div, deficitflux_transect`
+(or `all`). Heavy batches run on SLURM (per `docs/CHPC-REFERENCE.md`);
 the case's own repo owns the sbatch wrapper. Soundings need a network node — run
 `scripts/fetch_soundings.py` first and pass `--sounding-cache`.
 
@@ -77,6 +78,24 @@ symmetric scale with `hd_limit` (MJ m⁻²); without it the limit is the robust 
 percentile of that figure. The crest is an approximate upper integration boundary (the
 integrand → 0 there, so the error sits where the signal is smallest). This is the
 productized form of the mechanism-decomposition heat-deficit prototype.
+
+The **`deficitflux_*` families** are the *advection* companions of `heatdeficit_map`,
+built on the integrated deficit transport `F = (c_p/g)∫max(θ_crest−θ,0)·u_h dp`
+(`deficit_flux_field`, W m⁻¹ — the IVT analogue of the heat deficit; same kernel, so
+`dH/dt = −∇·F + diabatic` closes as a budget):
+
+- `deficitflux_map` — F quivers (MW m⁻¹, fixed 5 MW quiver key) over the heat-deficit
+  field → per-case `full-figures/deficitflux_map/deficitflux_<case>_<HH>z.png`. Any
+  configured `[[transects]]` lines are drawn for context.
+- `deficitflux_div` — advective tendency `−∇·F` (MJ m⁻² h⁻¹, `deficit_advection` style,
+  fixed ±2, red = advection deepening the pool; display-only Gaussian smoothing) →
+  per-case `full-figures/deficitflux_div/deficitflux_div_<case>_<HH>z.png`.
+- `deficitflux_transect` — deficit export Φ(t) = ∫F·n̂ ds (GW) through each named
+  `[[transects]]` A→B line (canyon gates), one line per case, positive = export to the
+  right walking A→B → shared `compare/deficitflux_transect/deficitflux_transect_<name>.png`.
+
+All three render on the nest named by `deficitflux_domain` (`inner`/`outer`/`dNN`;
+default `inner`). Transect endpoints outside the nest are a named `[SKIP]` per case.
 
 **Map reference overlays** (US highways, rivers incl. the Green River, lakes/reservoirs,
 state borders) are opt-in per case via the `[map]` table and drawn on the surface /
@@ -168,6 +187,7 @@ sounding_hour = 12                   # analysis hour for station skew-Ts
 upper_pressure_hpa = 600.0           # pressure surface for the synoptic T-advection map
 upper_adv_domain = "outer"           # compute that map on "outer" (clean) | "inner" nest
 heatdeficit_domain = "d02"           # nest for the heatdeficit_map field: "inner"|"outer"|"dNN" (default inner)
+deficitflux_domain = "inner"         # nest for the deficitflux_* families (default inner)
 focus_point = { name = "Horsepool", lat = 40.144, lon = -109.467 }
 surface_vars = [                     # multi-domain surface panels (order preserved)
   { key = "theta2m", style = "theta_2m",      wind = true  },
@@ -199,6 +219,12 @@ feedback = false                     # true tightens the diff colour limit (smal
 sections = true                      # also emit EW/NS θ difference sections
 limit = 4.0                          # optional fixed ±K scale (shares one scale across a family)
 hd_limit = 2.5                       # optional fixed ±MJ m⁻² scale for the heatdeficit_map diff
+
+[[transects]]                        # A→B lines for deficitflux_transect (canyon gates)
+name = "ashley_gate"                 # filename slug; also labels the line on deficitflux_map
+label = "Ashley Creek canyon mouth"  # figure title
+lat_a = 40.52; lon_a = -109.60       # walk A→B: positive Φ = export to the right
+lat_b = 40.50; lon_b = -109.55
 
 [map]                                # optional Natural-Earth reference overlays (fail-soft)
 states = true                        # state / province borders
