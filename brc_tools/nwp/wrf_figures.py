@@ -39,6 +39,10 @@ from brc_tools.visualize.crosssection import (
     plot_wrf_section,
     plot_wrf_section_difference,
 )
+from brc_tools.visualize.deficitflux import (
+    plot_deficitflux_divergence,
+    plot_deficitflux_map,
+)
 from brc_tools.visualize.domains import plot_domain_boxes
 from brc_tools.visualize.heatdeficit import (
     plot_heatdeficit_difference,
@@ -65,6 +69,7 @@ from brc_tools.visualize.upperair import (
 FAMILIES = [
     "domains", "section", "upperair", "surface",
     "difference", "profile", "skewt", "thetaz", "heatdeficit", "heatdeficit_map",
+    "deficitflux_map", "deficitflux_div", "deficitflux_transect",
 ]
 
 # Vertical extent for the theta(z) profile plot (m MSL); a generic default.
@@ -136,6 +141,22 @@ class RunSpec:
 
 
 @dataclass(frozen=True)
+class TransectSpec:
+    """A named A->B lat/lon line for the ``deficitflux_transect`` family (canyon gate).
+
+    Sign convention follows :func:`brc_tools.nwp.wrf_output.transect_deficit_flux`:
+    positive export is to the right when walking A->B.
+    """
+
+    name: str
+    label: str
+    lat_a: float
+    lon_a: float
+    lat_b: float
+    lon_b: float
+
+
+@dataclass(frozen=True)
 class StyleConfig:
     """Per-case colour-scale policy.  Fixed shared scales stay the default."""
 
@@ -167,6 +188,8 @@ class CaseConfig:
     upper_pressure_hpa: float = 600.0     # pressure surface for the synoptic T-adv map
     upper_adv_domain: str = "outer"       # "outer" (clean synoptic) | "inner" (fine)
     heatdeficit_domain: str = "inner"     # nest for the heatdeficit_map field: "inner"|"outer"|"dNN"
+    deficitflux_domain: str = "inner"     # nest for the deficitflux families: "inner"|"outer"|"dNN"
+    transects: list[TransectSpec] = field(default_factory=list)  # deficitflux_transect lines
     map_overlays: dict = field(default_factory=dict)  # {layer: bool} Natural-Earth refs
 
     # -- run-directory resolution (was the module-global run_dir/RUN_OVERRIDE) --
@@ -209,6 +232,14 @@ class CaseConfig:
             )
             for d in data.get("differences", [])
         ]
+        transects = [
+            TransectSpec(
+                name=t["name"], label=t.get("label", t["name"]),
+                lat_a=float(t["lat_a"]), lon_a=float(t["lon_a"]),
+                lat_b=float(t["lat_b"]), lon_b=float(t["lon_b"]),
+            )
+            for t in data.get("transects", [])
+        ]
         map_data = data.get("map", {})
         map_overlays = {layer: bool(map_data.get(layer, False)) for layer in _MAP_LAYERS}
         style_data = data.get("style", {})
@@ -240,6 +271,8 @@ class CaseConfig:
             upper_pressure_hpa=float(case.get("upper_pressure_hpa", 600.0)),
             upper_adv_domain=str(case.get("upper_adv_domain", "outer")),
             heatdeficit_domain=str(case.get("heatdeficit_domain", "inner")),
+            deficitflux_domain=str(case.get("deficitflux_domain", "inner")),
+            transects=transects,
             map_overlays=map_overlays,
         )
 
@@ -774,6 +807,88 @@ def task_heatdeficit_map_diff(cfg, run_a, run_b, dom, tag, valid, out, hd_limit=
     )
 
 
+def task_deficitflux_map(cfg, run, dom, case, label, valid, out, skip_existing=False):
+    """Deficit transport F (quivers) over the heat-deficit field on nest ``dom``."""
+    out_png = out / f"deficitflux_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    h_mj = wo.heat_deficit_field(ds, cfg.crest_m) / 1e6
+    fx, fy = wo.deficit_flux_field(ds, cfg.crest_m)  # earth-relative, W m-1
+    style = resolve_style("heat_deficit", overrides=cfg.style.overrides, autoscale=cfg.style.autoscale)
+    plot_deficitflux_map(
+        wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), h_mj, fx, fy, out_png,
+        style=style, crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
+        title=f"{label} | deficit transport F over H | d{dom:02d} | {valid:%Y-%m-%d %H}Z",
+        annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+        transects=cfg.transects,
+    )
+
+
+def task_deficitflux_div(cfg, run, dom, case, label, valid, out, skip_existing=False):
+    """Advective heat-deficit tendency ``-div(F)`` (MJ m-2 h-1) on nest ``dom``."""
+    out_png = out / f"deficitflux_div_{case}_{valid:%H}z.png"
+    src = wo.wrfout_path(run, dom, valid)
+    if _skip_existing(out_png, [src], skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    ds = wo.open_wrfout(src)
+    adv_mj_h = -wo.deficit_flux_divergence(ds, cfg.crest_m) * 3600.0 / 1e6
+    style = resolve_style("deficit_advection", overrides=cfg.style.overrides,
+                          autoscale=cfg.style.autoscale)
+    plot_deficitflux_divergence(
+        wo.surface_field(ds, "XLONG"), wo.surface_field(ds, "XLAT"), adv_mj_h, out_png,
+        style=style, crest_terrain=wo.surface_field(ds, "HGT"), crest_m=cfg.crest_m,
+        title=f"{label} | advective dH/dt | d{dom:02d} | {valid:%Y-%m-%d %H}Z",
+        annotation=cfg.annotation, waypoints=cfg.waypoints, overlays=cfg.map_overlays,
+    )
+
+
+def task_deficitflux_transect(cfg, dfx_runs, tr, out, skip_existing=False):
+    """Deficit export Phi(t) through one configured transect, a line per case (GW)."""
+    out_png = out / f"deficitflux_transect_{tr.name}.png"
+    times_by_case = {
+        label: wo.list_valid_times(run, dom) for _case, label, run, dom in dfx_runs
+    }
+    srcs = [
+        wo.wrfout_path(run, dom, t)
+        for _case, label, run, dom in dfx_runs
+        for t in times_by_case[label]
+    ]
+    if _skip_existing(out_png, srcs, skip_existing):
+        print(f"  [skip] {out_png.name} up to date")
+        return
+    series = {}
+    for _case, label, run, dom in dfx_runs:
+        times = times_by_case[label]
+        if not times:
+            continue
+        ds0 = wo.open_wrfout(wo.wrfout_path(run, dom, times[0]))
+        if not (wo.point_in_domain(ds0, tr.lat_a, tr.lon_a)
+                and wo.point_in_domain(ds0, tr.lat_b, tr.lon_b)):
+            print(f"  [SKIP] {label}: transect {tr.name} endpoints outside d{dom:02d}")
+            continue
+        phis = []
+        for t in times:
+            ds = wo.open_wrfout(wo.wrfout_path(run, dom, t))
+            tf = wo.transect_deficit_flux(
+                ds, cfg.crest_m, tr.lat_a, tr.lon_a, tr.lat_b, tr.lon_b, label=tr.name
+            )
+            phis.append(tf.total_w / 1e9)
+        series[label] = (times, np.array(phis))
+    if not series:
+        print(f"  [SKIP] transect {tr.name}: no case renders it")
+        return
+    plot_scalar_timeseries(
+        series, out_png,
+        ylabel=r"deficit export $\Phi$ (GW)",
+        title=(f"Cold-pool deficit export — {tr.label} (crest {int(cfg.crest_m)} m)\n"
+               "positive = export to the right of A$\\rightarrow$B"),
+    )
+
+
 # --------------------------------------------------------------------------- #
 # preflight validation
 # --------------------------------------------------------------------------- #
@@ -949,6 +1064,20 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
     if "heatdeficit" in fams and case_runs:
         tasks.append(("heat deficit series", task_heatdeficit,
                       (cfg, case_runs, out_dir(cfg, selection, "heatdeficit", None), skip)))
+    if "deficitflux_transect" in fams and cfg.transects:
+        dfx_runs = []
+        for c in usable_cases:
+            dom = _resolve_domain(cfg.deficitflux_domain, reports[c])
+            if dom is None:
+                print(f"  [SKIP] {c}: deficitflux_transect — domain {cfg.deficitflux_domain} not present")
+                continue
+            dfx_runs.append((c, cfg.runs[c].label,
+                             cfg.resolve_run_dir(c, selection.run_override), dom))
+        if dfx_runs:
+            for tr in cfg.transects:
+                tasks.append((f"deficit flux transect {tr.name}", task_deficitflux_transect,
+                              (cfg, dfx_runs, tr,
+                               out_dir(cfg, selection, "deficitflux_transect", None), skip)))
 
     # --- per-case families ---
     for case in usable_cases:
@@ -964,6 +1093,10 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
         hd_dom = _resolve_domain(cfg.heatdeficit_domain, rep) if "heatdeficit_map" in fams else None
         if "heatdeficit_map" in fams and hd_dom is None:
             print(f"  [SKIP] {case}: heatdeficit_map — domain {cfg.heatdeficit_domain} not present")
+        dfx_fams = {"deficitflux_map", "deficitflux_div"} & set(fams)
+        dfx_dom = _resolve_domain(cfg.deficitflux_domain, rep) if dfx_fams else None
+        if dfx_fams and dfx_dom is None:
+            print(f"  [SKIP] {case}: deficitflux — domain {cfg.deficitflux_domain} not present")
         for t in sel_times:
             if "section" in fams and sec_dom is not None:
                 for orient in ("EW", "NS"):
@@ -988,6 +1121,14 @@ def build_tasks(cfg: CaseConfig, selection: Selection) -> list[tuple]:
                 tasks.append((f"{label} heatdeficit map {t:%H}Z", task_heatdeficit_map,
                               (cfg, run, hd_dom, case, label, t,
                                out_dir(cfg, selection, "heatdeficit_map", case), skip)))
+            if "deficitflux_map" in fams and dfx_dom is not None:
+                tasks.append((f"{label} deficit flux map {t:%H}Z", task_deficitflux_map,
+                              (cfg, run, dfx_dom, case, label, t,
+                               out_dir(cfg, selection, "deficitflux_map", case), skip)))
+            if "deficitflux_div" in fams and dfx_dom is not None:
+                tasks.append((f"{label} deficit flux div {t:%H}Z", task_deficitflux_div,
+                              (cfg, run, dfx_dom, case, label, t,
+                               out_dir(cfg, selection, "deficitflux_div", case), skip)))
             if "skewt" in fams and rep.point_ok:
                 tasks.append((f"{label} skewt {cfg.focus_point.name} {t:%H}Z", task_skewt,
                               (cfg, run, innermost, case, label, t,

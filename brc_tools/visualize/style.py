@@ -54,6 +54,11 @@ VAR_STYLES: dict[str, VarStyle] = {
     # spatial pool is directly comparable across cases and forecast hours; the pelican2013
     # control peaks near 8 MJ m^-2.
     "heat_deficit":   VarStyle("viridis", r"cold-pool heat deficit (MJ m$^{-2}$)", 0.0, 8.0, extend="max"),
+    # Advective heat-deficit tendency -div(F) (deficitflux_div family).  Symmetric,
+    # fixed +-2 MJ m^-2 h^-1: the 111 m pelican2013 d04 run has hour-mean magnitudes
+    # ~0.2-0.5 with smoothed local extremes near +-2.
+    "deficit_advection": VarStyle("RdBu_r", r"advective $\partial H/\partial t$ (MJ m$^{-2}$ h$^{-1}$)",
+                                  -2.0, 2.0, diverging=True),
 }
 
 # Symmetric diverging limits for difference figures (case A minus case B).

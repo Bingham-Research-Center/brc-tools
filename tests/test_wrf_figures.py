@@ -44,6 +44,14 @@ ic_cases = []
 
 [runs]
 main = { dir = "maincase", label = "Main" }
+
+[[transects]]
+name = "gate"
+label = "Test Gate"
+lat_a = 45.2
+lon_a = -119.8
+lat_b = 45.6
+lon_b = -119.4
 """
 
 
@@ -150,6 +158,48 @@ def test_heatdeficit_map_emits_and_renders(tmp_path, monkeypatch):
     _name, fn, args = hd[0]
     fn(*args)
     pngs = list(Path(args[6]).glob("*.png"))
+    assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_deficitflux_families_emit_and_render(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["deficitflux_map", "deficitflux_div"],
+        time="12", output_dir=str(tmp_path / "out"),
+    )
+    tasks = wf.build_tasks(cfg, sel)
+
+    maps = [t for t in tasks if t[1] is wf.task_deficitflux_map]
+    divs = [t for t in tasks if t[1] is wf.task_deficitflux_div]
+    assert maps and divs, "expected deficitflux map + div tasks"
+    # args: (cfg, run, dom, case, label, valid, out, skip_existing); innermost by default
+    assert all(args[2] == 2 for _n, _fn, args in maps + divs)
+
+    use_publication_style()
+    for _name, fn, args in (maps[0], divs[0]):
+        fn(*args)
+        pngs = list(Path(args[6]).glob("*.png"))
+        assert pngs and pngs[0].stat().st_size > 0
+
+
+def test_deficitflux_transect_emits_and_renders(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    assert [t.name for t in cfg.transects] == ["gate"]
+    sel = wf.Selection(
+        cases=["main"], families=["deficitflux_transect"], output_dir=str(tmp_path / "out")
+    )
+    tasks = wf.build_tasks(cfg, sel)
+
+    # one task per configured transect; independent of the (off-grid) focus point
+    tr = [t for t in tasks if t[1] is wf.task_deficitflux_transect]
+    assert len(tr) == 1
+
+    use_publication_style()
+    _name, fn, args = tr[0]  # args: (cfg, dfx_runs, transect, out, skip_existing)
+    fn(*args)
+    pngs = list(Path(args[3]).glob("*.png"))
     assert pngs and pngs[0].stat().st_size > 0
 
 
