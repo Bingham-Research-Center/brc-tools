@@ -245,6 +245,22 @@ def dx_dy(ds) -> tuple[float, float]:
     return float(ds.attrs["DX"]), float(ds.attrs["DY"])
 
 
+def grid_cell_area_m2(ds) -> np.ndarray:
+    """Projected mass-grid cell area (m2), including the WRF map factor.
+
+    WRF's ``DX`` and ``DY`` are distances on the computational grid.  Physical
+    cell area is therefore ``DX * DY / MAPFAC_M**2``; when ``MAPFAC_M`` is not
+    present (including small synthetic fixtures), the identity map factor is
+    used.
+    """
+    dx, dy = dx_dy(ds)
+    if "MAPFAC_M" not in ds:
+        shape = surface_field(ds, "XLAT").shape
+        return np.full(shape, dx * dy, dtype=float)
+    mapfac = surface_field(ds, "MAPFAC_M")
+    return (dx * dy) / np.square(mapfac)
+
+
 def grid_spacing_label(ds) -> str:
     """Human-readable grid spacing from the ``DX`` global attr (e.g. ``3 km``, ``333 m``).
 
@@ -477,6 +493,26 @@ class _DeficitKernel:
     theta_crest: np.ndarray  # (ny, nx) K, theta interpolated to crest_m per column
 
 
+@dataclass
+class DeficitBulkFields:
+    """Bulk fields derived from one crest-referenced deficit kernel.
+
+    ``transport_velocity`` is the deficit-weighted horizontal wind ``F/H``.
+    ``froude`` is an exploratory reduced-gravity proxy based on the diagnosed
+    mean deficit and layer depth; it is not a hydraulic-control diagnosis.
+    """
+
+    heat_deficit_j_m2: np.ndarray
+    flux_x_w_m: np.ndarray
+    flux_y_w_m: np.ndarray
+    velocity_x_m_s: np.ndarray
+    velocity_y_m_s: np.ndarray
+    depth_m: np.ndarray
+    mean_deficit_k: np.ndarray
+    froude: np.ndarray
+    theta_crest_k: np.ndarray
+
+
 def _deficit_kernel(ds, crest_m: float) -> _DeficitKernel:
     """Crest-referenced deficit integrand, factored out so :func:`heat_deficit_field`,
     :func:`deficit_flux_field` and :func:`cold_pool_depth_field` share one convention
@@ -537,13 +573,17 @@ def deficit_flux_field(
 
         F = (c_p / g) * integral_{p_sfc}^{p_crest} max(theta_crest - theta, 0) * u_h dp
 
-    The wind-weighted companion of :func:`heat_deficit_field` (same kernel, so the pair
-    closes a budget: dH/dt = -div(F) + diabatic residual; the vertical boundary term
-    vanishes because the integrand -> 0 at the crest).  Clipping the deficit at zero
-    confines the transport to cold-pool air — an unclipped integral would be dominated
-    by the free troposphere.  Returns ``(Fx, Fy)`` in W per metre of transect width:
-    earth-relative for maps (default), grid-relative for divergence / along-grid
-    sections.  The deficit-weighted transport velocity is ``F / H`` (mask small H).
+    The wind-weighted companion of :func:`heat_deficit_field`.  Clipping the deficit at
+    zero confines the transport to the diagnosed cold layer — an unclipped integral
+    would be dominated by the free troposphere.  Returns ``(Fx, Fy)`` in W per metre of
+    transect width: earth-relative for maps (default), grid-relative for divergence /
+    along-grid sections.
+
+    ``-div(F)`` is the horizontal flux-convergence contribution to heat-deficit
+    tendency.  Combining it with finite-difference storage leaves an *unresolved*
+    tendency that can include diabatic physics, the time-varying local crest reference,
+    movement of the clipped layer, vertical/boundary terms, and numerical error; it is
+    not by itself a diabatic-heating diagnosis.
     """
     from scipy.integrate import trapezoid
 
@@ -556,18 +596,47 @@ def deficit_flux_field(
     return fx, fy
 
 
-def deficit_flux_divergence(ds, crest_m: float) -> np.ndarray:
-    """div(F) of the deficit transport (W m-2); ``-div(F)`` is the advective dH/dt.
+def horizontal_flux_divergence(
+    ds,
+    flux_x_w_m: np.ndarray,
+    flux_y_w_m: np.ndarray,
+    *,
+    earth_relative: bool = False,
+) -> np.ndarray:
+    """Horizontal divergence of a mass-grid flux field (W m-2).
 
-    Uses grid-relative components on the mass grid with the WRF map-factor form
-    ``m^2 * [d(Fx/m)/dx + d(Fy/m)/dy]`` (``MAPFAC_M`` ~ 1.0004 over the Uinta Basin,
-    but the form is exact; identity when the field is absent).  Central differences
-    via ``np.gradient``.
+    Inputs are grid-relative by default. Set ``earth_relative=True`` for eastward /
+    northward components; they are rotated back to the WRF grid before applying the
+    map-factor divergence.
+
+    Uses the WRF map-factor form ``m^2 * [d(Fx/m)/dx + d(Fy/m)/dy]`` and central
+    differences via ``np.gradient``.
     """
-    fx, fy = deficit_flux_field(ds, crest_m, earth_relative=False)
+    fx = np.asarray(flux_x_w_m, dtype=float)
+    fy = np.asarray(flux_y_w_m, dtype=float)
+    shape = surface_field(ds, "XLAT").shape
+    if fx.shape != shape or fy.shape != shape:
+        raise ValueError(f"flux fields must match mass-grid shape {shape}; got {fx.shape}, {fy.shape}")
+    if earth_relative:
+        cosa = surface_field(ds, "COSALPHA") if "COSALPHA" in ds else np.ones(shape)
+        sina = surface_field(ds, "SINALPHA") if "SINALPHA" in ds else np.zeros(shape)
+        fx, fy = fx * cosa + fy * sina, fy * cosa - fx * sina
     m = surface_field(ds, "MAPFAC_M") if "MAPFAC_M" in ds else np.ones_like(fx)
     dx, dy = dx_dy(ds)
     return m * m * (np.gradient(fx / m, dx, axis=1) + np.gradient(fy / m, dy, axis=0))
+
+
+def deficit_flux_divergence(ds, crest_m: float) -> np.ndarray:
+    """Horizontal ``div(F)`` of the deficit transport (W m-2).
+
+    ``-div(F)`` is the horizontal flux-convergence contribution to ``dH/dt``, not a
+    closed thermodynamic tendency or a uniquely diabatic/advective partition.
+
+    Uses grid-relative components on the mass grid; see
+    :func:`horizontal_flux_divergence` for the map-factor operator.
+    """
+    fx, fy = deficit_flux_field(ds, crest_m, earth_relative=False)
+    return horizontal_flux_divergence(ds, fx, fy)
 
 
 def cold_pool_depth_field(ds, crest_m: float, *, min_deficit_k: float = 0.0) -> np.ndarray:
@@ -585,9 +654,86 @@ def cold_pool_depth_field(ds, crest_m: float, *, min_deficit_k: float = 0.0) -> 
     return np.where(pos.any(axis=0), depth, 0.0)
 
 
+def deficit_bulk_fields(
+    ds,
+    crest_m: float,
+    *,
+    min_deficit_k: float = 0.25,
+    min_heat_deficit_j_m2: float = 1.0e5,
+) -> DeficitBulkFields:
+    """Return H, F/H, depth, mean deficit, and an exploratory bulk Froude proxy.
+
+    The active layer contains levels whose crest-relative potential-temperature
+    deficit exceeds ``min_deficit_k``.  Transport velocity is masked where ``H`` is
+    below ``min_heat_deficit_j_m2``.  The bulk Froude proxy is
+
+    ``|F/H| / sqrt(g * mean_deficit/theta_crest * depth)``.
+
+    It is useful for exploratory maps, but does not establish hydraulic control: the
+    diagnosed layer may be disconnected, the reference is local and time varying, and
+    no along-canyon control section or observed layer depth is imposed.
+    """
+    from scipy.integrate import trapezoid
+
+    kern = _deficit_kernel(ds, crest_m)
+    u, v = earth_relative_winds(ds)
+    pressure = kern.pressure_pa
+
+    deficit_dp = -trapezoid(kern.integrand, x=pressure, axis=0)
+    heat = (CP / G) * deficit_dp
+    flux_x = -(CP / G) * trapezoid(kern.integrand * u, x=pressure, axis=0)
+    flux_y = -(CP / G) * trapezoid(kern.integrand * v, x=pressure, axis=0)
+
+    valid_h = heat >= float(min_heat_deficit_j_m2)
+    velocity_x = np.divide(
+        flux_x, heat, out=np.full_like(heat, np.nan, dtype=float), where=valid_h
+    )
+    velocity_y = np.divide(
+        flux_y, heat, out=np.full_like(heat, np.nan, dtype=float), where=valid_h
+    )
+
+    active = kern.integrand > float(min_deficit_k)
+    active_dp = -trapezoid(active.astype(float), x=pressure, axis=0)
+    active_deficit_dp = -trapezoid(
+        np.where(active, kern.integrand, 0.0), x=pressure, axis=0
+    )
+    mean_deficit = np.divide(
+        active_deficit_dp,
+        active_dp,
+        out=np.full_like(heat, np.nan, dtype=float),
+        where=active_dp > 0.0,
+    )
+    pos = active
+    top = pos.shape[0] - 1 - np.argmax(pos[::-1], axis=0)
+    z_agl = kern.height_asl - surface_field(ds, "HGT")[np.newaxis]
+    depth = np.take_along_axis(z_agl, top[np.newaxis], axis=0)[0]
+    depth = np.where(pos.any(axis=0), depth, 0.0)
+
+    speed = np.hypot(velocity_x, velocity_y)
+    reduced_gravity_depth = G * mean_deficit / kern.theta_crest * depth
+    wave_speed = np.sqrt(np.clip(reduced_gravity_depth, 0.0, None))
+    froude = np.divide(
+        speed,
+        wave_speed,
+        out=np.full_like(speed, np.nan, dtype=float),
+        where=valid_h & np.isfinite(wave_speed) & (wave_speed > 0.0),
+    )
+    return DeficitBulkFields(
+        heat_deficit_j_m2=heat,
+        flux_x_w_m=flux_x,
+        flux_y_w_m=flux_y,
+        velocity_x_m_s=velocity_x,
+        velocity_y_m_s=velocity_y,
+        depth_m=depth,
+        mean_deficit_k=mean_deficit,
+        froude=froude,
+        theta_crest_k=kern.theta_crest,
+    )
+
+
 @dataclass
 class TransectFlux:
-    """Deficit transport through a vertical plane along a lat/lon line (canyon export)."""
+    """Signed horizontal transport through a vertical plane along a lat/lon line."""
 
     lats: np.ndarray  # (n,) sample latitudes along a->b
     lons: np.ndarray  # (n,) sample longitudes
@@ -600,9 +746,10 @@ class TransectFlux:
     label: str = ""
 
 
-def transect_deficit_flux(
+def integrate_flux_transect(
     ds,
-    crest_m: float,
+    flux_x_w_m: np.ndarray,
+    flux_y_w_m: np.ndarray,
     lat_a: float,
     lon_a: float,
     lat_b: float,
@@ -611,13 +758,13 @@ def transect_deficit_flux(
     spacing_m: float | None = None,
     label: str = "",
 ) -> TransectFlux:
-    """Deficit transport through the vertical plane over the a->b line (W).
+    """Integrate an earth-relative horizontal flux field across an a->b line.
 
-    Samples earth-relative ``F`` at the nearest column every ``spacing_m`` (default:
-    grid ``min(dx, dy)``) and integrates the normal component,
+    ``flux_x_w_m`` and ``flux_y_w_m`` are eastward and northward components on the
+    WRF mass grid. The function samples the nearest column every ``spacing_m``
+    (default: grid ``min(dx, dy)``) and integrates the normal component,
     ``Phi = integral F . n_hat ds``, with ``n_hat`` the rightward normal walking
-    a->b — positive ``Phi`` exports cold-pool air to the walker's right.  Flat-earth
-    metric, fine for basin-scale (< ~100 km) transects.
+    a->b. Flat-earth metric, fine for basin-scale (< ~100 km) transects.
     """
     from scipy.integrate import trapezoid
     from scipy.spatial import cKDTree
@@ -646,7 +793,12 @@ def transect_deficit_flux(
     _, idx = tree.query(np.column_stack([lats, lons]))
     jj, ii = np.unravel_index(np.asarray(idx, dtype=int), xlat.shape)
 
-    fx, fy = deficit_flux_field(ds, crest_m)  # earth-relative
+    fx = np.asarray(flux_x_w_m)
+    fy = np.asarray(flux_y_w_m)
+    if fx.shape != xlat.shape or fy.shape != xlat.shape:
+        raise ValueError(
+            f"flux fields must match mass-grid shape {xlat.shape}; got {fx.shape}, {fy.shape}"
+        )
     f_normal = fx[jj, ii] * nx_e + fy[jj, ii] * ny_n
     dist = frac * length
     return TransectFlux(
@@ -658,5 +810,37 @@ def transect_deficit_flux(
         f_normal=f_normal,
         total_w=float(trapezoid(f_normal, dist)),
         normal_en=(nx_e, ny_n),
+        label=label,
+    )
+
+
+def transect_deficit_flux(
+    ds,
+    crest_m: float,
+    lat_a: float,
+    lon_a: float,
+    lat_b: float,
+    lon_b: float,
+    *,
+    spacing_m: float | None = None,
+    label: str = "",
+) -> TransectFlux:
+    """Deficit transport through the vertical plane over the a->b line (W).
+
+    Positive ``Phi`` transports cold-pool heat deficit to the walker's right.
+    Use :func:`integrate_flux_transect` when a caller already has the earth-relative
+    deficit-flux fields and needs several transects without recomputing the column
+    integral.
+    """
+    fx, fy = deficit_flux_field(ds, crest_m)
+    return integrate_flux_transect(
+        ds,
+        fx,
+        fy,
+        lat_a,
+        lon_a,
+        lat_b,
+        lon_b,
+        spacing_m=spacing_m,
         label=label,
     )

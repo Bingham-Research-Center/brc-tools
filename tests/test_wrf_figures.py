@@ -205,6 +205,36 @@ def test_deficitflux_families_emit_and_render(tmp_path, monkeypatch):
         assert pngs and pngs[0].stat().st_size > 0
 
 
+def test_subhourly_valid_tags_are_collision_safe():
+    assert wf._valid_tag(datetime(2013, 2, 2, 12)) == "12z"
+    assert wf._valid_tag(datetime(2013, 2, 2, 12, 10)) == "1210z"
+    assert wf._valid_tag(datetime(2013, 2, 2, 12, 10, 30)) == "121030z"
+    assert wf._valid_label(datetime(2013, 2, 2, 12, 10)) == "12:10Z"
+
+
+def test_deficitbulk_and_budget_emit_and_render(tmp_path, monkeypatch):
+    monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
+    cfg = _make_case(tmp_path, monkeypatch)
+    sel = wf.Selection(
+        cases=["main"], families=["deficitbulk_map", "deficit_budget"],
+        time="12", output_dir=str(tmp_path / "out"),
+    )
+    tasks = wf.build_tasks(cfg, sel)
+    bulk = [t for t in tasks if t[1] is wf.task_deficitbulk_map]
+    budget = [t for t in tasks if t[1] is wf.task_deficit_budget]
+    assert bulk and len(budget) == 1
+
+    use_publication_style()
+    _name, fn, args = bulk[0]
+    fn(*args)
+    assert list(Path(args[6]).glob("deficitbulk_main_12z.png"))
+
+    _name, fn, args = budget[0]
+    fn(*args)
+    assert list(Path(args[5]).glob("deficit_budget_main.png"))
+    assert list(Path(args[5]).glob("deficit_budget_main.csv"))
+
+
 def test_deficitflux_transect_emits_and_renders(tmp_path, monkeypatch):
     monkeypatch.setenv("MPLCONFIGDIR", str(tmp_path / "mpl"))
     cfg = _make_case(tmp_path, monkeypatch)

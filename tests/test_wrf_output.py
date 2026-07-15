@@ -153,6 +153,24 @@ def test_deficit_flux_uniform_wind_equals_u_times_H():
     np.testing.assert_allclose(gy, fy)
 
 
+def test_grid_cell_area_and_deficit_bulk_fields():
+    """Bulk fields retain the analytic uniform-wind velocity and finite geometry."""
+    ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
+    area = wo.grid_cell_area_m2(ds)
+    dx, dy = wo.dx_dy(ds)
+    np.testing.assert_allclose(area, dx * dy)  # fixture omits MAPFAC_M: identity fallback
+
+    bulk = wo.deficit_bulk_fields(
+        ds, 1900.0, min_deficit_k=0.25, min_heat_deficit_j_m2=0.0
+    )
+    valid = np.isfinite(bulk.velocity_x_m_s) & (bulk.heat_deficit_j_m2 > 0.0)
+    assert valid.any()
+    np.testing.assert_allclose(bulk.velocity_x_m_s[valid], 5.0, rtol=1e-12)
+    np.testing.assert_allclose(bulk.velocity_y_m_s[valid], 2.0, rtol=1e-12)
+    assert np.nanmin(bulk.depth_m) >= 0.0
+    assert np.isfinite(bulk.froude[valid]).any()
+
+
 def test_deficit_flux_divergence_uniform_wind_is_advection_of_H():
     """Uniform wind: div(uH, vH) = u*dH/dx + v*dH/dy under the same discrete operator."""
     ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
@@ -162,6 +180,9 @@ def test_deficit_flux_divergence_uniform_wind_is_advection_of_H():
     expected = 5.0 * np.gradient(H, dx, axis=1) + 2.0 * np.gradient(H, dy, axis=0)
     div = wo.deficit_flux_divergence(ds, crest)
     np.testing.assert_allclose(div, expected, rtol=1e-9, atol=1e-6)
+    fx, fy = wo.deficit_flux_field(ds, crest)
+    reused = wo.horizontal_flux_divergence(ds, fx, fy, earth_relative=True)
+    np.testing.assert_allclose(reused, div, rtol=1e-12, atol=1e-12)
 
 
 def test_cold_pool_depth_field():
@@ -185,6 +206,16 @@ def test_transect_deficit_flux_normal_convention():
     np.testing.assert_allclose(tf.normal_en, (0.0, -1.0), atol=1e-12)
     np.testing.assert_allclose(tf.f_normal, -2.0 * H[tf.j, tf.i], rtol=1e-12)
     assert tf.total_w < 0.0  # deficit moves north (V > 0): leftward across an EW walk
+
+    # Reusing an already-computed field is exactly equivalent and avoids repeating
+    # the vertical column integral when several transects share one valid time.
+    fx, fy = wo.deficit_flux_field(ds, crest)
+    reused = wo.integrate_flux_transect(
+        ds, fx, fy, 40.0, -110.0, 40.0, -109.5, label="EW"
+    )
+    assert reused.total_w == pytest.approx(tf.total_w)
+    np.testing.assert_array_equal(reused.j, tf.j)
+    np.testing.assert_array_equal(reused.i, tf.i)
 
 
 def test_transect_deficit_flux_zero_length_raises():
