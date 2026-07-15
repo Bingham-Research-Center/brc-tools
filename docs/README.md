@@ -5,7 +5,7 @@ Project documentation. Topical files only — agent context lives in
 
 - **walkthroughs/** — plain-language per-tool guides + GLOSSARY (start here if new).
 - **API-REFERENCE.md** — full module / function reference.
-- **API-CLIENTS.md** — external API wrappers (FlightAware, FR24, Perplexity, Mistral) under `brc_tools/api/`.
+- **API-CLIENTS.md** — external API wrappers (FlightAware, FR24, Perplexity, Mistral, soundings, EPA AQS AirData) under `brc_tools/api/`.
 - **CASE-STUDY-GUIDE.md** — how to write a case-study script.
 - **CHPC-REFERENCE.md** — canonical CHPC account, partitions, salloc, cron (incl. HRRR upload).
 - **CROSS-REPO-SYNC.md** — protocol for keeping the four sibling repos aligned.

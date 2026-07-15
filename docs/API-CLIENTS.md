@@ -14,6 +14,7 @@ credential-holding class.
 | Perplexity Sonar | `brc_tools.api.perplexity` | `PerplexityClient` | `PERPLEXITY_API_KEY` | Pay-per-request; OpenAI-compatible |
 | Mistral | `brc_tools.api.mistral` | `MistralClient` | `MISTRAL_API_KEY` | Usage-based |
 | Radiosondes | `brc_tools.api.soundings` | `fetch_sounding()` | — (open) | IGRA2 (NCEI) + Univ. Wyoming; auth-free |
+| EPA AQS AirData | `brc_tools.api.aqs` | `download_airdata()` / `load_airdata()` | — (open) | bulk CSV zips, cached with provenance sidecars |
 
 ## Install
 
@@ -83,6 +84,31 @@ df = fetch_sounding("KSLC", datetime(2013, 2, 2, 12))   # provider="auto"
   through, so any raw IGRA2 (`USM00072572`) or Wyoming (`72572`) id works too.
 - **Consumers**: `scripts/fetch_soundings.py` (writes the offline parquet
   cache the figure batch reads) and `brc_tools.visualize.profile.LiveSounding`.
+
+## EPA AQS AirData — `brc_tools.api.aqs`
+
+Auth-free, function-based. Downloads EPA's quality-assured AirData bulk
+files (annual CSV zips) — the citable AQ record for study periods where
+Synoptic has nothing (e.g. winter 2012-13 basin ozone):
+
+```python
+from brc_tools.api.aqs import download_airdata, load_airdata, basin_site_ids
+
+zp = download_airdata("daily", "ozone", 2013)      # ~5 MB, cached
+df = load_airdata(zp, sites=basin_site_ids(),
+                  start="2013-01-01", end="2013-02-28")   # polars frame
+```
+
+- **Cache**: `BRC_TOOLS_AQS_CACHE` (default `~/.cache/brc-tools/aqs`), with a
+  `*.meta.json` provenance sidecar (URL, retrieval time, server Last-Modified).
+  Record that vintage in studies — EPA regenerates files as QA updates land.
+- **MDA8**: use `"1st Max Value"` on `Pollutant Standard == "Ozone 8-hour 2015"`
+  rows from the daily files; **don't recompute from hourly** (EPA already
+  applied completeness/day-assignment rules).
+- **`UINTA_BASIN_SITES`** registers the basin tribal/regulatory monitors;
+  `basin_site_ids()` gives their ids for filtering.
+- **Consumers**: `scripts/fetch_aqs_airdata.py` (CLI); walk-through in
+  `docs/walkthroughs/aqs.md`.
 
 ## MCP servers
 

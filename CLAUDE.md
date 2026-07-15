@@ -6,6 +6,7 @@ JSON to the BasinWX website. Package: **`brc_tools`** (underscore).
 Repo: **`brc-tools`** (hyphen).
 
 ## Current focus
+- **pelican2013 manuscript support** (final-draft push lives in `latex-jrl-mjd-mdpiair-2026`): figure engine + X8 deficit-transport diagnostics merged; the study's evidence packet pins an exact brc-tools SHA — treat `wrf_figures.py`/`wrf_output.py`/`visualize/*` as frozen unless the study repo asks.
 - HRRR/RRFS → BasinWX operational ingest (GH #10). Strategy/status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures): `docs/CASE-STUDY-GUIDE.md`.
 - **WRF-input staging**: stage GRIB → scratch as `manifest_<case>.json` + `contract_<case>.json` for `brc-wrf` (brc-tools owns staging/download + `visualize/grid.py`; WPS/`real.exe`/`wrf.exe`/run-Slurm stay in `brc-wrf`). NAM-only & GFS proven/merged; RAP blocked pre-`real.exe` (no layered soil); GEFS+NAM two-stream unproven. Cold-start SSOT: `docs/WRF-STAGING-STATE-PLAYBOOK.md`.
@@ -19,7 +20,8 @@ brc_tools/        installable package
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
   visualize/      planview + timeseries panels; grid.py (field/section plots — brc-wrf seam); figure-engine modules (surface/section/upperair/profile/domains/heatdeficit/deficitflux/basemap/style)
   download/       Synoptic obs script, push_data uploader, HRRR helpers
-  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB, auth-free)
+  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB) + aqs (EPA AQS AirData bulk), both auth-free
+  satellite/      MODIS context imagery (NASA CMR timing + GIBS corrected reflectance, cached, provenance sidecars)
   utils/          lookups, small helpers
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
@@ -87,6 +89,7 @@ load-bearing. The publication figure engine built on it (`wrf_figures.py` over
 | `BRC_TOOLS_HERBIE_CACHE` / `BRC_TOOLS_HRRR_CACHE` | NWP / HRRR GRIB cache dir override | optional |
 | `BRC_TOOLS_BASEMAP_DIR` | persistent Natural-Earth cache for figure map overlays (else `CARTOPY_DATA_DIR` → scratch); stage once via `scripts/fetch_basemap.dtn.slurm` | optional |
 | `BRC_TOOLS_MODIS_CACHE` | host-local NASA CMR metadata and GIBS corrected-reflectance PNG cache; supports offline rerendering | optional |
+| `BRC_TOOLS_AQS_CACHE` | EPA AQS AirData bulk-file cache (default `~/.cache/brc-tools/aqs`) with provenance sidecars | optional |
 | `BRC_TOOLS_LOCK_DIR` / `BRC_TOOLS_HTTP_IPV4_ONLY` | parallel-download lock dir / force IPv4 (CHPC DTN IPv6 workaround) | optional |
 
 All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var
