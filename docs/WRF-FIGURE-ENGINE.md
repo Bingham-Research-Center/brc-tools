@@ -226,8 +226,10 @@ hd_limit = 2.5                       # optional fixed ±MJ m⁻² scale for the 
 [[transects]]                        # A→B lines for deficitflux_transect (canyon gates)
 name = "ashley_gate"                 # filename slug; also labels the line on deficitflux_map
 label = "Ashley Creek canyon mouth"  # figure title
-lat_a = 40.52; lon_a = -109.60       # walk A→B: positive Φ = export to the right
-lat_b = 40.50; lon_b = -109.55
+lat_a = 40.52                        # walk A→B: positive Φ = export to the right
+lon_a = -109.60                      # (NB one key per line — semicolons are not TOML)
+lat_b = 40.50
+lon_b = -109.55
 
 [map]                                # optional Natural-Earth reference overlays (fail-soft)
 states = true                        # state / province borders
