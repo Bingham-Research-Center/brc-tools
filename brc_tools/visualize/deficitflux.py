@@ -1,11 +1,11 @@
-"""Cold-pool deficit-transport plan-view maps (flux vectors + advective tendency).
+"""Cold-pool deficit-transport maps and time-series diagnostics.
 
 The advection companion to ``visualize/heatdeficit.py``: integrated deficit transport
 (:func:`brc_tools.nwp.wrf_output.deficit_flux_field`, W m^-1 — the IVT analogue of the
 Whiteman heat deficit) rendered as quivers over the heat-deficit field, plus the
-advective tendency ``-div(F)`` (MJ m^-2 h^-1) as a symmetric diverging map.  The pair
-closes a budget with the heat-deficit map (dH/dt = -div F + diabatic), so the two
-families share the crest convention and the ``heat_deficit`` colour scale.
+horizontal flux-convergence contribution ``-div(F)`` (MJ m^-2 h^-1) as a symmetric
+diverging map.  Finite-difference storage minus that contribution is retained as an
+*unresolved* tendency rather than attributed uniquely to diabatic physics.
 
 Same offline-robust dressing as the heat-deficit maps (plain lon/lat matplotlib,
 fail-soft Natural-Earth overlays, decluttered waypoints, crest terrain contour).
@@ -115,7 +115,7 @@ def plot_deficitflux_divergence(
     overlays: dict | None = None,
     dpi: int = 300,
 ) -> Path:
-    """Advective heat-deficit tendency ``-div(F)`` (MJ m^-2 h^-1), diverging map.
+    """Horizontal heat-deficit flux convergence ``-div(F)`` (MJ m^-2 h^-1).
 
     Red = advection deepening the pool (matching the heat-deficit difference maps,
     where red = deeper).  ``smooth_sigma`` (grid cells) is display-only smoothing;
@@ -147,8 +147,154 @@ def plot_deficitflux_divergence(
     _decorate(ax, lon, lat, crest_terrain=crest_terrain, crest_m=crest_m,
               waypoints=waypoints, overlays=overlays)
     fig.colorbar(mesh, ax=ax, shrink=0.9, extend="both", label=style.label)
-    ax.set_title(f"{title}\n(red = advection deepening the pool)")
+    ax.set_title(f"{title}\n(red = horizontal convergence increasing deficit)")
     _annotate(ax, annotation)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi)
+    plt.close(fig)
+    return out
+
+
+def plot_deficit_bulk_diagnostics(
+    lon,
+    lat,
+    depth_m,
+    speed_m_s,
+    froude,
+    out_path: str | Path,
+    *,
+    styles,
+    crest_terrain=None,
+    crest_m=None,
+    title: str,
+    annotation: str | None = None,
+    waypoints: dict | None = None,
+    overlays: dict | None = None,
+    dpi: int = 300,
+) -> Path:
+    """Render exploratory depth, deficit-weighted speed, and bulk Froude maps.
+
+    These fields share the same crest-referenced active layer.  The Froude panel is a
+    reduced-gravity proxy only; the renderer deliberately labels it as exploratory and
+    does not imply a hydraulic-control diagnosis.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    out = Path(out_path)
+    fields = (np.asarray(depth_m), np.asarray(speed_m_s), np.asarray(froude))
+    labels = ("diagnosed layer depth", "deficit-weighted speed |F|/H", "exploratory bulk Froude proxy")
+    fig, axes = plt.subplots(1, 3, figsize=(14.2, 4.6), constrained_layout=True)
+    for ax, field, style, subtitle in zip(axes, fields, styles, labels):
+        mesh = ax.pcolormesh(
+            lon, lat, field, shading="auto", cmap=style.cmap,
+            vmin=style.vmin, vmax=style.vmax,
+        )
+        _decorate(
+            ax, lon, lat, crest_terrain=crest_terrain, crest_m=crest_m,
+            waypoints=waypoints, overlays=overlays,
+        )
+        fig.colorbar(mesh, ax=ax, shrink=0.82, extend=style.extend, label=style.label)
+        ax.set_title(subtitle, fontsize=9)
+    fig.suptitle(title)
+    if annotation:
+        fig.text(0.01, 0.005, annotation, fontsize=6, color="0.4", ha="left", va="bottom")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=dpi)
+    plt.close(fig)
+    return out
+
+
+def plot_deficit_budget(
+    times,
+    heat_mj_m2,
+    interval_times,
+    storage_tendency,
+    convergence_tendency,
+    unresolved_tendency,
+    out_path: str | Path,
+    *,
+    title: str,
+    spinup_end=None,
+    annotation: str | None = None,
+    dpi: int = 300,
+) -> Path:
+    """Plot area-mean storage, horizontal convergence, and unresolved tendency.
+
+    ``storage_tendency`` and ``convergence_tendency`` must already use a common time
+    interval and spatial mask.  This function does not label their difference as
+    diabatic because reference-state, clipped-layer, vertical/boundary, and numerical
+    terms may also contribute.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    out = Path(out_path)
+    times = list(times)
+    interval_times = list(interval_times)
+    heat = np.asarray(heat_mj_m2, dtype=float)
+    storage = np.asarray(storage_tendency, dtype=float)
+    convergence = np.asarray(convergence_tendency, dtype=float)
+    unresolved = np.asarray(unresolved_tendency, dtype=float)
+
+    fig = plt.figure(figsize=(10.6, 6.2), constrained_layout=True)
+    gs = fig.add_gridspec(2, 2, width_ratios=(1.45, 1.0))
+    ax_h = fig.add_subplot(gs[0, 0])
+    ax_t = fig.add_subplot(gs[1, 0], sharex=ax_h)
+    ax_s = fig.add_subplot(gs[:, 1])
+
+    ax_h.plot(times, heat, color="black", marker="o", ms=2.8, lw=1.2)
+    ax_h.set_ylabel(r"area-mean $H$ (MJ m$^{-2}$)")
+    ax_h.grid(True, alpha=0.25)
+
+    ax_t.plot(interval_times, storage, label=r"storage $\partial H/\partial t$", lw=1.3)
+    ax_t.plot(interval_times, convergence, label=r"horizontal convergence $-\nabla_h\cdot F$", lw=1.3)
+    ax_t.plot(interval_times, unresolved, label="unresolved tendency", lw=1.1, color="0.35")
+    ax_t.axhline(0.0, color="0.5", lw=0.7)
+    ax_t.set_ylabel(r"MJ m$^{-2}$ h$^{-1}$")
+    ax_t.set_xlabel("valid time (UTC)")
+    ax_t.grid(True, alpha=0.25)
+    ax_t.legend(fontsize=7, ncol=1)
+
+    if spinup_end is not None and times:
+        for ax in (ax_h, ax_t):
+            ax.axvspan(times[0], spinup_end, color="0.75", alpha=0.35, lw=0)
+        ax_h.text(0.02, 0.92, "spin-up context", transform=ax_h.transAxes,
+                  fontsize=7, color="0.35", ha="left", va="top")
+
+    finite = np.isfinite(storage) & np.isfinite(convergence)
+    if finite.any():
+        color = mdates.date2num(np.asarray(interval_times, dtype=object)[finite])
+        scat = ax_s.scatter(convergence[finite], storage[finite], c=color, cmap="viridis", s=28)
+        lo = float(min(np.nanmin(storage[finite]), np.nanmin(convergence[finite])))
+        hi = float(max(np.nanmax(storage[finite]), np.nanmax(convergence[finite])))
+        pad = 0.08 * max(hi - lo, 1.0)
+        ax_s.plot([lo - pad, hi + pad], [lo - pad, hi + pad], color="0.35", ls="--", lw=0.8)
+        ax_s.set_xlim(lo - pad, hi + pad)
+        ax_s.set_ylim(lo - pad, hi + pad)
+        if (finite.sum() >= 2 and np.nanstd(storage[finite]) > 0.0
+                and np.nanstd(convergence[finite]) > 0.0):
+            corr = float(np.corrcoef(storage[finite], convergence[finite])[0, 1])
+        else:
+            corr = float("nan")
+        rmse = float(np.sqrt(np.mean(np.square(unresolved[finite]))))
+        ax_s.set_title(f"10-min interval comparison\nr={corr:.2f}; residual RMSE={rmse:.2f}")
+        cb = fig.colorbar(scat, ax=ax_s, shrink=0.72)
+        cb.set_label("interval midpoint (UTC)")
+        cb.ax.yaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    ax_s.set_xlabel(r"$-\nabla_h\cdot F$ (MJ m$^{-2}$ h$^{-1}$)")
+    ax_s.set_ylabel(r"$\partial H/\partial t$ (MJ m$^{-2}$ h$^{-1}$)")
+    ax_s.grid(True, alpha=0.25)
+
+    fig.suptitle(title)
+    if annotation:
+        fig.text(0.01, 0.005, annotation, fontsize=6, color="0.4", ha="left", va="bottom")
+    fig.autofmt_xdate(rotation=25)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=dpi)
     plt.close(fig)

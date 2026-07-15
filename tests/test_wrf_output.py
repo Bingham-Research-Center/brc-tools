@@ -153,6 +153,24 @@ def test_deficit_flux_uniform_wind_equals_u_times_H():
     np.testing.assert_allclose(gy, fy)
 
 
+def test_grid_cell_area_and_deficit_bulk_fields():
+    """Bulk fields retain the analytic uniform-wind velocity and finite geometry."""
+    ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
+    area = wo.grid_cell_area_m2(ds)
+    dx, dy = wo.dx_dy(ds)
+    np.testing.assert_allclose(area, dx * dy)  # fixture omits MAPFAC_M: identity fallback
+
+    bulk = wo.deficit_bulk_fields(
+        ds, 1900.0, min_deficit_k=0.25, min_heat_deficit_j_m2=0.0
+    )
+    valid = np.isfinite(bulk.velocity_x_m_s) & (bulk.heat_deficit_j_m2 > 0.0)
+    assert valid.any()
+    np.testing.assert_allclose(bulk.velocity_x_m_s[valid], 5.0, rtol=1e-12)
+    np.testing.assert_allclose(bulk.velocity_y_m_s[valid], 2.0, rtol=1e-12)
+    assert np.nanmin(bulk.depth_m) >= 0.0
+    assert np.isfinite(bulk.froude[valid]).any()
+
+
 def test_deficit_flux_divergence_uniform_wind_is_advection_of_H():
     """Uniform wind: div(uH, vH) = u*dH/dx + v*dH/dy under the same discrete operator."""
     ds = make_synthetic_wrf(nz=8, ny=6, nx=6)
