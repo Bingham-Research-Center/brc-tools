@@ -180,6 +180,9 @@ def test_deficit_flux_divergence_uniform_wind_is_advection_of_H():
     expected = 5.0 * np.gradient(H, dx, axis=1) + 2.0 * np.gradient(H, dy, axis=0)
     div = wo.deficit_flux_divergence(ds, crest)
     np.testing.assert_allclose(div, expected, rtol=1e-9, atol=1e-6)
+    fx, fy = wo.deficit_flux_field(ds, crest)
+    reused = wo.horizontal_flux_divergence(ds, fx, fy, earth_relative=True)
+    np.testing.assert_allclose(reused, div, rtol=1e-12, atol=1e-12)
 
 
 def test_cold_pool_depth_field():

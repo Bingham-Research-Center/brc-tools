@@ -596,21 +596,47 @@ def deficit_flux_field(
     return fx, fy
 
 
+def horizontal_flux_divergence(
+    ds,
+    flux_x_w_m: np.ndarray,
+    flux_y_w_m: np.ndarray,
+    *,
+    earth_relative: bool = False,
+) -> np.ndarray:
+    """Horizontal divergence of a mass-grid flux field (W m-2).
+
+    Inputs are grid-relative by default. Set ``earth_relative=True`` for eastward /
+    northward components; they are rotated back to the WRF grid before applying the
+    map-factor divergence.
+
+    Uses the WRF map-factor form ``m^2 * [d(Fx/m)/dx + d(Fy/m)/dy]`` and central
+    differences via ``np.gradient``.
+    """
+    fx = np.asarray(flux_x_w_m, dtype=float)
+    fy = np.asarray(flux_y_w_m, dtype=float)
+    shape = surface_field(ds, "XLAT").shape
+    if fx.shape != shape or fy.shape != shape:
+        raise ValueError(f"flux fields must match mass-grid shape {shape}; got {fx.shape}, {fy.shape}")
+    if earth_relative:
+        cosa = surface_field(ds, "COSALPHA") if "COSALPHA" in ds else np.ones(shape)
+        sina = surface_field(ds, "SINALPHA") if "SINALPHA" in ds else np.zeros(shape)
+        fx, fy = fx * cosa + fy * sina, fy * cosa - fx * sina
+    m = surface_field(ds, "MAPFAC_M") if "MAPFAC_M" in ds else np.ones_like(fx)
+    dx, dy = dx_dy(ds)
+    return m * m * (np.gradient(fx / m, dx, axis=1) + np.gradient(fy / m, dy, axis=0))
+
+
 def deficit_flux_divergence(ds, crest_m: float) -> np.ndarray:
     """Horizontal ``div(F)`` of the deficit transport (W m-2).
 
     ``-div(F)`` is the horizontal flux-convergence contribution to ``dH/dt``, not a
     closed thermodynamic tendency or a uniquely diabatic/advective partition.
 
-    Uses grid-relative components on the mass grid with the WRF map-factor form
-    ``m^2 * [d(Fx/m)/dx + d(Fy/m)/dy]`` (``MAPFAC_M`` ~ 1.0004 over the Uinta Basin,
-    but the form is exact; identity when the field is absent).  Central differences
-    via ``np.gradient``.
+    Uses grid-relative components on the mass grid; see
+    :func:`horizontal_flux_divergence` for the map-factor operator.
     """
     fx, fy = deficit_flux_field(ds, crest_m, earth_relative=False)
-    m = surface_field(ds, "MAPFAC_M") if "MAPFAC_M" in ds else np.ones_like(fx)
-    dx, dy = dx_dy(ds)
-    return m * m * (np.gradient(fx / m, dx, axis=1) + np.gradient(fy / m, dy, axis=0))
+    return horizontal_flux_divergence(ds, fx, fy)
 
 
 def cold_pool_depth_field(ds, crest_m: float, *, min_deficit_k: float = 0.0) -> np.ndarray:
