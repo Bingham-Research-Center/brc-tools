@@ -176,6 +176,12 @@ ne = [41.7, -107.8]
 sw = [40.20, -111.50]
 ne = [40.55, -108.80]
 
+# S->N band on the Vernal meridian: Book Cliffs -> basin floor -> Uinta north slope
+# -> Flaming Gorge -> Wyoming line. Pairs with [waypoint_groups] basin_ns_landmarks.
+[regions.uinta_basin_xsection_sn]
+sw = [39.85, -109.70]
+ne = [41.15, -109.35]
+
 [regions.utah]
 sw = [36.9, -114.2]
 ne = [42.1, -108.9]
@@ -321,6 +327,26 @@ lat = 40.507
 lon = -111.413
 elevation_m = 1706
 
+[waypoints.manila]
+lat = 40.992
+lon = -109.721
+elevation_m = 1941
+
+[waypoints.dutch_john]
+lat = 40.930
+lon = -109.404
+elevation_m = 1967
+
+[waypoints.flaming_gorge_dam]
+lat = 40.914
+lon = -109.421
+elevation_m = 1843          # crest elevation
+
+[waypoints.marsh_peak]
+lat = 40.711
+lon = -109.828
+elevation_m = 3718          # highest summit of the eastern Uintas
+
 [waypoints.rangely]
 lat = 40.087
 lon = -108.796
@@ -349,6 +375,15 @@ us40_dense = [
 basin_landmarks = [
     "salt_lake_city", "heber", "strawberry", "duchesne", "roosevelt",
     "myton", "ouray", "vernal", "dinosaur", "bonanza", "rangely",
+]
+# South-to-north orientation landmarks along the Vernal meridian (~-109.53): basin
+# floor -> Vernal -> Uinta north slope -> Flaming Gorge -> the Wyoming line. All lie
+# within ~20 km of that line, so they project cleanly onto an S->N cross-section.
+# Marsh Peak is deliberately EXCLUDED (it sits ~25 km west, off this transect), and so
+# is flaming_gorge_dam -- it is ~2 km from Dutch John, so on a section the two labels
+# collide and the longer name wins the space for no extra context.
+basin_ns_landmarks = [
+    "ouray", "vernal", "dutch_john", "manila",
 ]
 
 # ── Aliases: surface / near-surface ─────────────────────────────────────────
@@ -483,10 +518,26 @@ description   = "1-hour accumulated precipitation"
 units         = "kg m-2"
 output_var    = "precip_1hr"
 synoptic_name = "precip_accum_one_hour"
+# HRRR sfc carries TWO APCP messages from f02 on -- the run total ("0-N hour acc")
+# and the hourly bucket ("N-1-N hour acc") -- so a bare "APCP:surface" matches both
+# and Herbie returns a LIST of datasets. Anchor on the hourly bucket: at f01 that is
+# "0-1 hour acc" (the only message); from f02 it is the non-zero-start bucket.
+# NB absent at f00 (analysis has no accumulation window) -- if you need a value at
+# every lead, fetch `precip_total` and difference it along time instead.
 [aliases.precip_1hr.search]
-hrrr = "APCP:surface"
+hrrr = 'APCP:surface:0-1 hour acc|APCP:surface:(?!0-)\d+-\d+ hour acc'
 gefs = "APCP:surface:0-1 hour acc"
 rrfs = "APCP:surface:0-1 hour acc"
+
+[aliases.precip_total]
+description   = "Run-total accumulated precipitation (init -> valid time)"
+units         = "kg m-2"
+output_var    = "precip_total"
+# Anchored on the "0-N" bucket so it never collides with the hourly one above.
+# Present at every lead, including f00 (labelled "0-0 day acc fcst", all zeros).
+[aliases.precip_total.search]
+hrrr = 'APCP:surface:0-\d+ (hour|day) acc'
+rrfs = 'APCP:surface:0-\d+ (hour|day) acc'
 
 [aliases.snowfall_1hr]
 description   = "1-hour accumulated snowfall"
@@ -574,6 +625,139 @@ output_var  = "pbl_height"
 hrrr = "HPBL:surface"
 rrfs = "HPBL:surface"
 
+# ── Aliases: convective / thunderstorm diagnostics (HRRR sfc, RRFS prslev) ──
+# Confirmed against the live HRRR sfc inventory (170 messages, 2026-07-15 18Z).
+# The hourly-max fields (MXUPHL / WIND / MAXREF / HAIL / MAXUVV) are labelled
+# "N-1-N hour max fcst" from f01 on and "0-0 day max fcst" at f00, so the searches
+# below deliberately stop before the window token and still match at every lead.
+
+[aliases.refl_comp]
+description = "Simulated composite reflectivity (column maximum)"
+units       = "dBZ"
+output_var  = "refl_comp"
+[aliases.refl_comp.search]
+hrrr = "REFC:entire atmosphere"
+rrfs = "REFC:entire atmosphere"
+
+[aliases.refl_1km]
+description = "Simulated reflectivity 1 km above ground"
+units       = "dBZ"
+output_var  = "refl_1km"
+[aliases.refl_1km.search]
+hrrr = "REFD:1000 m above ground"
+rrfs = "REFD:1000 m above ground"
+
+[aliases.echo_top]
+description = "Radar echo top height"
+units       = "m"
+output_var  = "echo_top"
+[aliases.echo_top.search]
+hrrr = "RETOP:cloud top"
+rrfs = "RETOP:cloud top"
+
+[aliases.prate]
+description = "Instantaneous surface precipitation rate"
+units       = "kg m-2 s-1"
+output_var  = "prate"
+[aliases.prate.search]
+hrrr = "PRATE:surface"
+rrfs = "PRATE:surface"
+
+[aliases.pwat]
+description = "Precipitable water (whole column)"
+units       = "kg m-2"
+output_var  = "pwat"
+[aliases.pwat.search]
+hrrr = "PWAT:entire atmosphere"
+rrfs = "PWAT:entire atmosphere"
+
+[aliases.cape_ml]
+description = "Mixed-layer CAPE (lowest 180 hPa mean parcel)"
+units       = "J kg-1"
+output_var  = "cape_ml"
+[aliases.cape_ml.search]
+hrrr = "CAPE:180-0 mb above ground"
+rrfs = "CAPE:180-0 mb above ground"
+
+[aliases.cin_ml]
+description = "Mixed-layer CIN (lowest 180 hPa mean parcel)"
+units       = "J kg-1"
+output_var  = "cin_ml"
+[aliases.cin_ml.search]
+hrrr = "CIN:180-0 mb above ground"
+rrfs = "CIN:180-0 mb above ground"
+
+[aliases.cape_mu]
+description = "Most-unstable CAPE (lowest 255 hPa)"
+units       = "J kg-1"
+output_var  = "cape_mu"
+[aliases.cape_mu.search]
+hrrr = "CAPE:255-0 mb above ground"
+rrfs = "CAPE:255-0 mb above ground"
+
+[aliases.srh_0to3km]
+description = "0-3 km storm-relative helicity"
+units       = "m2 s-2"
+output_var  = "srh_0to3km"
+[aliases.srh_0to3km.search]
+hrrr = "HLCY:3000-0 m above ground"
+rrfs = "HLCY:3000-0 m above ground"
+
+[aliases.srh_0to1km]
+description = "0-1 km storm-relative helicity"
+units       = "m2 s-2"
+output_var  = "srh_0to1km"
+[aliases.srh_0to1km.search]
+hrrr = "HLCY:1000-0 m above ground"
+rrfs = "HLCY:1000-0 m above ground"
+
+[aliases.shear_u_0to6km]
+description = "0-6 km bulk shear, eastward component"
+units       = "m s-1"
+output_var  = "shear_u_0to6km"
+[aliases.shear_u_0to6km.search]
+hrrr = "VUCSH:0-6000 m above ground"
+rrfs = "VUCSH:0-6000 m above ground"
+
+[aliases.shear_v_0to6km]
+description = "0-6 km bulk shear, northward component"
+units       = "m s-1"
+output_var  = "shear_v_0to6km"
+[aliases.shear_v_0to6km.search]
+hrrr = "VVCSH:0-6000 m above ground"
+rrfs = "VVCSH:0-6000 m above ground"
+
+[aliases.uphel_max_2to5km]
+description = "Hourly-maximum 2-5 km updraft helicity"
+units       = "m2 s-2"
+output_var  = "uphel_max_2to5km"
+[aliases.uphel_max_2to5km.search]
+hrrr = "MXUPHL:5000-2000 m above ground"
+rrfs = "MXUPHL:5000-2000 m above ground"
+
+[aliases.updraft_max]
+description = "Hourly-maximum updraft vertical velocity (100-1000 hPa AGL)"
+units       = "m s-1"
+output_var  = "updraft_max"
+[aliases.updraft_max.search]
+hrrr = "MAXUVV:100-1000 mb above ground"
+rrfs = "MAXUVV:100-1000 mb above ground"
+
+[aliases.wind_max_10m]
+description = "Hourly-maximum 10 m wind speed (distinct from the GUST diagnostic)"
+units       = "m s-1"
+output_var  = "wind_max_10m"
+[aliases.wind_max_10m.search]
+hrrr = "WIND:10 m above ground"
+rrfs = "WIND:10 m above ground"
+
+[aliases.lightning]
+description = "Lightning flash rate"
+units       = "flashes km-2 s-1"
+output_var  = "lightning"
+[aliases.lightning.search]
+hrrr = "LTNG:entire atmosphere"
+
 # ── Aliases: pressure levels (3-D, caller passes levels=[...]) ──────────────
 # {level} placeholder is substituted per requested level (hPa).
 
@@ -650,6 +834,19 @@ rrfs = "RH:{level} mb"
 [aliases.rh_pl.products]
 hrrr = "prs"
 gefs = "atmos.25"
+rrfs = "prslev"
+
+[aliases.dewpoint_pl]
+description    = "Dewpoint on pressure levels"
+units          = "K"
+output_var     = "dewpoint"
+vertical_kind  = "pressure"
+default_levels = [1000, 925, 850, 700, 500]
+[aliases.dewpoint_pl.search]
+hrrr = "DPT:{level} mb"
+rrfs = "DPT:{level} mb"
+[aliases.dewpoint_pl.products]
+hrrr = "prs"
 rrfs = "prslev"
 
 [aliases.omega_pl]

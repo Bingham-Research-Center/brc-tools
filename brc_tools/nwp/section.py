@@ -44,6 +44,7 @@ class NWPSection:
     w2d: np.ndarray  # (nz, n) vertical velocity, m/s
     terrain1d: np.ndarray  # (n,) m ASL
     pressure_hpa: np.ndarray  # (nz,)
+    thetae2d: np.ndarray | None = None  # (nz, n) equiv. potential temp, K (needs dewpoint)
     termini: tuple[str, str] = ("A", "B")
     orientation: str = "EW"  # accent-colour key for the crosssection helpers
 
@@ -79,6 +80,7 @@ def extract_nwp_section(
     *,
     n_points: int = 220,
     prefixes: tuple[str, str, str, str, str] = ("wind_u", "wind_v", "temp", "height", "omega"),
+    dewpoint_prefix: str | None = "dewpoint",
     terrain_var: str = "terrain_height",
     time_index: int = 0,
     termini: tuple[str, str] = ("A", "B"),
@@ -98,6 +100,10 @@ def extract_nwp_section(
         Samples along the line (nearest model column per sample).
     prefixes : (u, v, temp, height, omega)
         Variable-name prefixes; ``{prefix}_{level}`` is looked up per level.
+    dewpoint_prefix : str or None
+        Prefix for per-level dewpoint (K).  When every level is present,
+        ``thetae2d`` (equivalent potential temperature) is computed via Bolton
+        (1980); otherwise it stays ``None``.  Pass ``None`` to skip.
     terrain_var : str
         2-D terrain-height variable name (m ASL) for the terrain floor + masking.
 
@@ -129,6 +135,9 @@ def extract_nwp_section(
     temp = np.full((nz, n), np.nan)
     hgt = np.full((nz, n), np.nan)
     omega = np.full((nz, n), np.nan)
+    has_td = dewpoint_prefix is not None and all(
+        f"{dewpoint_prefix}_{lev}" in ds for lev in levels)
+    dewpoint = np.full((nz, n), np.nan) if has_td else None
     for k, lev in enumerate(levels):
         u[k] = gather(f"{up}_{lev}")
         v[k] = gather(f"{vp}_{lev}")
@@ -136,11 +145,17 @@ def extract_nwp_section(
         hgt[k] = gather(f"{hp}_{lev}")
         if f"{op}_{lev}" in ds:
             omega[k] = gather(f"{op}_{lev}")
+        if has_td:
+            dewpoint[k] = gather(f"{dewpoint_prefix}_{lev}")
     terrain1d = gather(terrain_var)
 
     pres_pa = (np.array(levels, dtype=float) * 100.0)[:, None]  # (nz, 1)
     speed = np.hypot(u, v)
     theta = temp * (_P0 / pres_pa) ** _RCP
+    thetae = None
+    if has_td:
+        from brc_tools.nwp.derived import theta_e
+        thetae = np.asarray(theta_e(temp, dewpoint, pres_pa / 100.0), dtype=float)
     # omega (Pa/s) -> geometric w (m/s):  w = -omega * R_d * T / (p * g)
     w = -omega * _RD * temp / (pres_pa * _G)
 
@@ -157,7 +172,7 @@ def extract_nwp_section(
     # extrapolated); keep height2d valid so pcolormesh can still place the cells,
     # and let the terrain fill cover them.
     below = hgt < terrain1d[None, :]
-    for a in (speed, theta, temp, along, w):
+    for a in (speed, theta, temp, along, w) + ((thetae,) if thetae is not None else ()):
         a[below] = np.nan
 
     return NWPSection(
@@ -172,5 +187,6 @@ def extract_nwp_section(
         w2d=w,
         terrain1d=terrain1d,
         pressure_hpa=np.array(levels, dtype=float),
+        thetae2d=thetae,
         termini=termini,
     )

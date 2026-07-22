@@ -192,7 +192,9 @@ def _geo_locator_inset(ax, section, locator):
     terr2d = np.asarray(locator["terrain2d"], dtype=float)
     extent = locator.get("extent") or (
         float(lon2d.min()), float(lon2d.max()), float(lat2d.min()), float(lat2d.max()))
-    axins = ax.inset_axes([0.66, 0.60, 0.34, 0.40])
+    # A tall/narrow transect (e.g. S->N) wants a different inset box than a wide one,
+    # so the caller may override the default top-right placement.
+    axins = ax.inset_axes(locator.get("rect") or [0.66, 0.60, 0.34, 0.40])
     axins.contourf(lon2d, lat2d, terr2d, levels=12, cmap="terrain", alpha=0.85, zorder=0)
     add_reference_overlays(axins, extent,
                            layers={"states": True, "counties": True, "roads": False,
@@ -209,6 +211,12 @@ def _geo_locator_inset(ax, section, locator):
     axins.set_aspect(1.0 / np.cos(np.deg2rad(0.5 * (extent[2] + extent[3]))))
     axins.set_xticks([])
     axins.set_yticks([])
+    # Sit above the quivers (zorder 8), which would otherwise stripe straight across the
+    # locator map, but below the town markers/labels (zorder 9) so a transect whose
+    # landmarks run under the inset still reads them.
+    axins.set_zorder(8.5)
+    axins.patch.set_facecolor("white")
+    axins.patch.set_alpha(1.0)
     for sp in axins.spines.values():
         sp.set_edgecolor(_ACCENT)
 
@@ -247,10 +255,15 @@ def _smooth1d(a, window=3):
     return out
 
 
+_SECTION_SHADE = {"speed": "speed2d", "theta_e": "thetae2d", "theta": "theta2d",
+                  "temp": "temp2d", "along": "along2d"}
+
+
 def plot_nwp_section(
     section,
     out_path,
     *,
+    shade: str = "speed",
     style=None,
     title: str,
     annotation: str | None = None,
@@ -268,17 +281,32 @@ def plot_nwp_section(
 ) -> Path:
     """Render an :class:`~brc_tools.nwp.section.NWPSection` as a terrain-filled curtain.
 
-    Wind speed is shaded on a true-altitude (m ASL) axis capped at ``y_top_m``;
-    in-plane vectors show along-transect + (exaggerated) vertical wind; thin
-    contours mark potential temperature. Columns are interpolated onto a regular
-    ``dz_m`` height grid for a smooth curtain. ``locator`` (``{lon2d, lat2d,
-    terrain2d, extent?, waypoints?}``) draws the geographic inset; ``waypoints``
-    marks towns within ``waypoint_offset_km`` of the line.
+    ``shade`` selects the shaded field -- ``"speed"`` (default, the wind case),
+    ``"theta_e"`` (moist instability; needs a section built with dewpoint),
+    ``"theta"``, ``"temp"``, or ``"along"`` -- and is shaded on a true-altitude
+    (m ASL) axis capped at ``y_top_m``. Pass a matching ``style`` for anything but
+    the default. In-plane vectors show along-transect + (exaggerated) vertical
+    wind; thin contours mark potential temperature. Columns are interpolated onto
+    a regular ``dz_m`` height grid for a smooth curtain. ``locator`` (``{lon2d,
+    lat2d, terrain2d, extent?, waypoints?}``) draws the geographic inset;
+    ``waypoints`` marks towns within ``waypoint_offset_km`` of the line; an optional
+    ``locator["rect"]`` (axes-fraction ``[x, y, w, h]``) moves/resizes that inset.
+
+    ``w_exaggeration`` scales the vertical component of the in-plane vectors. A
+    sensible default is the plot's own aspect ratio (transect length / ``y_top_m``),
+    so a deep section wants a much smaller value than a shallow one.
     """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    if shade not in _SECTION_SHADE:
+        raise ValueError(f"shade must be one of {sorted(_SECTION_SHADE)}, got {shade!r}")
+    shade_arr = getattr(section, _SECTION_SHADE[shade])
+    if shade_arr is None:
+        raise ValueError(
+            f"section has no {_SECTION_SHADE[shade]} for shade={shade!r} -- rebuild it "
+            "with extract_nwp_section(..., dewpoint_prefix=...)")
     st = style if style is not None else get_style("wind_speed_10m")
     dist = np.asarray(section.distance_km, dtype=float)
     terrain = np.asarray(section.terrain1d, dtype=float)
@@ -286,17 +314,17 @@ def plot_nwp_section(
     y_bottom = _terrain_floor(terrain)
 
     heights = np.arange(y_bottom, y_top_m + dz_m, dz_m)
-    speed = _interp_to_heights(section, section.speed2d, heights)
+    shaded = _interp_to_heights(section, shade_arr, heights)
     theta = _interp_to_heights(section, section.theta2d, heights)
     along = _interp_to_heights(section, section.along2d, heights)
     w = _interp_to_heights(section, section.w2d, heights)
     below = heights[:, None] < terr_disp[None, :]
-    for a in (speed, theta, along, w):
+    for a in (shaded, theta, along, w):
         a[below] = np.nan
 
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
     ax.set_facecolor("0.6")  # below-ground / below-lowest-level cells read as terrain
-    mesh = ax.pcolormesh(dist, heights, speed, cmap=st.cmap, vmin=st.vmin, vmax=st.vmax,
+    mesh = ax.pcolormesh(dist, heights, shaded, cmap=st.cmap, vmin=st.vmin, vmax=st.vmax,
                          shading="gouraud")
     fig.colorbar(mesh, ax=ax, shrink=0.85, extend=st.extend, label=st.label)
 
