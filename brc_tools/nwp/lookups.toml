@@ -309,6 +309,28 @@ lon = -109.357
 elevation_m = 1475
 reference_stid = "SPMU1"
 
+# ── Orientation landmarks (towns/cities for map + section labels; not obs sites) ──
+
+[waypoints.salt_lake_city]
+lat = 40.760
+lon = -111.890
+elevation_m = 1288
+
+[waypoints.heber]
+lat = 40.507
+lon = -111.413
+elevation_m = 1706
+
+[waypoints.rangely]
+lat = 40.087
+lon = -108.796
+elevation_m = 1621
+
+[waypoints.bonanza]
+lat = 40.017
+lon = -109.179
+elevation_m = 1596
+
 [waypoint_groups]
 us40_basin = ["fruitland", "duchesne", "myton", "roosevelt", "vernal"]
 basin_full = ["fruitland", "duchesne", "myton", "roosevelt", "vernal", "dinosaur"]
@@ -321,6 +343,12 @@ us40_dense = [
     "duchesne", "little_red_fox", "myton", "roosevelt",
     "fort_duchesne", "east_lapoint", "asphalt_ridge", "vernal",
     "split_mountain", "dinosaur",
+]
+# West-to-east orientation landmarks (Salt Lake Valley -> Rangely), for cross-section
+# transects and map context.
+basin_landmarks = [
+    "salt_lake_city", "heber", "strawberry", "duchesne", "roosevelt",
+    "myton", "ouray", "vernal", "dinosaur", "bonanza", "rangely",
 ]
 
 # ── Aliases: surface / near-surface ─────────────────────────────────────────
@@ -440,6 +468,15 @@ synoptic_name = "pressure"
 hrrr = "PRES:surface"
 gefs = "PRES:surface"
 rrfs = "PRES:surface"
+
+[aliases.terrain_height]
+description   = "Model terrain height (surface geopotential height / orography)"
+units         = "gpm"
+output_var    = "terrain_height"
+[aliases.terrain_height.search]
+hrrr = "HGT:surface"
+gefs = "HGT:surface"
+rrfs = "HGT:surface"
 
 [aliases.precip_1hr]
 description   = "1-hour accumulated precipitation"

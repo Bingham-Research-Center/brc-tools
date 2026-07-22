@@ -33,6 +33,7 @@ from pathlib import Path
 # (category, dataset name) for each layer the overlays can draw.
 _LAYERS = [
     ("cultural", "admin_1_states_provinces_lakes"),
+    ("cultural", "admin_2_counties"),
     ("cultural", "roads"),
     ("cultural", "populated_places"),  # city labels (forecast-funnel + opt-in overlays)
     ("physical", "rivers_lake_centerlines"),
