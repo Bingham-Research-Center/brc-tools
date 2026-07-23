@@ -20,6 +20,12 @@ member_required      = false
 grid                 = "lambert_conformal"
 nearest_point_method = "kdtree_2d"
 crop_method          = "lonlat_after_aux"
+# WRF-input staging (wrf_staging.stage_hrrr): whole raw-GRIB product files → scratch.
+# cadence_hours is the hourly lead/LBC interval WPS drives HRRR at (→ interval_seconds
+# in the case contract); wps_fg_name is the metgrid fg_name token. Both are read only by
+# wrf_staging.build_contract — the operational NWPSource path keys off init_cadence_hours.
+cadence_hours        = 1
+wps_fg_name          = "HRRR"
 
 [models.hrrr.products]
 sfc  = { description = "Surface 2-D",           herbie_name = "sfc"  }

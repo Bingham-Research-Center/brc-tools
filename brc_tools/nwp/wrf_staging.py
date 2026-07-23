@@ -28,6 +28,15 @@ The land-sea mask, SST, skin temp, and soil that the reforecast lacks come from 
 NAM analysis works either as a standalone single-stream WRF forcing (the validated
 Feb-2013 Basin recipe, ``Vtable.NAM``) or as the reforecast's second metgrid stream;
 the WPS-side fusion (``Vtable.NAM`` + ``fg_name``) lives in the brc-wrf repo.
+
+For recent, high-resolution cases (e.g. the Feb-2026 Ashley seiche) the forcing is the
+operational **HRRR** (Herbie model ``hrrr``), staged by :func:`stage_hrrr` as *whole raw
+GRIB product files* — one per ``(product, lead)``. Both the ``nat`` (native hybrid
+levels) and ``sfc`` (surface 2-D) products are staged and labelled per file so metgrid
+can draw the full column plus the surface/soil fields from one source. As with the other
+paths this uses ``Herbie.download()`` (retains the GRIB, no ``xarray``, no crop). How
+``ungrib``/``metgrid`` merge the two products onto one valid time (``fg_name`` + Vtable)
+is a WPS-side (brc-wrf) concern that still needs its own field proof (Gate C).
 """
 
 from __future__ import annotations
@@ -69,8 +78,10 @@ DEFAULT_SCRATCH_ROOT = Path(
 )
 TOOL_NAME = "brc-tools"
 # v2: added staged_files[].lead_times_source + provenance.total_bytes/elapsed_seconds.
+# v3: added staged_files[].valid_time (null for multi-lead reforecast files, init_time for
+#     analysis, init+lead for single-lead HRRR forecast files).
 # Additive only; brc-wrf reads the contract sidecar, and verify_manifest still reads v1.
-MANIFEST_SCHEMA_VERSION = 2
+MANIFEST_SCHEMA_VERSION = 3
 CONTRACT_SCHEMA_VERSION = 1
 
 # Split HTTP timeouts for direct GETs: a short connect bound (so a wedged socket
@@ -139,10 +150,16 @@ class StagedFile:
     sha256: str
     created_at: str
     # Provenance of ``lead_times``: "inventory" (parsed from a live Herbie inventory at
-    # download), "analysis" (NAM single-cycle, always [0]), "idx" (recovered from a
+    # download), "analysis" (NAM single-cycle, always [0]), "request" (HRRR whole-file:
+    # the lead is a request parameter, no inventory call), "idx" (recovered from a
     # co-located ``<file>.idx`` on the skip-existing path), or "skip-no-idx" (skip path
     # with no sidecar idx — ``lead_times`` is empty; re-run with overwrite for full fidelity).
     lead_times_source: str = "inventory"
+    # Valid time (``%Y-%m-%dT%H:%M:%SZ``) of this file. ``None`` for whole-file sources
+    # spanning many leads (reforecast bucket) where no single valid time applies; equal to
+    # ``init_time`` for analysis (init == valid); ``init + lead`` for a single-lead forecast
+    # file (HRRR). Additive in manifest schema v3 (see ``MANIFEST_SCHEMA_VERSION``).
+    valid_time: str | None = None
 
 
 # ── token / path helpers ────────────────────────────────────────────────────
@@ -591,7 +608,7 @@ DEFAULT_NAM_SOURCE = "nam_analysis"
 DEFAULT_NAM_CADENCE_HOURS = 6
 # WPS fg_name token per staging source; build_contract prefers the lookups model's
 # wps_fg_name and falls back to this map so a non-NAM source is never stamped GEFS.
-_FG_NAME_FALLBACK = {"nam_analysis": "NAM", "gefs_reforecast": "GEFS", "rap_analysis": "RAP", "gfs_analysis": "GFS"}
+_FG_NAME_FALLBACK = {"nam_analysis": "NAM", "gefs_reforecast": "GEFS", "rap_analysis": "RAP", "gfs_analysis": "GFS", "hrrr": "HRRR"}
 
 
 def _snap_down_to_cadence(t: dt.datetime, cadence_hours: int) -> dt.datetime:
@@ -819,6 +836,256 @@ def stage_gfs_analysis(**kwargs) -> list[StagedFile]:
     """
     kwargs["source"] = "gfs_analysis"
     return stage_nam_analysis(**kwargs)
+
+
+# ── HRRR raw-GRIB whole-file staging (recent high-res cases) ──────────────────
+
+
+DEFAULT_HRRR_SOURCE = "hrrr"
+DEFAULT_HRRR_CASE = "ashley2026_seiche"
+# Feb-2026 Ashley seiche experiment defaults: UTC-naive init, hourly leads, both
+# products. ``leads``/``products`` are tuples so the module defaults stay immutable.
+DEFAULT_HRRR_INIT = "2026-02-21 18:00"
+DEFAULT_HRRR_LEADS = (12, 13)
+DEFAULT_HRRR_PRODUCTS = ("nat", "sfc")
+DEFAULT_HRRR_INTERVAL_SECONDS = 3600
+
+
+def _hrrr_filename(init_dt: dt.datetime, lead: int, product: str) -> str:
+    """Deterministic staged filename for one HRRR ``(lead, product)`` whole file.
+
+    e.g. ``hrrr_2026022118_f12_nat.grib2`` — (init, lead, product) keep ``nat``/``sfc``
+    and each lead distinct in the flat ``<case>/hrrr/`` directory.
+    """
+    return f"hrrr_{init_dt:%Y%m%d%H}_f{int(lead):02d}_{product}.grib2"
+
+
+def _hrrr_remote_url(init_dt: dt.datetime, lead: int, product: str) -> str:
+    """Deterministic public S3 URL for one HRRR whole product file (AWS bdp mirror)."""
+    return (
+        "https://noaa-hrrr-bdp-pds.s3.amazonaws.com/"
+        f"hrrr.{init_dt:%Y%m%d}/conus/hrrr.t{init_dt:%H}z.wrf{product}f{int(lead):02d}.grib2"
+    )
+
+
+def _hrrr_staged_file(
+    dest: Path, init_dt: dt.datetime, lead: int, product: str, source: str, remote_url: str
+) -> StagedFile:
+    """Provenance record for one staged HRRR whole file (single lead, whole product)."""
+    valid = init_dt + dt.timedelta(hours=int(lead))
+    return StagedFile(
+        source=source,
+        herbie_model="hrrr",
+        member="",  # HRRR is deterministic: no ensemble member
+        member_int=0,
+        init_time=_isoformat_utc(init_dt),
+        variable_level="all",  # whole file; the WPS Vtable/metgrid selects fields
+        fxx_bucket=f"f{int(lead):02d}",
+        lead_times=[int(lead)],
+        product=product,  # "nat" or "sfc" — the HRRR product label
+        local_path=str(dest),
+        remote_url=remote_url,
+        size_bytes=dest.stat().st_size,
+        sha256=_sha256(dest),
+        created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+        lead_times_source="request",  # lead is a request param, not an inventory read
+        valid_time=_isoformat_utc(valid),
+    )
+
+
+def stage_hrrr(
+    *,
+    init: str | dt.datetime = DEFAULT_HRRR_INIT,
+    leads: list[int] | tuple[int, ...] = DEFAULT_HRRR_LEADS,
+    products: list[str] | tuple[str, ...] = DEFAULT_HRRR_PRODUCTS,
+    output_root: str | Path = DEFAULT_SCRATCH_ROOT,
+    case: str = DEFAULT_HRRR_CASE,
+    source: str = DEFAULT_HRRR_SOURCE,
+    herbie_save_dir: str | Path | None = None,
+    overwrite: bool = False,
+    keep_herbie_cache: bool = False,
+) -> list[StagedFile]:
+    """Stage whole raw HRRR GRIB product files (one per ``(product, lead)``) to scratch.
+
+    The recent-high-res forcing path (e.g. the Feb-2026 Ashley seiche): unlike the
+    reforecast, HRRR keeps every field for one lead in one product file, so a single
+    ``Herbie.download()`` per ``(product, lead)`` retrieves the **whole** file. The GRIB
+    is **retained** (``download()``, never ``xarray``) and **not cropped/subset** — WPS
+    needs the full native grid and field set. Files are moved into the canonical
+    ``<output_root>/<case>/<source>/`` layout (no member level; HRRR is deterministic).
+
+    Parameters
+    ----------
+    init : str or datetime
+        HRRR model init (UTC-naive), e.g. ``"2026-02-21 18:00"``.
+    leads : list[int]
+        Forecast leads (hours) to stage, e.g. ``[12, 13]``. One whole file per lead.
+    products : list[str]
+        HRRR products to stage, e.g. ``["nat", "sfc"]`` — native hybrid levels and
+        surface 2-D. Both are staged and labelled; the WPS-side two-product merge is a
+        brc-wrf concern (Gate C).
+    output_root, case, source
+        Canonical staging root, case name, and source token (``"hrrr"``).
+    herbie_save_dir : path, optional
+        Herbie's working cache before the move. Pass a path on the same filesystem as
+        ``output_root`` to make the move a rename.
+    overwrite : bool
+        Re-download even if a valid file already exists at the canonical path.
+    keep_herbie_cache : bool
+        Copy out of Herbie's cache instead of moving (leaves the cache populated).
+
+    Returns
+    -------
+    list[StagedFile]
+        One record per staged file. Does not write the manifest.
+    """
+    init_dt = _parse_init_time(init)
+    lu = load_lookups()
+    cfg = lu["models"].get(source, {})
+    herbie_model = cfg.get("herbie_model", "hrrr")
+
+    leads = [int(x) for x in leads]
+    products = list(products)
+    if not leads:
+        raise ValueError("stage_hrrr needs at least one forecast lead.")
+    if not products:
+        raise ValueError("stage_hrrr needs at least one product (e.g. 'nat', 'sfc').")
+
+    save_dir = (
+        Path(herbie_save_dir)
+        if herbie_save_dir is not None
+        else Path(tempfile.gettempdir()) / "brc_wrf_staging_cache"
+    )
+    save_dir.mkdir(parents=True, exist_ok=True)
+    lock_dir = os.environ.get("BRC_TOOLS_LOCK_DIR") or tempfile.gettempdir()
+
+    staged: list[StagedFile] = []
+    for product in products:
+        for lead in leads:
+            filename = _hrrr_filename(init_dt, lead, product)
+            dest = _canonical_staging_path(output_root, case, source, "", filename)
+
+            lock_name = f"stage_{herbie_model}_{init_dt:%Y%m%d_%H}_f{lead:02d}_{product}.lock"
+            lock = fasteners.InterProcessLock(os.path.join(lock_dir, lock_name))
+
+            with lock:
+                if not overwrite and dest.exists() and validate_cached_grib(dest):
+                    LOG.info("skip (already staged): %s", dest)
+                    staged.append(
+                        _hrrr_staged_file(
+                            dest, init_dt, lead, product, source,
+                            _hrrr_remote_url(init_dt, lead, product),
+                        )
+                    )
+                    continue
+
+                H = Herbie(
+                    init_dt,
+                    model=herbie_model,
+                    fxx=lead,
+                    product=product,
+                    save_dir=str(save_dir),
+                )
+                # Whole-file download (search=None): retain the full raw GRIB — no
+                # byte-range subset, no crop — WPS needs every field on the native grid.
+                local = _download(H)
+                if not validate_cached_grib(local):
+                    purge_cached_files(H)
+                    raise RuntimeError(f"Downloaded HRRR GRIB failed validation: {local}")
+
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if keep_herbie_cache:
+                    shutil.copy2(local, dest)
+                else:
+                    shutil.move(str(local), str(dest))
+
+                remote_url = _remote_url(H) or _hrrr_remote_url(init_dt, lead, product)
+                staged.append(
+                    _hrrr_staged_file(dest, init_dt, lead, product, source, remote_url)
+                )
+                LOG.info(
+                    "staged hrrr %s f%02d -> %s (%d bytes)",
+                    product, lead, dest, dest.stat().st_size,
+                )
+    return staged
+
+
+def stage_hrrr_case(
+    *,
+    case: str = DEFAULT_HRRR_CASE,
+    init: str | dt.datetime = DEFAULT_HRRR_INIT,
+    region: str = DEFAULT_REGION,
+    leads: list[int] | tuple[int, ...] = DEFAULT_HRRR_LEADS,
+    products: list[str] | tuple[str, ...] = DEFAULT_HRRR_PRODUCTS,
+    interval_seconds: int = DEFAULT_HRRR_INTERVAL_SECONDS,
+    output_root: str | Path = DEFAULT_SCRATCH_ROOT,
+    source: str = DEFAULT_HRRR_SOURCE,
+    quicklook: bool = False,
+    **stage_kwargs,
+) -> Path:
+    """Stage HRRR raw GRIB for a case; write ``manifest_<case>.json`` + ``contract_<case>.json``.
+
+    Stages every ``(product, lead)`` via :func:`stage_hrrr`, then emits the same manifest
+    + contract sidecars the reforecast/analysis paths write, so brc-wrf consumes all
+    sources uniformly. The contract carries ``sources=["hrrr"]``, ``wps_fg_name=["HRRR"]``
+    (from ``[models.hrrr]`` in lookups), and ``interval_seconds`` (the intended metgrid/WRF
+    LBC interval — the hourly HRRR lead cadence by default). Returns the manifest path.
+    """
+    init_dt = _parse_init_time(init)
+    lu = load_lookups()
+    leads = [int(x) for x in leads]
+    interval_hours = max(int(round(int(interval_seconds) / 3600)), 1)
+
+    t0 = time.perf_counter()  # end-to-end staging wall-time (incl. sha256 + move)
+    staged = stage_hrrr(
+        init=init_dt,
+        leads=leads,
+        products=products,
+        output_root=output_root,
+        case=case,
+        source=source,
+        **stage_kwargs,
+    )
+
+    # Valid-time window = earliest/latest staged lead (init + lead).
+    window = (
+        _isoformat_utc(init_dt + dt.timedelta(hours=min(leads))),
+        _isoformat_utc(init_dt + dt.timedelta(hours=max(leads))),
+    )
+    manifest = build_manifest(
+        case=case,
+        region=region,
+        requested_window=window,
+        interval_hours=interval_hours,
+        sources=[source],
+        staged=staged,
+        elapsed_seconds=time.perf_counter() - t0,
+    )
+    # Swap the reforecast-specific note for the HRRR one (records the open Gate-C merge).
+    manifest["case"]["note"] = (
+        "HRRR whole raw-GRIB product files staged per (product, lead); the nat + sfc "
+        "products both cover each valid time. interval_hours is the intended metgrid/WRF "
+        "LBC interval. Merging the two products onto one valid time (ungrib fg_name + "
+        "Vtable) is a WPS-side (brc-wrf) concern that still needs its own field proof "
+        "(Gate C) -- not resolved here."
+    )
+    case_dir = Path(output_root) / case
+    manifest_path = write_manifest(manifest, case_dir)
+    LOG.info("wrote manifest %s (%d files)", manifest_path, len(staged))
+
+    contract = build_contract(manifest, lu)
+    # The explicit HRRR LBC interval is authoritative; pin it onto the contract so it
+    # matches the param even if it ever diverges from the lookups cadence (default: both
+    # are 3600 s / 1 h).
+    contract["interval_seconds"] = int(interval_seconds)
+    contract["interval_hours"] = interval_hours
+    contract_path = write_contract(contract, case_dir, case)
+    LOG.info("wrote contract %s", contract_path)
+
+    if quicklook and staged:
+        _run_quicklook(staged, region=region, case=case)
+
+    return manifest_path
 
 
 # ── manifest ────────────────────────────────────────────────────────────────
@@ -1315,7 +1582,7 @@ def _run_obs_check(*, case: str, init_dt: dt.datetime) -> None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the WRF-input staging script."""
     parser = argparse.ArgumentParser(
-        description="Stage WPS/WRF-ready GRIB inputs (GEFS reforecast or NAM/RAP/GFS analysis) to scratch.",
+        description="Stage WPS/WRF-ready GRIB inputs (GEFS reforecast, NAM/RAP/GFS analysis, or HRRR raw-GRIB) to scratch.",
     )
     parser.add_argument("--case", default=DEFAULT_CASE, help="Case name (output subdir).")
     parser.add_argument(
@@ -1333,7 +1600,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--source",
         default=DEFAULT_SOURCE,
-        help="Comma list of sources: gefs_reforecast, nam_analysis, rap_analysis, gfs_analysis (default: gefs_reforecast).",
+        help="Comma list of sources: gefs_reforecast, nam_analysis, rap_analysis, gfs_analysis, hrrr "
+             "(default: gefs_reforecast). '--source hrrr' uses the dedicated raw-GRIB path "
+             "(--leads/--products/--interval-seconds; whole product files, no subset).",
     )
     parser.add_argument(
         "--variable-levels",
@@ -1346,6 +1615,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--interval-hours", type=int, default=None,
         help="LBC interval metadata (default: derived from the forcing cadence — NAM 6 h, RAP 1 h, reforecast 3 h).",
+    )
+    parser.add_argument(
+        "--leads", default="12,13",
+        help="HRRR only: comma list of forecast leads (hours) to stage whole-file (default: 12,13).",
+    )
+    parser.add_argument(
+        "--products", default="nat,sfc",
+        help="HRRR only: comma list of products to stage whole-file (default: nat,sfc).",
+    )
+    parser.add_argument(
+        "--interval-seconds", type=int, default=DEFAULT_HRRR_INTERVAL_SECONDS,
+        help=f"HRRR only: metgrid/WRF LBC interval (s) recorded in the contract (default {DEFAULT_HRRR_INTERVAL_SECONDS}).",
     )
     parser.add_argument("--herbie-save-dir", default=None, help="Herbie working cache before the move.")
     parser.add_argument("--keep-herbie-cache", action="store_true", help="Copy instead of move out of cache.")
@@ -1418,6 +1699,35 @@ def main(argv: list[str] | None = None) -> int:
     )
     fxx_parts = _parse_int_csv(args.fxx_window)
     fxx_window = (fxx_parts[0], fxx_parts[-1]) if fxx_parts else DEFAULT_FXX_WINDOW
+
+    if "hrrr" in sources:
+        # HRRR raw-GRIB whole-file staging: its (leads, products, interval_seconds)
+        # parameterisation differs from the fxx_window bucket model of reforecast/analysis,
+        # so it dispatches to a dedicated orchestrator. --init-time doubles as the model
+        # init and --case as the case name; when left at the reforecast defaults, both
+        # fall back to the HRRR experiment defaults so 'stage ... --source hrrr' reproduces
+        # the Ashley seiche run.
+        hrrr_init = DEFAULT_HRRR_INIT if args.init_time == DEFAULT_INIT else args.init_time
+        hrrr_case = DEFAULT_HRRR_CASE if args.case == DEFAULT_CASE else args.case
+        try:
+            manifest_path = stage_hrrr_case(
+                case=hrrr_case,
+                init=hrrr_init,
+                region=args.region,
+                leads=_parse_int_csv(args.leads),
+                products=[p.strip() for p in args.products.split(",") if p.strip()],
+                interval_seconds=args.interval_seconds,
+                output_root=args.output_dir,
+                herbie_save_dir=args.herbie_save_dir,
+                keep_herbie_cache=args.keep_herbie_cache,
+                overwrite=args.overwrite,
+                quicklook=not args.no_quicklook,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.error("HRRR WRF-input staging failed: %s", exc)
+            return 1
+        LOG.info("Manifest: %s", manifest_path)
+        return 0
 
     if args.plan:
         plan = plan_case(
