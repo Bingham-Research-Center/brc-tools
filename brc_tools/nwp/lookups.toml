@@ -396,6 +396,15 @@ basin_ns_landmarks = [
     "ouray", "vernal", "dutch_john", "manila",
 ]
 
+# ── Airports (aviation exports) ────────────────────────────────────────────
+
+[airports.KVEL]
+name = "Vernal Regional Airport"
+lat = 40.4408
+lon = -109.5104
+elevation_m = 1609
+runway_headings_deg = [160, 340]  # true, not magnetic
+
 # ── Aliases: surface / near-surface ─────────────────────────────────────────
 
 [aliases.temp_2m]
