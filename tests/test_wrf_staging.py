@@ -33,6 +33,8 @@ from brc_tools.nwp.wrf_staging import (
     build_manifest,
     plan_case,
     stage_gfs_analysis,
+    stage_hrrr,
+    stage_hrrr_case,
     stage_nam_analysis,
     stage_rap_analysis,
     stage_reforecast,
@@ -157,10 +159,12 @@ def test_staged_file_schema():
         "source", "herbie_model", "member", "member_int", "init_time",
         "variable_level", "fxx_bucket", "lead_times", "product", "local_path",
         "remote_url", "size_bytes", "sha256", "created_at", "lead_times_source",
+        "valid_time",
     }
     assert set(d) == expected
     assert d["init_time"].endswith("Z") and isinstance(d["member_int"], int)
     assert d["lead_times_source"] == "inventory"  # default when not given
+    assert d["valid_time"] is None  # default when not given (multi-lead / unset)
 
 
 def test_nam_cycle_enumeration():
@@ -862,6 +866,192 @@ def _nam_staged_stub(source: str) -> StagedFile:
         lead_times=[0], product="x", local_path="/x/f", remote_url="h",
         size_bytes=1, sha256="a", created_at="2026-06-13T00:00:00Z",
     )
+
+
+# ── HRRR raw-GRIB whole-file stager (mocked Herbie) ──────────────────────────
+
+
+class FakeHRRRHerbie:
+    """Stand-in for ``herbie.Herbie`` on the HRRR path — product+fxx, no member.
+
+    Constructed as ``Herbie(init, model=, fxx=, product=, save_dir=)`` (the exact call
+    :func:`stage_hrrr` makes); ``download()`` writes a tiny valid GRIB and returns its
+    cache path. No network.
+    """
+
+    init_count = 0
+    download_count = 0
+    last_search = "unset"
+
+    def __init__(self, date, *, model, fxx, product, save_dir, **kw):
+        type(self).init_count += 1
+        self.date = date
+        self.model = model
+        self.fxx = fxx
+        self.product = product
+        self.save_dir = Path(save_dir)
+        self.grib_source = "aws"
+        self.SOURCES = {
+            "aws": (
+                "https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.20260221/conus/"
+                f"hrrr.t18z.wrf{product}f{fxx:02d}.grib2"
+            )
+        }
+        self._cache_path = self.save_dir / f"_cache_hrrr_{product}_f{fxx:02d}.grib2"
+
+    def download(self, *_a, **_k):
+        type(self).download_count += 1
+        type(self).last_search = _k.get("search", _a[0] if _a else None)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self._cache_path.write_bytes(_VALID_GRIB)
+        return self._cache_path
+
+
+@pytest.fixture
+def fake_hrrr_herbie(monkeypatch):
+    FakeHRRRHerbie.init_count = 0
+    FakeHRRRHerbie.download_count = 0
+    FakeHRRRHerbie.last_search = "unset"
+    monkeypatch.setattr(wrf_staging, "Herbie", FakeHRRRHerbie)
+    return FakeHRRRHerbie
+
+
+def test_stage_hrrr_stages_leads_and_products_raw(tmp_path, fake_hrrr_herbie):
+    # Raw-GRIB retention: whole files kept (not cropped/subset/deleted), one per
+    # (product, lead), moved into <case>/hrrr/ (no member level).
+    staged = stage_hrrr(
+        init="2026-02-21 18:00",
+        leads=[12, 13],
+        products=["nat", "sfc"],
+        output_root=tmp_path,
+        case="ashley2026_seiche",
+        herbie_save_dir=tmp_path / "cache",
+    )
+    assert len(staged) == 4  # 2 products x 2 leads
+    assert fake_hrrr_herbie.download_count == 4
+    assert fake_hrrr_herbie.last_search is None  # whole-file: no byte-range subset
+    for sf in staged:
+        dest = Path(sf.local_path)
+        assert dest.exists() and validate_cached_grib(dest)  # retained + valid
+        assert dest.parent == tmp_path / "ashley2026_seiche" / "hrrr"  # no member dir
+        assert sf.source == "hrrr" and sf.herbie_model == "hrrr"
+        assert sf.member == "" and sf.member_int == 0
+        assert sf.product in ("nat", "sfc")
+        assert sf.variable_level == "all"  # whole file, not a subset
+        assert sf.size_bytes == len(_VALID_GRIB)  # full file, not cropped
+        assert sf.lead_times_source == "request"
+        assert sf.remote_url.startswith("https://noaa-hrrr-bdp-pds.s3.amazonaws.com/")
+    # every (product, lead) present exactly once
+    assert {(sf.product, sf.lead_times[0]) for sf in staged} == {
+        ("nat", 12), ("nat", 13), ("sfc", 12), ("sfc", 13),
+    }
+    # files MOVED out of the Herbie cache, not copied
+    assert not any((tmp_path / "cache").glob("_cache_*.grib2"))
+
+
+def test_stage_hrrr_expected_leads_and_valid_times(tmp_path, fake_hrrr_herbie):
+    staged = stage_hrrr(
+        init="2026-02-21 18:00", leads=[12, 13], products=["nat"],
+        output_root=tmp_path, case="ashley2026_seiche",
+        herbie_save_dir=tmp_path / "cache",
+    )
+    by_lead = {sf.lead_times[0]: sf for sf in staged}
+    assert set(by_lead) == {12, 13}  # exactly the requested leads
+    # valid time = init + lead (18Z + 12h -> 06Z next day; + 13h -> 07Z)
+    assert by_lead[12].valid_time == "2026-02-22T06:00:00Z"
+    assert by_lead[13].valid_time == "2026-02-22T07:00:00Z"
+    assert by_lead[12].init_time == "2026-02-21T18:00:00Z"
+    assert Path(by_lead[12].local_path).name == "hrrr_2026022118_f12_nat.grib2"
+
+
+def test_stage_hrrr_skips_existing_cached_file(tmp_path, fake_hrrr_herbie):
+    # A present, correct-size (valid-magic) file counts as already staged: no Herbie,
+    # no download.
+    dest = _canonical_staging_path(
+        tmp_path, "ashley2026_seiche", "hrrr", "", "hrrr_2026022118_f12_nat.grib2"
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(_VALID_GRIB)
+
+    staged = stage_hrrr(
+        init="2026-02-21 18:00", leads=[12], products=["nat"],
+        output_root=tmp_path, case="ashley2026_seiche",
+        herbie_save_dir=tmp_path / "cache", overwrite=False,
+    )
+    assert len(staged) == 1
+    assert fake_hrrr_herbie.init_count == 0  # Herbie never constructed
+    assert fake_hrrr_herbie.download_count == 0
+    assert staged[0].size_bytes == len(_VALID_GRIB)  # existing file retained as-is
+    assert staged[0].product == "nat" and staged[0].lead_times == [12]
+    assert staged[0].valid_time == "2026-02-22T06:00:00Z"
+
+
+def test_stage_hrrr_case_manifest_and_contract(tmp_path, fake_hrrr_herbie):
+    import json
+
+    manifest_path = stage_hrrr_case(
+        case="ashley2026_seiche",
+        init="2026-02-21 18:00",
+        region="uinta_basin_wide",
+        leads=[12, 13],
+        products=["nat", "sfc"],
+        interval_seconds=3600,
+        output_root=tmp_path,
+        quicklook=False,
+        herbie_save_dir=tmp_path / "cache",
+    )
+    assert manifest_path == tmp_path / "ashley2026_seiche" / "manifest_ashley2026_seiche.json"
+    manifest = json.loads(manifest_path.read_text())
+    contract = json.loads(
+        (tmp_path / "ashley2026_seiche" / "contract_ashley2026_seiche.json").read_text()
+    )
+
+    # ── contract: the non-negotiable keys ──
+    assert contract["sources"] == ["hrrr"]
+    assert contract["wps_fg_name"] == ["HRRR"]
+    assert contract["interval_seconds"] == 3600
+    assert contract["interval_hours"] == 1
+    assert contract["cadence_hours"]["hrrr"] == 1
+    assert contract["source_file_counts"] == {"hrrr": 4}
+    assert contract["case"] == "ashley2026_seiche"
+
+    # ── manifest: shape matches the reforecast/NAM path + per-file requirements ──
+    assert manifest["manifest_kind"] == "wrf_input_staging"
+    assert manifest["case"]["sources"] == ["hrrr"]
+    assert manifest["case"]["interval_hours"] == 1
+    assert "Gate C" in manifest["case"]["note"]  # WPS two-product merge flagged
+    files = manifest["staged_files"]
+    assert len(files) == 4  # 2 leads x 2 products
+    assert {f["product"] for f in files} == {"nat", "sfc"}
+    for f in files:
+        assert f["product"] in ("nat", "sfc")          # product (nat/sfc)
+        assert f["valid_time"].endswith("Z")           # valid time
+        assert f["lead_times"] and f["lead_times"][0] in (12, 13)  # forecast lead
+        assert f["remote_url"].startswith("https://")  # remote URL
+        assert f["local_path"].endswith(".grib2")      # local path
+        assert f["size_bytes"] == len(_VALID_GRIB)     # byte count (full file)
+        assert f["sha256"]                             # content hash
+    # nat + sfc BOTH present for each valid time (the two-product staging Gate A needs)
+    by = {(f["product"], f["lead_times"][0]): f for f in files}
+    assert by[("nat", 12)]["valid_time"] == "2026-02-22T06:00:00Z"
+    assert by[("sfc", 12)]["valid_time"] == "2026-02-22T06:00:00Z"
+    assert by[("nat", 13)]["valid_time"] == "2026-02-22T07:00:00Z"
+    assert by[("sfc", 13)]["valid_time"] == "2026-02-22T07:00:00Z"
+
+
+def test_stage_hrrr_case_honors_explicit_interval(tmp_path, fake_hrrr_herbie):
+    import json
+
+    # A non-default interval must land in the contract authoritatively.
+    manifest_path = stage_hrrr_case(
+        case="hrrr_halfhour", init="2026-02-21 18:00", region="uinta_basin_wide",
+        leads=[12], products=["sfc"], interval_seconds=1800,
+        output_root=tmp_path, quicklook=False, herbie_save_dir=tmp_path / "cache",
+    )
+    contract = json.loads(
+        (manifest_path.parent / "contract_hrrr_halfhour.json").read_text()
+    )
+    assert contract["interval_seconds"] == 1800
 
 
 # ── opt-in live smoke ────────────────────────────────────────────────────────
