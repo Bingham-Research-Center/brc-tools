@@ -29,16 +29,20 @@ _HIGHWAY_TYPES = {"Major Highway", "Secondary Highway", "Beltway", "Bypass"}
 # Engine layer key -> (Natural-Earth category, dataset name).
 _LAYERS: dict[str, tuple[str, str]] = {
     "states": ("cultural", "admin_1_states_provinces_lakes"),
+    "counties": ("cultural", "admin_2_counties"),
     "roads": ("cultural", "roads"),
     "rivers": ("physical", "rivers_lake_centerlines"),
     "lakes": ("physical", "lakes"),
     "cities": ("cultural", "populated_places"),
 }
 
-# Layer draw order and default line styling (rivers/roads over lakes, borders on top).
+# Layer draw order and default line styling (rivers/roads over lakes, county lines
+# under the heavier state borders on top).
 _LINE_STYLE = {
     "rivers": dict(color="#3a6ea5", linewidth=0.5, alpha=0.75, zorder=3.0),
     "roads": dict(color="#8a5a2b", linewidth=0.6, alpha=0.85, zorder=3.1),
+    "counties": dict(color="0.45", linewidth=0.4, alpha=0.7, zorder=3.15,
+                     linestyle=(0, (5, 2))),
     "states": dict(color="0.15", linewidth=0.8, alpha=0.9, zorder=3.2),
 }
 
@@ -276,6 +280,7 @@ def add_reference_overlays(
     *,
     layers=None,
     states: bool = True,
+    counties: bool = False,
     roads: bool = True,
     rivers: bool = True,
     lakes: bool = True,
@@ -290,18 +295,21 @@ def add_reference_overlays(
     ``extent`` is ``(lon0, lon1, lat0, lat1)``.  ``layers`` (a ``{name: bool}`` mapping,
     e.g. a case's ``[map]`` table) overrides the individual flags when given.  Pass
     ``transform=ccrs.PlateCarree()`` for a cartopy GeoAxes; leave it ``None`` for the
-    plain lon/lat axes the renderers use.  Fail-soft: any absent layer is skipped.
+    plain lon/lat axes the renderers use.  Fail-soft: any absent layer is skipped
+    (``counties`` in particular needs the ``admin_2_counties`` layer staged; when it
+    is not, the call simply draws nothing for it).
 
     ``cities`` (off by default, so existing figures are unchanged) draws
     population-ranked city labels via :func:`draw_cities`.
     """
     if layers is not None:
         states = bool(layers.get("states", states))
+        counties = bool(layers.get("counties", counties))
         roads = bool(layers.get("roads", roads))
         rivers = bool(layers.get("rivers", rivers))
         lakes = bool(layers.get("lakes", lakes))
         cities = bool(layers.get("cities", cities))
-    if not (states or roads or rivers or lakes or cities):
+    if not (states or counties or roads or rivers or lakes or cities):
         return
     try:
         from shapely.geometry import box as _box
