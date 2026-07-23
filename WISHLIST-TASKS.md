@@ -2,6 +2,21 @@
 
 Completed items are removed once merged; git history is the record.
 
+## Forecast funnel (NAM synoptic montage) — follow-ups
+
+Shipped: `/basin-forecast-funnel` skill + `scripts/forecast_funnel.py` (+ `.dtn.slurm`)
+rendering a 250/500/600 hPa + surface-analysis montage from a NAM analysis
+(`brc_tools/nwp/forecast_funnel.py` + `brc_tools/visualize/funnel.py`; city labels added to
+`visualize/basemap.py`). Reference: **`docs/FORECAST-FUNNEL.md`**. Not blocking:
+
+- **Post-2017 NCEI grib2 NAM template** to close the 2017-04 → 2020-03 auto-pick gap
+  (`nam_218_<date>_<hhmm>_000.grb2`; a new `[models.*]` block in `lookups.toml`).
+- Both data paths are validated against **real GRIB** (Herbie 2025-10-11 18Z from AWS; NCEI
+  2013-01-31 00Z) — this surfaced + fixed three bugs (per-variable cfgrib open for grib1,
+  TFP gradient-gate for front noise, RH→q fallback because `awphys` has no SPFH aloft).
+  Remaining: confirm the DTN `sbatch scripts/forecast_funnel.dtn.slurm` submission mechanics
+  on a real DTN (couldn't be run from the dev sandbox).
+
 ## WRF figure driver — dataset-agnostic engine (DONE 2026-07-08)
 
 The figure system is now a reusable engine (brc-tools) + a declarative case (study repo):

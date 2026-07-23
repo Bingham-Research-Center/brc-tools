@@ -41,6 +41,16 @@ VAR_STYLES: dict[str, VarStyle] = {
     "temp_2m_c":      VarStyle("RdYlBu_r", r"$T_{2\,\mathrm{m}}$ ($^{\circ}$C)", -25.0, 10.0),
     "wind_speed_10m": VarStyle("YlGnBu", r"10 m wind (m s$^{-1}$)", 0.0, 15.0, extend="max"),
     "wind_speed":     VarStyle("YlGnBu", r"wind speed (m s$^{-1}$)", 0.0, 15.0, extend="max"),
+    # Forecast-funnel fills (fixed per level so a panel reads the same across cases):
+    # the 250 hPa jet-stream core reaches ~70 m/s; 600 hPa specific humidity 0..6 g/kg.
+    "wind_speed_250":  VarStyle("YlGnBu", r"250 hPa wind (m s$^{-1}$)", 0.0, 80.0, extend="max"),
+    "spec_humidity_600": VarStyle("YlGn", r"600 hPa spec. humidity (g kg$^{-1}$)",
+                                  0.0, 6.0, extend="max"),
+    # Classic 500 hPa chart: absolute vorticity shaded (10^-5 s^-1).  Mid-latitude f is
+    # ~9-11, so cyclonic shortwave maxima ride ~15-40; sequential warm ramp makes the
+    # trough/vort-max stand out.
+    "abs_vorticity_500": VarStyle("YlOrRd", r"500 hPa abs. vorticity ($10^{-5}$ s$^{-1}$)",
+                                  0.0, 40.0, extend="max"),
     "snow_depth":     VarStyle("Blues", "snow depth (m)", 0.0, 0.5, extend="max"),
     "pblh":           VarStyle("YlOrRd", "PBLH (m)", 0.0, 1000.0, extend="max"),
     "tsk_minus_t2":   VarStyle("RdBu_r", r"$T_{\mathrm{skin}}-T_{2\,\mathrm{m}}$ (K)", -8.0, 8.0, diverging=True),

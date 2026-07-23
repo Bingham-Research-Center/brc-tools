@@ -34,6 +34,7 @@ from pathlib import Path
 _LAYERS = [
     ("cultural", "admin_1_states_provinces_lakes"),
     ("cultural", "roads"),
+    ("cultural", "populated_places"),  # city labels (forecast-funnel + opt-in overlays)
     ("physical", "rivers_lake_centerlines"),
     ("physical", "lakes"),
 ]

@@ -184,6 +184,11 @@ ne = [42.1, -108.9]
 sw = [21.0, -125.0]
 ne = [50.0, -66.0]
 
+# Western CONUS — the forecast-funnel 500 hPa + surface-analysis panels.
+[regions.west_conus]
+sw = [28.0, -125.0]
+ne = [50.0, -100.0]
+
 # ── Waypoints ───────────────────────────────────────────────────────────────
 
 [waypoints.daniels_summit]
