@@ -145,7 +145,11 @@ grid                = "130"                    # 13 km CONUS Lambert-conformal
 wps_fg_name         = "RAP"                    # WPS fg_name token (Vtable = brc-wrf)
 est_bytes_per_cycle = 12_500_000              # ~12 MB/file (NCEI preflight 2026-06-29)
 filename_template   = "rap_130_{yyyymmdd}_{hhmm}_000.grb2"
-url_template        = "https://www.ncei.noaa.gov/data/rapid-refresh/access/historical/analysis/{yyyymm}/{yyyymmdd}/{filename}"
+# 2026-07-23: path segment corrected historical/analysis -> rap-130-13km/analysis.
+# The old 'historical' path 404s for 2025 dates; 'rap-130-13km' serves 2025-01-28
+# 12Z/13Z (verified by live listing). Older dates (e.g. 2013 Pelican) may still
+# need 'historical' -- make the segment date-conditional if that resurfaces.
+url_template        = "https://www.ncei.noaa.gov/data/rapid-refresh/access/rap-130-13km/analysis/{yyyymm}/{yyyymmdd}/{filename}"
 
 [models.gfs_analysis]
 # GFS 0.5° analysis (grid 004) from the NCEI historical archive — an auth-free,
