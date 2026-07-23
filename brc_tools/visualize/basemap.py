@@ -32,6 +32,7 @@ _LAYERS: dict[str, tuple[str, str]] = {
     "roads": ("cultural", "roads"),
     "rivers": ("physical", "rivers_lake_centerlines"),
     "lakes": ("physical", "lakes"),
+    "cities": ("cultural", "populated_places"),
 }
 
 # Layer draw order and default line styling (rivers/roads over lakes, borders on top).
@@ -199,6 +200,76 @@ def draw_waypoints(
         placed.append((lon, lat))
 
 
+def _default_city_rank(extent) -> int:
+    """Pick a Natural-Earth SCALERANK cutoff from the map span (fewer on wide maps)."""
+    span = max(abs(float(extent[1]) - float(extent[0])),
+               abs(float(extent[3]) - float(extent[2])))
+    if span >= 28.0:   # CONUS-scale: only the largest cities
+        return 2
+    if span >= 12.0:   # regional (a few states)
+        return 4
+    return 7           # local: towns for context
+
+
+def draw_cities(
+    ax,
+    extent,
+    *,
+    resolution: str = "10m",
+    max_rank: int | None = None,
+    max_cities: int = 40,
+    transform=None,
+    fontsize: float = 6.0,
+    color: str = "0.15",
+    marker: str = "o",
+    ms: float = 2.5,
+    zorder: float = 6.0,
+) -> None:
+    """Plot population-ranked city markers + decluttered labels within ``extent``.
+
+    Reads the staged Natural-Earth ``populated_places`` layer and keeps only places
+    at or above ``max_rank`` prominence (lower ``SCALERANK`` = larger city); the cutoff
+    defaults to the map span so a CONUS panel shows only major cities and a local panel
+    shows towns.  Fail-soft: returns silently if the layer is not staged.
+    """
+    records = _load_records("cities", resolution)
+    if not records:
+        return
+    lo_x, hi_x = sorted((float(extent[0]), float(extent[1])))
+    lo_y, hi_y = sorted((float(extent[2]), float(extent[3])))
+    if max_rank is None:
+        max_rank = _default_city_rank(extent)
+    tkw = {} if transform is None else {"transform": transform}
+
+    cand: list[tuple] = []
+    for geom, attrs in records:
+        try:
+            x, y = float(geom.x), float(geom.y)
+        except Exception:  # pragma: no cover - non-point geometry
+            continue
+        if not (lo_x <= x <= hi_x and lo_y <= y <= hi_y):
+            continue
+        rank = attrs.get("SCALERANK", attrs.get("scalerank"))
+        rank = 99 if rank is None else int(rank)
+        if rank > max_rank:
+            continue
+        pop = attrs.get("POP_MAX", attrs.get("pop_max")) or 0
+        name = attrs.get("NAME", attrs.get("name")) or ""
+        cand.append((rank, -float(pop), x, y, name))
+
+    cand.sort()  # most prominent first (low rank, then high population)
+    span_x, span_y = hi_x - lo_x, hi_y - lo_y
+    sep_x, sep_y = 0.05 * span_x, 0.05 * span_y
+    placed: list[tuple[float, float]] = []
+    for _rank, _negpop, x, y, name in cand[:max_cities]:
+        ax.plot(x, y, marker=marker, color=color, ms=ms, zorder=zorder, **tkw)
+        if any(abs(x - px) < sep_x and abs(y - py) < sep_y for px, py in placed):
+            continue
+        ax.text(x, y, f" {name}", fontsize=fontsize, color=color, zorder=zorder,
+                clip_on=True, **tkw)
+        placed.append((x, y))
+
+
 def add_reference_overlays(
     ax,
     extent,
@@ -208,6 +279,8 @@ def add_reference_overlays(
     roads: bool = True,
     rivers: bool = True,
     lakes: bool = True,
+    cities: bool = False,
+    city_rank: int | None = None,
     highways_only: bool = True,
     resolution: str = "10m",
     transform=None,
@@ -218,13 +291,17 @@ def add_reference_overlays(
     e.g. a case's ``[map]`` table) overrides the individual flags when given.  Pass
     ``transform=ccrs.PlateCarree()`` for a cartopy GeoAxes; leave it ``None`` for the
     plain lon/lat axes the renderers use.  Fail-soft: any absent layer is skipped.
+
+    ``cities`` (off by default, so existing figures are unchanged) draws
+    population-ranked city labels via :func:`draw_cities`.
     """
     if layers is not None:
         states = bool(layers.get("states", states))
         roads = bool(layers.get("roads", roads))
         rivers = bool(layers.get("rivers", rivers))
         lakes = bool(layers.get("lakes", lakes))
-    if not (states or roads or rivers or lakes):
+        cities = bool(layers.get("cities", cities))
+    if not (states or roads or rivers or lakes or cities):
         return
     try:
         from shapely.geometry import box as _box
@@ -251,3 +328,6 @@ def add_reference_overlays(
     if states:
         _draw_lines(ax, _load_records("states", resolution), bbox, pbox,
                     _LINE_STYLE["states"], transform_kw=transform_kw)
+    if cities:
+        draw_cities(ax, extent, max_rank=city_rank, resolution=resolution,
+                    transform=transform)
