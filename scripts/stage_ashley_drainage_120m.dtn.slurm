@@ -12,19 +12,13 @@
 # failed on exactly this, 14136134 passed once GFS soil was added. RAP 130 was
 # checked and also lacks soil. The working soil source is GFS 0.25 f000.
 #
-# GFS cycle choice: our init is 23Z, which is not a GFS cycle. Take the most recent
-# analysis AT OR BEFORE init -- 18Z 24 Apr. That is a rule rather than a per-case
-# judgement (it can never reach for an analysis from the future), which is what makes
-# it safe to put on rails. `--fxx-window 0,0` expresses exactly that: the window
-# start is snapped DOWN to the 6-hourly cadence grid, giving one cycle at 18Z.
-#
-# Omitting --fxx-window is what went wrong on job 14296762: the default (12,48) is
-# sized for GFS as DRIVING forcing and enumerated a 6-hourly sequence from 12Z 25
-# Apr onward. Not a tool bug -- the wrong window for this use.
-#
-# Ideal would be 18Z f005, valid exactly at our 23Z init; the analysis stager fetches
-# f000 only. The residual is 5 h of soil evolution, and since the top layer is what
-# swings diurnally this is a real but second-order error worth stating in notes.
+# SOIL now comes from --source gfs_soil (Herbie/AWS), not gfs_analysis (NCEI direct).
+# NCEI 502'd three times on job 14297023, and the analysis stager could only offer
+# f000 on the 6-hourly grid -- soil valid 18Z for a 23Z init, 5 h stale in exactly
+# the layer that swings diurnally. gfs_soil takes the most recent cycle AT OR BEFORE
+# init and sets the lead to the gap, so the file is valid AT init: 18Z f005 here.
+# It also gets 0.25 deg instead of NCEI's 0.5, and falls back gracefully through
+# older cycles if an object is missing, logging how far from ideal it landed.
 #
 # Submit:  sbatch scripts/stage_ashley_drainage_120m.dtn.slurm
 
@@ -67,8 +61,8 @@ echo "=== gate A staging start $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname) ===
 
 echo "--- PLAN: GFS soil ---"
 "$PY" -B -m brc_tools.nwp.wrf_staging \
-  --case "$CASE" --source gfs_analysis --init-time "2026-04-24 23Z" \
-  --fxx-window 0,0 --output-dir "$OUT" --plan
+  --case "$CASE" --source gfs_soil --init-time "2026-04-24 23:00" \
+  --output-dir "$OUT" --plan
 
 # ---- stage ------------------------------------------------------------------
 echo "--- STAGE: HRRR nat+sfc f00..f06 from 2026-04-24 23Z ---"
@@ -77,11 +71,10 @@ echo "--- STAGE: HRRR nat+sfc f00..f06 from 2026-04-24 23Z ---"
   --leads 0,1,2,3,4,5,6 --products nat,sfc --interval-seconds 3600 \
   --no-quicklook --output-dir "$OUT" --herbie-save-dir "$OUT/.herbie_cache_$CASE"
 
-echo "--- STAGE: GFS analysis f000 (soil), most recent cycle at/before init = 18Z 24 Apr ---"
+echo "--- STAGE: GFS soil via Herbie/AWS, valid AT init (18Z cycle f005) ---"
 "$PY" -B -m brc_tools.nwp.wrf_staging \
-  --case "$CASE" --source gfs_analysis --init-time "2026-04-24 23Z" \
-  --fxx-window 0,0 \
-  --no-quicklook --output-dir "$OUT" --herbie-save-dir "$OUT/.herbie_cache_$CASE"
+  --case "$CASE" --source gfs_soil --init-time "2026-04-24 23:00" \
+  --output-dir "$OUT" --herbie-save-dir "$OUT/.herbie_cache_$CASE"
 
 # ---- report -----------------------------------------------------------------
 echo "=== staged set ==="

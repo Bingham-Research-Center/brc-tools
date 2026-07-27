@@ -1010,6 +1010,153 @@ def stage_hrrr(
     return staged
 
 
+# ── GFS soil snapshot via Herbie/AWS (modern dates) ──────────────────────────
+
+
+DEFAULT_GFS_SOIL_SOURCE = "gfs_soil"
+GFS_CADENCE_HOURS = 6
+
+
+def stage_gfs_soil(
+    *,
+    init: str | dt.datetime,
+    output_root: str | Path = DEFAULT_SCRATCH_ROOT,
+    case: str = DEFAULT_HRRR_CASE,
+    source: str = DEFAULT_GFS_SOIL_SOURCE,
+    product: str = "pgrb2.0p25",
+    herbie_save_dir: str | Path | None = None,
+    overwrite: bool = False,
+    keep_herbie_cache: bool = False,
+    max_back_cycles: int = 4,
+) -> list[StagedFile]:
+    """Stage ONE GFS file carrying soil, valid at ``init`` where possible, via Herbie/AWS.
+
+    Why this exists alongside :func:`stage_gfs_analysis`. That function reaches NCEI
+    by direct HTTP because it was built for the Pelican **2013** case, and Herbie's
+    GFS sources (aws/nomads) do not go back that far — see ``[models.gfs_analysis]``
+    in ``lookups.toml``. For a modern date the constraint does not apply, and NCEI
+    is the fragile link: it returned 502 Proxy Errors on three consecutive attempts
+    for the April-2026 Ashley case (job 14297023).
+
+    It also fixes a science compromise rather than merely a reliability one. The
+    analysis stager fetches ``f000`` on the 6-hourly cadence grid, so a WRF init at
+    23Z gets soil valid at 18Z — five hours stale, and the top soil layer is exactly
+    what swings diurnally. Here the most recent cycle **at or before** ``init`` is
+    chosen (a rule that can never reach for a future analysis) and the lead is set to
+    the gap, so the file is valid **at** ``init``. For 23Z that is the 18Z cycle,
+    ``f005``. As a bonus AWS carries 0.25°, against NCEI's 0.5°.
+
+    Purpose is soil only: HRRR supplies the atmosphere and surface, this supplies the
+    layered soil HRRR lacks entirely. Whole file is retained (no subset) so the WPS
+    Vtable, not this function, decides which fields are read.
+    """
+    init_dt = _parse_init_time(init)
+    cycle0 = _snap_down_to_cadence(init_dt, GFS_CADENCE_HOURS)
+
+    # Availability is never guaranteed -- AWS has gaps, cycles get pulled, and archive
+    # edges move. Rather than fail the gate on one missing object, walk an ordered
+    # preference list and take the first that exists, recording HOW FAR from ideal it
+    # landed so the compromise appears in the manifest instead of being invisible.
+    #
+    # Order: valid-at-init from the nearest cycle (ideal), then that cycle's analysis
+    # (stale by the lead), then the same two from each earlier cycle. Never a cycle
+    # AFTER init -- that would be reaching into the future for an initial condition.
+    candidates: list[tuple[int, int, dt.datetime, int]] = []  # (staleness, lead, cycle, lead)
+    for back in range(0, int(max_back_cycles) + 1):
+        c = cycle0 - dt.timedelta(hours=GFS_CADENCE_HOURS * back)
+        lead_at_init = int((init_dt - c).total_seconds() // 3600)
+        for ld in ({lead_at_init, 0} if lead_at_init else {0}):
+            stale = int((init_dt - (c + dt.timedelta(hours=ld))).total_seconds() // 3600)
+            candidates.append((stale, ld, c, ld))
+    # Rank by STALENESS first, then by shortest forecast lead. Ranking by cycle
+    # recency instead would zig-zag: a 5 h-stale analysis from the newest cycle would
+    # be preferred over a file from an older cycle that is valid AT init. For soil the
+    # valid time is what matters -- GFS barely assimilates it, so a longer lead costs
+    # little, whereas being 5 h off catches the top layer mid-diurnal-swing.
+    candidates.sort(key=lambda x: (x[0], x[1]))
+
+    cycle = lead = None
+    H = None
+    for stale, _, c, ld in candidates:
+        try:
+            probe = Herbie(c, model="gfs", fxx=ld, product=product,
+                           save_dir=str(Path(tempfile.gettempdir())), verbose=False)
+            if not probe.grib:
+                raise FileNotFoundError("no grib source")
+        except Exception as exc:  # noqa: BLE001
+            LOG.info("GFS soil: %s f%02d unavailable (%s) -- trying next",
+                     f"{c:%Y-%m-%d %HZ}", ld, type(exc).__name__)
+            continue
+        cycle, lead = c, ld
+        LOG.info("GFS soil: using %s f%02d -- valid %s, %d h from WRF init%s",
+                 f"{c:%Y-%m-%d %HZ}", ld,
+                 f"{c + dt.timedelta(hours=ld):%Y-%m-%d %HZ}", stale,
+                 "" if stale == 0 else "  <-- NOT ideal; record this in the gate evidence")
+        break
+    if cycle is None:
+        raise RuntimeError(
+            f"GFS soil: no candidate available within {max_back_cycles} cycle(s) before "
+            f"{init_dt:%Y-%m-%d %HZ}. Checked {len(candidates)} combination(s)."
+        )
+
+    filename = f"gfs_{cycle:%Y%m%d%H}_f{lead:02d}_{product.replace('.', '')}.grib2"
+    dest = _canonical_staging_path(output_root, case, source, "", filename)
+
+    save_dir = (
+        Path(herbie_save_dir)
+        if herbie_save_dir is not None
+        else Path(tempfile.gettempdir()) / "brc_wrf_staging_cache"
+    )
+    save_dir.mkdir(parents=True, exist_ok=True)
+    lock_dir = os.environ.get("BRC_TOOLS_LOCK_DIR") or tempfile.gettempdir()
+    lock = fasteners.InterProcessLock(
+        os.path.join(lock_dir, f"stage_gfs_soil_{cycle:%Y%m%d_%H}_f{lead:02d}.lock")
+    )
+
+    def _record(path: Path, url: str | None) -> StagedFile:
+        return StagedFile(
+            source=source,
+            herbie_model="gfs",
+            member="",
+            member_int=0,
+            init_time=_isoformat_utc(cycle),
+            variable_level="all",
+            fxx_bucket=f"f{lead:02d}",
+            lead_times=[lead],
+            product=product,
+            local_path=str(path),
+            remote_url=url,
+            size_bytes=path.stat().st_size,
+            sha256=_sha256(path),
+            created_at=_isoformat_utc(dt.datetime.now(dt.timezone.utc)),
+            lead_times_source="request",
+            valid_time=_isoformat_utc(cycle + dt.timedelta(hours=lead)),
+        )
+
+    with lock:
+        if not overwrite and dest.exists() and validate_cached_grib(dest):
+            LOG.info("skip (already staged): %s", dest)
+            return [_record(dest, None)]
+
+        LOG.info(
+            "GFS soil: cycle %s f%02d -> valid %s (= WRF init)",
+            f"{cycle:%Y-%m-%d %HZ}", lead, f"{init_dt:%Y-%m-%d %HZ}",
+        )
+        H = Herbie(cycle, model="gfs", fxx=lead, product=product, save_dir=str(save_dir))
+        local = _download(H)
+        if not validate_cached_grib(local):
+            purge_cached_files(H)
+            raise RuntimeError(f"Downloaded GFS soil GRIB failed validation: {local}")
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if keep_herbie_cache:
+            shutil.copy2(local, dest)
+        else:
+            shutil.move(str(local), str(dest))
+        LOG.info("staged gfs_soil -> %s (%d bytes)", dest, dest.stat().st_size)
+        return [_record(dest, _remote_url(H))]
+
+
 def stage_hrrr_case(
     *,
     case: str = DEFAULT_HRRR_CASE,
@@ -1600,7 +1747,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--source",
         default=DEFAULT_SOURCE,
-        help="Comma list of sources: gefs_reforecast, nam_analysis, rap_analysis, gfs_analysis, hrrr "
+        help="Comma list of sources: gefs_reforecast, nam_analysis, rap_analysis, gfs_analysis, gfs_soil, hrrr "
              "(default: gefs_reforecast). '--source hrrr' uses the dedicated raw-GRIB path "
              "(--leads/--products/--interval-seconds; whole product files, no subset).",
     )
@@ -1700,7 +1847,43 @@ def main(argv: list[str] | None = None) -> int:
     fxx_parts = _parse_int_csv(args.fxx_window)
     fxx_window = (fxx_parts[0], fxx_parts[-1]) if fxx_parts else DEFAULT_FXX_WINDOW
 
+    if "gfs_soil" in sources:
+        # Single GFS file carrying soil, valid AT --init-time, from the most recent
+        # cycle at or before it. Herbie/AWS rather than NCEI: see stage_gfs_soil.
+        if args.plan:
+            cycle = _snap_down_to_cadence(_parse_init_time(args.init_time), GFS_CADENCE_HOURS)
+            lead = int((_parse_init_time(args.init_time) - cycle).total_seconds() // 3600)
+            print(f"plan: 1 file(s) -- gfs cycle {cycle:%Y-%m-%d %HZ} f{lead:02d} "
+                  f"(valid {args.init_time}), via Herbie/AWS")
+            return 0
+        try:
+            staged = stage_gfs_soil(
+                case=args.case,
+                init=args.init_time,
+                output_root=args.output_dir,
+                herbie_save_dir=args.herbie_save_dir,
+                keep_herbie_cache=args.keep_herbie_cache,
+                overwrite=args.overwrite,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOG.error("GFS soil staging failed: %s", exc)
+            return 1
+        for s in staged:
+            LOG.info("gfs_soil: %s (%d bytes)", s.local_path, s.size_bytes)
+        return 0
+
     if "hrrr" in sources:
+        # --plan reaches this branch BEFORE the generic plan handler below, so without
+        # this guard `--source hrrr --plan` silently DOWNLOADED instead of listing --
+        # it cost a 5.6 GB transfer on a login node before being noticed. Refuse
+        # loudly rather than appear to be a dry run.
+        if args.plan:
+            LOG.error(
+                "--plan is not implemented for --source hrrr. It previously fell "
+                "through to a real download; refusing rather than pretending. Use "
+                "--source hrrr without --plan on a DTN, or plan the other sources."
+            )
+            return 2
         # HRRR raw-GRIB whole-file staging: its (leads, products, interval_seconds)
         # parameterisation differs from the fxx_window bucket model of reforecast/analysis,
         # so it dispatches to a dedicated orchestrator. --init-time doubles as the model
