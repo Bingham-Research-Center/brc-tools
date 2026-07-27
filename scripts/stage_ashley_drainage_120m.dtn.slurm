@@ -77,12 +77,16 @@ echo "--- STAGE: GFS soil via Herbie/AWS, valid AT init (18Z cycle f005) ---"
   --output-dir "$OUT" --herbie-save-dir "$OUT/.herbie_cache_$CASE"
 
 # ---- report -----------------------------------------------------------------
+# NOTE: `set -o pipefail` + `| head` makes SIGPIPE fail the job even when staging
+# succeeded -- that is what marked job 14298037 FAILED with exit 32 after both
+# streams had landed correctly. Every reporting pipe below is guarded.
+set +o pipefail
 echo "=== staged set ==="
-ls -lhR "$OUT/$CASE/" | head -60
+ls -lhR "$OUT/$CASE/" | head -60 || true
 for f in "$OUT/$CASE"/manifest_*.json "$OUT/$CASE"/contract_*.json; do
-    [[ -f "$f" ]] && { echo "--- $f ---"; "$PY" -m json.tool "$f" | head -40; }
+    [[ -f "$f" ]] && { echo "--- $f ---"; "$PY" -m json.tool "$f" | head -40 || true; }
 done
-rm -rf "$OUT/.herbie_cache_$CASE"
+rm -rf "$OUT/.herbie_cache_$CASE" || true
 echo "=== gate A staging done $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 echo
 echo "NEXT: gate C is a TWO-STREAM metgrid, not a single ungrib pass --"

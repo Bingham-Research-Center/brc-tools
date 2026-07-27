@@ -608,7 +608,7 @@ DEFAULT_NAM_SOURCE = "nam_analysis"
 DEFAULT_NAM_CADENCE_HOURS = 6
 # WPS fg_name token per staging source; build_contract prefers the lookups model's
 # wps_fg_name and falls back to this map so a non-NAM source is never stamped GEFS.
-_FG_NAME_FALLBACK = {"nam_analysis": "NAM", "gefs_reforecast": "GEFS", "rap_analysis": "RAP", "gfs_analysis": "GFS", "hrrr": "HRRR"}
+_FG_NAME_FALLBACK = {"nam_analysis": "NAM", "gefs_reforecast": "GEFS", "rap_analysis": "RAP", "gfs_analysis": "GFS", "gfs_soil": "GFSSOIL", "hrrr": "HRRR"}
 
 
 def _snap_down_to_cadence(t: dt.datetime, cadence_hours: int) -> dt.datetime:
@@ -1868,6 +1868,52 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001
             LOG.error("GFS soil staging failed: %s", exc)
             return 1
+        # Merge into the case manifest/contract rather than writing a second pair.
+        # brc-wrf validates ONE contract per case and expects wps_fg_name to name
+        # every stream; a soil file present on disk but absent from the manifest is
+        # exactly the kind of silent gap gate C exists to catch, so close it here.
+        case_dir = Path(args.output_dir) / args.case
+        mpath = case_dir / f"manifest_{args.case}.json"
+        if mpath.exists():
+            existing = json.loads(mpath.read_text())
+            prior = [StagedFile(**d) for d in existing.get("staged_files", [])]
+            keep = [s for s in prior if s.source != DEFAULT_GFS_SOIL_SOURCE]
+            merged = keep + staged
+            lu = load_lookups()
+            manifest = build_manifest(
+                case=args.case,
+                region=existing.get("case", {}).get("region", args.region),
+                requested_window=tuple(existing.get("case", {}).get("requested_window", (None, None))),
+                interval_hours=existing.get("case", {}).get("interval_hours", 1),
+                # ORDER IS SEMANTIC, NOT COSMETIC: metgrid reads fg_name in priority
+                # order, so the atmosphere source must come FIRST or the supplement
+                # wins fields it should not. sorted() alphabetised this to
+                # ['GFSSOIL','HRRR'] -- exactly the inversion brc-wrf's two-stream
+                # validator rejects. Preserve the prior order, append what is new.
+                sources=(
+                    [s for s in existing.get("case", {}).get("sources", [])
+                     if any(f.source == s for f in merged)]
+                    + [s for s in dict.fromkeys(f.source for f in merged)
+                       if s not in existing.get("case", {}).get("sources", [])]
+                ),
+                staged=merged,
+                elapsed_seconds=None,
+            )
+            manifest["case"]["note"] = (
+                "Two-stream forcing: HRRR supplies the atmosphere and surface, gfs_soil "
+                "supplies the layered soil HRRR omits entirely (public HRRR GRIB carries "
+                "zero soil-temperature messages). The soil file is valid AT the WRF init. "
+                "metgrid must read them in order fg_name='HRRR','GFSSOIL' so HRRR wins "
+                "atmosphere/surface and GFS contributes soil only."
+            )
+            write_manifest(manifest, case_dir)
+            contract = build_contract(manifest, lu)
+            contract["interval_seconds"] = int(args.interval_seconds)
+            write_contract(contract, case_dir, args.case)
+            LOG.info("merged gfs_soil into manifest/contract (%d files, fg_name=%s)",
+                     len(merged), contract.get("wps_fg_name"))
+        else:
+            LOG.warning("no existing manifest at %s -- soil staged but unrecorded", mpath)
         for s in staged:
             LOG.info("gfs_soil: %s (%d bytes)", s.local_path, s.size_bytes)
         return 0
