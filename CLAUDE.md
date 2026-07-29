@@ -58,8 +58,9 @@ with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
 a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 
 A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
-`plot_vertical_section`) is imported by `brc-wrf`'s `wrf_quicklook.py` — signatures
-load-bearing. The publication figure engine built on it (`wrf_figures.py` over
+`plot_vertical_section`, `terrain_contour_levels`) is imported by `brc-wrf`'s
+`wrf_quicklook.py` — signatures load-bearing. That script also shells out to
+`scripts/stage_wrf_inputs.py` to verify a manifest, so its CLI is part of the seam too. The publication figure engine built on it (`wrf_figures.py` over
 `wrf_output.py` + `visualize/*`) is documented in `docs/WRF-FIGURE-ENGINE.md` (Doc map).
 
 ## Conventions
@@ -101,11 +102,17 @@ no client wires it yet); `FR24_API_KEY` is reserved for the skeleton FlightRadar
 ## Testing
 ```
 pytest tests/
+cd /tmp && python -c "import brc_tools, brc_tools.visualize.grid"   # editable install present?
 ```
 Use a conda env with the deps (herbie, polars, pandas, matplotlib, cfgrib, requests).
 Preferred: the dedicated **`brc-tools-2026`** env (`mamba env create -f environment.yml`;
-herbie 2026.3.0 — validated, 180 passed / 2 skipped); the shared `clyfar-nov2025` also works. Fresh
-setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
+herbie 2026.3.0 — validated 2026-07-27, 253 passed / 2 skipped); the shared `clyfar-nov2025` also
+works. Fresh setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
+**Verify the import from OUTSIDE the checkout.** A cwd-inside-the-repo test passes even with no
+install, so a missing `pip install -e .` only shows up later as `ImportError` in `brc-wrf`/`clyfar`
+(both import brc_tools from their own trees). On CHPC that install needs
+`--no-build-isolation` (pypi.org unreachable) and `--no-user` (else pip targets a read-only
+`~/.local/lib`).
 
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).

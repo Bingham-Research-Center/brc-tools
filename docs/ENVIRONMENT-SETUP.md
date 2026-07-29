@@ -45,7 +45,23 @@ repo root — it mirrors `pyproject.toml` and tracks a current Herbie release:
 mamba env create -f environment.yml   # creates env "brc-tools-2026"
 conda activate brc-tools-2026
 pip install -e . --no-deps            # install brc_tools itself (deps already solved)
-pytest tests/                          # validated: 107 passed, 2 skipped on herbie 2026.3.0
+pytest tests/                          # validated 2026-07-27: 253 passed, 2 skipped on herbie 2026.3.0
+```
+
+On CHPC that `pip install -e .` needs two extra flags — `--no-build-isolation` (pypi.org is
+unreachable from compute/login sandboxes, so pip cannot fetch a build backend) and `--no-user`
+(otherwise pip falls back to a read-only `~/.local/lib`):
+
+```bash
+pip install -e . --no-deps --no-build-isolation --no-user
+```
+
+Then confirm the install **from outside the checkout** — running `python -c "import brc_tools"`
+while sitting in the repo passes on cwd alone and hides a missing install, which later surfaces as
+an `ImportError` in `brc-wrf` or `clyfar` (both import `brc_tools` from their own trees):
+
+```bash
+cd /tmp && python -c "import brc_tools, brc_tools.visualize.grid, brc_tools.download.push_data"
 ```
 
 Prefer a fresh, dedicated env over reusing a shared/accreted one. The canonical list of
