@@ -47,6 +47,11 @@ class NWPSection:
     thetae2d: np.ndarray | None = None  # (nz, n) equiv. potential temp, K (needs dewpoint)
     termini: tuple[str, str] = ("A", "B")
     orientation: str = "EW"  # accent-colour key for the crosssection helpers
+    # True vertical CELL EDGES (nz+1, n) when the source has them -- WRF's w-level
+    # geopotential heights.  Lets a renderer draw the curtain on the model's own
+    # grid with flat shading instead of resampling onto a regular height axis.
+    # Isobaric sources (the HRRR path) have no such edges and leave this None.
+    height_w2d: np.ndarray | None = None
 
 
 def _lon180(lon) -> np.ndarray:
