@@ -730,6 +730,28 @@ output_var  = "srh_0to1km"
 hrrr = "HLCY:1000-0 m above ground"
 rrfs = "HLCY:1000-0 m above ground"
 
+# Shear is shipped as COMPONENTS only; the magnitude is derived
+# (brc_tools.nwp.derived.add_shear_fields), not an alias -- asking for
+# "shear_mag_0to6km" as an alias is what produced an all-NaN column at Ashley
+# gate A0.  Note the depth token is load-bearing: a bare "VUCSH" search matches
+# BOTH layers below and makes Herbie return a list (the precip_1hr trap).
+# HRRR has no 0-3 km layer, so 0-3 km shear needs pressure-level winds instead.
+[aliases.shear_u_0to1km]
+description = "0-1 km bulk shear, eastward component"
+units       = "m s-1"
+output_var  = "shear_u_0to1km"
+[aliases.shear_u_0to1km.search]
+hrrr = "VUCSH:0-1000 m above ground"
+rrfs = "VUCSH:0-1000 m above ground"
+
+[aliases.shear_v_0to1km]
+description = "0-1 km bulk shear, northward component"
+units       = "m s-1"
+output_var  = "shear_v_0to1km"
+[aliases.shear_v_0to1km.search]
+hrrr = "VVCSH:0-1000 m above ground"
+rrfs = "VVCSH:0-1000 m above ground"
+
 [aliases.shear_u_0to6km]
 description = "0-6 km bulk shear, eastward component"
 units       = "m s-1"

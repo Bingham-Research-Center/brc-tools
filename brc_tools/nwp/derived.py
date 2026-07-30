@@ -220,6 +220,32 @@ def add_wind_fields(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+#: Bulk-shear layers HRRR ships as components, keyed by the depth token used in
+#: the alias names.  HRRR carries the 0-1 km and 0-6 km layers only -- there is no
+#: 0-3 km message, so a 0-3 km panel must come from pressure-level winds or from
+#: wrfout, not from these aliases.
+SHEAR_LAYERS = ("0to1km", "0to6km")
+
+
+def add_shear_fields(ds: xr.Dataset) -> xr.Dataset:
+    """Add bulk-shear magnitude for every layer whose components are present.
+
+    HRRR ships the shear *components* (``VUCSH``/``VVCSH``) but not the
+    magnitude, so ``shear_mag_<layer>`` is a derived field rather than a lookup
+    alias.  Requesting it as an alias is what silently produced an all-NaN
+    column in the Ashley gate-A0 table.
+
+    The magnitude of a vector is the same arithmetic as a wind speed, so this
+    reuses :func:`wind_speed` rather than repeating it.
+    """
+    for layer in SHEAR_LAYERS:
+        u_name = f"shear_u_{layer}"
+        v_name = f"shear_v_{layer}"
+        if u_name in ds and v_name in ds:
+            ds[f"shear_mag_{layer}"] = wind_speed(ds[u_name], ds[v_name])
+    return ds
+
+
 def horizontal_gradient_magnitude(field, dx_m: float = 3000.0):
     """Magnitude of the horizontal gradient of a 2-D field.
 

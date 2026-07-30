@@ -2,8 +2,10 @@
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from brc_tools.nwp.derived import (
+    add_shear_fields,
     pa_to_hpa,
     potential_temperature,
     relative_humidity,
@@ -85,3 +87,47 @@ class TestThermodynamics:
     def test_relative_humidity_subsaturated(self):
         rh = relative_humidity(300.0, 280.0)
         assert 0 < rh < 100
+
+
+class TestShear:
+    """Bulk-shear magnitude is DERIVED from the components HRRR ships.
+
+    Asking for it as a lookup alias is what silently produced an all-NaN
+    shear column across all six HRRR cycles at Ashley gate A0.
+    """
+
+    @staticmethod
+    def _ds(**arrays):
+        return xr.Dataset({k: ("x", np.asarray(v, dtype=float)) for k, v in arrays.items()})
+
+    def test_magnitude_from_components(self):
+        ds = self._ds(shear_u_0to6km=[3.0, -6.0], shear_v_0to6km=[4.0, 8.0])
+        out = add_shear_fields(ds)
+        np.testing.assert_allclose(out["shear_mag_0to6km"], [5.0, 10.0])
+
+    def test_both_layers_when_present(self):
+        ds = self._ds(
+            shear_u_0to1km=[3.0], shear_v_0to1km=[4.0],
+            shear_u_0to6km=[5.0], shear_v_0to6km=[12.0],
+        )
+        out = add_shear_fields(ds)
+        assert out["shear_mag_0to1km"].item() == pytest.approx(5.0)
+        assert out["shear_mag_0to6km"].item() == pytest.approx(13.0)
+
+    def test_missing_components_are_a_no_op(self):
+        # Guard like add_wind_fields: never raise on an absent input, just skip.
+        ds = self._ds(shear_u_0to6km=[3.0])
+        out = add_shear_fields(ds)
+        assert "shear_mag_0to6km" not in out
+        assert "shear_mag_0to1km" not in out
+
+    def test_returns_the_same_dataset(self):
+        ds = self._ds(shear_u_0to6km=[3.0], shear_v_0to6km=[4.0])
+        assert add_shear_fields(ds) is ds
+
+    def test_no_0to3km_layer_is_offered(self):
+        # HRRR has no 0-3 km shear message; a 0-3 km panel needs pressure-level
+        # winds. Asserting this keeps a future reader from inventing the alias.
+        from brc_tools.nwp.derived import SHEAR_LAYERS
+
+        assert "0to3km" not in SHEAR_LAYERS
