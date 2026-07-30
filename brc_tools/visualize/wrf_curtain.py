@@ -34,7 +34,8 @@ __all__ = ["curtain_mesh", "plot_wrf_curtain"]
 
 _ACCENT = "#c0392b"
 _SHADE_FIELD = {"speed": "speed2d", "theta": "theta2d", "temp": "temp2d",
-                "along": "along2d", "w": "w2d", "theta_e": "thetae2d"}
+                "along": "along2d", "w": "w2d", "theta_e": "thetae2d",
+                "refl": "refl2d"}
 
 
 def _edges1d(centres: np.ndarray) -> np.ndarray:

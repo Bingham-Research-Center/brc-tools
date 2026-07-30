@@ -68,3 +68,54 @@ def test_use_publication_style_sets_rcparams(tmp_path, monkeypatch):
     assert matplotlib.rcParams["mathtext.fontset"] == "stixsans"
     assert matplotlib.rcParams["font.family"] == ["sans-serif"]
     assert "Nimbus Sans" in matplotlib.rcParams["font.sans-serif"]
+
+
+class TestConvectiveStyles:
+    """Limits come from measured values on the Ashley run, not Plains intuition.
+
+    A Basin environment with 580-980 J/kg MLCAPE renders as uniformly blank on a
+    scale built for 4000 J/kg, which is the failure this class pins down.
+    """
+
+    def test_every_convective_key_is_registered(self):
+        for key in (
+            "refl_comp", "refl", "refl_beam", "echo_top", "uphel_2to5km",
+            "uphel_0to3km", "vert_vorticity", "srh_0to3km", "srh_0to1km",
+            "cape_ml", "cape_mu", "cin_ml", "shear_mag_0to6km",
+            "shear_mag_0to1km", "wspd10max", "hail_max", "tornado_mask", "llws",
+        ):
+            assert key in st.VAR_STYLES, f"{key} missing from VAR_STYLES"
+
+    def test_reflectivity_spans_the_observed_range(self):
+        s = st.VAR_STYLES["refl_comp"]
+        # 5 dBZ floor keeps clear air unpainted; the run's domain max was 70.6.
+        assert (s.vmin, s.vmax) == (5.0, 75.0)
+        assert s.extend == "max"
+
+    def test_cape_scale_fits_a_basin_environment(self):
+        s = st.VAR_STYLES["cape_ml"]
+        assert (s.vmin, s.vmax) == (0.0, 1200.0)
+        # Gate A0 measured 580-980 J/kg, so the range must resolve that band.
+        assert s.vmax < 2000.0, "a Plains-width CAPE scale renders this event blank"
+
+    def test_cin_is_negative_and_extends_downward(self):
+        s = st.VAR_STYLES["cin_ml"]
+        assert s.vmin == -400.0 and s.vmax == 0.0
+        assert s.extend == "min"
+
+    def test_max_wind_scale_exceeds_the_winter_one(self):
+        # Domain-max 10 m wind reached 33.9 m/s; the winter style saturates at 15.
+        assert st.VAR_STYLES["wspd10max"].vmax >= 33.9
+        assert st.VAR_STYLES["wspd10max"].vmax > st.VAR_STYLES["wind_speed_10m"].vmax
+
+    def test_vorticity_is_diverging_and_symmetric(self):
+        s = st.VAR_STYLES["vert_vorticity"]
+        assert s.diverging is True
+        assert s.vmin == -s.vmax
+        # Deliberately set for a boundary shear line (1-5e-3), letting storm
+        # cores (~20e-3) saturate; extend="both" declares that on the bar.
+        assert s.extend == "both"
+
+    def test_srh_covers_the_measured_maximum(self):
+        # 0-3 km SRH reached 824 m2 s-2 at 02Z in the 23Z cycle.
+        assert st.VAR_STYLES["srh_0to3km"].vmax >= 824.0

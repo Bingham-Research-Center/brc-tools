@@ -179,12 +179,20 @@ class WRFPlane:
     ve: np.ndarray  # (nz, ny, nx) m/s, earth-relative north
     w: np.ndarray  # (nz, ny, nx) m/s
     pressure_hpa: np.ndarray  # (nz,) domain-mean level pressure, for reference only
+    # (nz, ny, nx) dBZ from REFL_10CM, or None when the run did not write it
+    # (do_radar_ref = 0). Optional so drainage and convective cases share a type.
+    refl: np.ndarray | None = None
 
 
 def load_plane(ds) -> WRFPlane:
-    """Read the 3-D fields for :func:`section_from_plane` from an open ``wrfout``."""
+    """Read the 3-D fields for :func:`section_from_plane` from an open ``wrfout``.
+
+    Reflectivity is picked up when the run wrote ``REFL_10CM``, so a convective
+    case gets reflectivity curtains from the same single expensive read.
+    """
     ue, ve = wo.earth_relative_winds(ds)
     return WRFPlane(
+        refl=wo.reflectivity(ds) if "REFL_10CM" in ds else None,
         lat2d=wo.surface_field(ds, "XLAT"),
         lon2d=_lon180(wo.surface_field(ds, "XLONG")),
         terrain=wo.surface_field(ds, "HGT"),
@@ -273,6 +281,7 @@ def section_from_plane(
         termini=termini,
         orientation=orientation,
         height_w2d=plane.height_w[:, jj, ii],
+        refl2d=None if plane.refl is None else plane.refl[:, jj, ii],
     )
 
 
