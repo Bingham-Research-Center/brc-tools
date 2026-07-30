@@ -12,15 +12,18 @@ authors = [
     {name = "Michael Davies"},
 ]
 license = {text = "MIT"}
-requires-python = ">=3.9"
+# 3.11+ is not aspirational: brc_tools/nwp/source.py -- which almost everything
+# imports -- has `import tomllib` at module scope, and tomllib landed in 3.11.
+# The package has never been installable on 3.9/3.10; the metadata just said
+# otherwise. Also what lets ruff sort tomllib as the stdlib import it is.
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Atmospheric Science",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
@@ -78,7 +81,7 @@ markers = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [

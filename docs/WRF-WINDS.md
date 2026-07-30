@@ -61,8 +61,9 @@ sbatch scripts/wrf_winds.dtn.slurm --config <case.toml> [--run-dir <run>] \
   hours, so intersecting would discard every sub-hourly frame the fine nest has.
   Each domain then renders only the times it holds, and the count of skipped
   domain-times is reported once at the end rather than per line.
-- Figures are simply overwritten, so re-running as the job advances costs nothing
-  but wall clock.
+- Figures are overwritten by default, so re-running as the job advances costs
+  nothing but wall clock. `--skip-existing` makes that re-run cheap instead: see
+  "Idempotence, dry runs and coverage" below.
 - `--valid` takes an exact `YYYY-MM-DD_HH:MM`; `--lead` takes **minutes** after
   init (`SIMULATION_START_DATE`, else the earliest wrfout).
 - With none of those, the engine renders **the latest valid time present on every
@@ -79,6 +80,32 @@ sbatch scripts/wrf_winds.dtn.slurm --config <case.toml> [--run-dir <run>] \
 Both wrfout filename conventions are read: WRF's default `%Y-%m-%d_%H:%M:%S` **and**
 the `nocolons = .true.` form `%Y-%m-%d_%H_%M_%S`. (`brc_tools.nwp.wrf_output` assumes
 the first; the tolerant helpers live in `wrf_section.py`.)
+
+### Idempotence, dry runs and coverage
+
+Shared by both this engine and `wrf_convective.py`
+(`brc_tools.nwp.wrf_engine.FigureLedger`):
+
+| flag | what it does |
+|---|---|
+| `--dry-run` | print the exact figure list this job would render, then exit. Nothing is written — no PNGs, no manifest |
+| `--skip-existing` | keep a figure at least as new as every file it derives from. A `wrfout` rewritten by a later run is newer than its figure, so that figure regenerates — safe against a still-writing job |
+| `--allow-errors` | exit 0 even if some figures failed. Without it **any** failure exits non-zero |
+| `--report` | summarise coverage from the manifests already in the output root, then exit. Renders nothing |
+
+Every real job writes `manifest_<jobid>.json` into the output root — config path and
+SHA-256, run dir, argv, and one record per attempted figure with its family, domain,
+valid time, variable and status (`rendered` / `skipped` / `error` / `absent`). Named
+by `SLURM_JOB_ID`, so the normal pattern of several jobs sweeping into one output
+root does not clobber itself.
+
+`absent` is a distinct status on purpose: "this run never wrote that field" and
+"this figure failed" are different answers to *where is my figure?*, and `find`
+cannot tell them apart.
+
+Per-figure failures are still caught and printed, so one bad panel cannot lose a
+run. What changed is that the job can no longer *look* like a success — the old
+`return 0 if total else 1` could not distinguish 400-of-400 from 100-of-400.
 
 ## Case TOML schema
 
