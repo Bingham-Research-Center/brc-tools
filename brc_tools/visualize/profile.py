@@ -224,6 +224,55 @@ def plot_theta_profiles(
     return out
 
 
+def _draw_parcel(skew, model: Sounding, parcel: str, *, mark_levels: bool, shade_cape: bool):
+    """Overlay a parcel ascent path, optionally with CAPE shading and levels.
+
+    Failures are drawn over, not raised: a profile that will not support a parcel
+    (too shallow, or already saturated at the start) should still produce the
+    skew-T, because the temperature and dewpoint traces are the primary content.
+    """
+    from metpy.units import units
+
+    from brc_tools.nwp import convective_env as ce
+
+    try:
+        prof_c = ce.parcel_profile_c(model, parcel)
+    except Exception:  # noqa: BLE001 - any MetPy failure here is non-fatal
+        return
+
+    p = model.pressure_hpa * units.hPa
+    skew.plot(p, prof_c * units.degC, "0.25", lw=1.2, ls=":", label=f"{parcel} parcel")
+
+    if shade_cape:
+        try:
+            skew.shade_cape(p, model.temperature_c * units.degC, prof_c * units.degC,
+                            alpha=0.2, color="tab:red")
+            # Passing dewpoint makes MetPy exclude negative area below the LCL and
+            # ABOVE THE EL. Without it the whole stable stratosphere above the EL
+            # shades blue and reads as inhibition, which it is not.
+            skew.shade_cin(p, model.temperature_c * units.degC, prof_c * units.degC,
+                           dewpoint=model.dewpoint_c * units.degC,
+                           alpha=0.2, color="tab:blue")
+        except Exception:  # noqa: BLE001
+            pass
+
+    if mark_levels:
+        levels = ce.parcel_levels(model, parcel)
+        for name, hpa, agl in (
+            ("LCL", levels.lcl_hpa, levels.lcl_agl_m),
+            ("LFC", levels.lfc_hpa, levels.lfc_agl_m),
+            ("EL", levels.el_hpa, levels.el_agl_m),
+        ):
+            if not np.isfinite(hpa):
+                continue
+            skew.ax.axhline(hpa, color="0.35", lw=0.5, ls="--", alpha=0.7)
+            label = f"{name} {agl:.0f} m" if np.isfinite(agl) else name
+            skew.ax.annotate(
+                label, (0.01, hpa), xycoords=("axes fraction", "data"),
+                fontsize=6, color="0.3", va="bottom",
+            )
+
+
 def plot_skewt(
     model: Sounding,
     out_path: str | Path,
@@ -231,10 +280,32 @@ def plot_skewt(
     obs: Sounding | None = None,
     title: str,
     annotation: str | None = None,
+    parcel: str | None = None,
+    mark_levels: bool = False,
+    shade_cape: bool = False,
+    p_bottom_hpa: float = 1000.0,
+    p_top_hpa: float = 500.0,
+    t_range: tuple[float, float] = (-40.0, 20.0),
     figsize: tuple[float, float] = (7.0, 8.0),
     dpi: int = 300,
 ) -> Path:
-    """Render a MetPy skew-T of a model sounding, optionally over an observed one."""
+    """Render a MetPy skew-T of a model sounding, optionally over an observed one.
+
+    The convective additions are all opt-in, and the defaults reproduce the
+    original winter cold-pool figure exactly:
+
+    ``parcel``
+        ``"sb"``, ``"ml"`` or ``"mu"`` -- draw that parcel's ascent path (see
+        :mod:`brc_tools.nwp.convective_env`).  ``None`` draws no parcel.
+    ``mark_levels``
+        annotate LCL / LFC / EL for that parcel.  Needs ``parcel``.
+    ``shade_cape``
+        shade positive area between the parcel path and the environment.  Needs
+        ``parcel``.
+    ``p_bottom_hpa`` / ``p_top_hpa`` / ``t_range``
+        axis limits.  The 1000-500 hPa default suits a Basin cold pool; a
+        convective profile wants ``p_top_hpa=150`` or so to reach the EL.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
@@ -258,11 +329,14 @@ def plot_skewt(
         skew.plot(po, obs.temperature_c * units.degC, "k", lw=1.4, ls="--", label=f"{obs.source} T")
         skew.plot(po, obs.dewpoint_c * units.degC, "0.4", lw=1.4, ls="--", label=f"{obs.source} Td")
 
+    if parcel is not None:
+        _draw_parcel(skew, model, parcel, mark_levels=mark_levels, shade_cape=shade_cape)
+
     skew.plot_dry_adiabats(alpha=0.25, lw=0.6)
     skew.plot_moist_adiabats(alpha=0.2, lw=0.6)
     skew.plot_mixing_lines(alpha=0.2, lw=0.6)
-    skew.ax.set_ylim(1000, 500)  # basin floor ~850 hPa up to mid-troposphere
-    skew.ax.set_xlim(-40, 20)
+    skew.ax.set_ylim(p_bottom_hpa, p_top_hpa)  # default: basin floor to mid-troposphere
+    skew.ax.set_xlim(*t_range)
     skew.ax.set_xlabel(r"temperature ($^{\circ}$C)")
     skew.ax.set_ylabel("pressure (hPa)")
     skew.ax.set_title(title)
