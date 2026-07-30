@@ -367,7 +367,92 @@ lat = 40.017
 lon = -109.179
 elevation_m = 1596
 
+# --- Ashley Valley surface network -------------------------------------------
+# The stations that resolve a boundary crossing the valley floor. Names follow
+# the labels used in the WRF tslist for the 20251011 rotating-cell case, so a
+# model trace and an obs trace can be matched by name.
+#
+# Coordinates are the full-precision Synoptic values, NOT the F7.3 values in a
+# tslist file -- those are truncated to ~27 m of latitude. Elevations are the
+# station elevations converted from feet.
+#
+# asphalt_ridge (UTASH), east_lapoint (UTELP) and split_mountain (SPMU1) already
+# exist above and are deliberately not redefined here.
+
+[waypoints.vernal_airport]
+lat = 40.44295
+lon = -109.51273
+elevation_m = 1604
+reference_stid = "KVEL"     # the only official trace near the 02:30Z vortex
+
+[waypoints.vernal_west]
+lat = 40.41344
+lon = -109.59288
+elevation_m = 1813
+reference_stid = "PC353"    # 6.9 km W of the spotter point
+
+[waypoints.vernal_ucc33]
+lat = 40.4584
+lon = -109.56226
+elevation_m = 1665
+reference_stid = "UCC33"     # 6.9 km NW
+
+[waypoints.ashley_pc558]
+lat = 40.50927
+lon = -109.57551
+elevation_m = 1773
+reference_stid = "PC558"
+
+[waypoints.dry_fork]
+lat = 40.52349
+lon = -109.60627
+elevation_m = 1785
+reference_stid = "PC101"
+
+[waypoints.little_mountain]
+lat = 40.54216
+lon = -109.69963
+elevation_m = 2568
+reference_stid = "PC266"    # elevated site; gusted 30.3 m/s at 01:40Z
+
+[waypoints.dinosaur_nm]
+lat = 40.4372
+lon = -109.3047
+elevation_m = 1463
+reference_stid = "A3822"    # Dinosaur NM west entrance; cf. api/aqs 49-047-1002
+# NOTE: [waypoints.dinosaur] above also claims reference_stid = "A3822" but sits
+# at 40.244/-108.972, which is 35 km away (the town of Dinosaur, Colorado) while
+# carrying this station's elevation. One of its coordinates and its stid is
+# wrong; it is left as found because four waypoint_groups reference it and
+# either repair changes existing obs pulls. Use dinosaur_nm for A3822.
+
+[waypoints.jensen]
+lat = 40.364
+lon = -109.346
+elevation_m = 1448
+reference_stid = "JENU1"    # COOP, hourly only; coords from the case tslist
+
+[waypoints.ashley_spotter]
+lat = 40.41076
+lon = -109.51104
+elevation_m = 1623          # 600 m model terrain; no survey, no station here
+# The 02:20Z ~30 m/s report location. A TARGET to reproduce, never a
+# verification datum -- the observation is unofficial. KVEL, 3.3 km north, is
+# the official trace to verify against.
+
 [waypoint_groups]
+# W->E in the order the 01:20-01:50Z outflow crossed them, so a timing panel
+# reads left to right. PC266 is elevated and leads the floor stations.
+ashley_outflow = [
+    "little_mountain", "east_lapoint", "vernal_west",
+    "asphalt_ridge", "vernal_ucc33", "vernal_airport",
+]
+# Every point the 20251011 case writes a tslist trace for.
+ashley_tslist = [
+    "ashley_spotter", "vernal_airport", "asphalt_ridge", "vernal_west",
+    "vernal_ucc33", "ashley_pc558", "dry_fork", "east_lapoint",
+    "split_mountain", "jensen", "dinosaur_nm", "little_mountain",
+]
 us40_basin = ["fruitland", "duchesne", "myton", "roosevelt", "vernal"]
 basin_full = ["fruitland", "duchesne", "myton", "roosevelt", "vernal", "dinosaur"]
 basin_west = ["fruitland", "duchesne", "horsepool"]
@@ -729,6 +814,28 @@ output_var  = "srh_0to1km"
 [aliases.srh_0to1km.search]
 hrrr = "HLCY:1000-0 m above ground"
 rrfs = "HLCY:1000-0 m above ground"
+
+# Shear is shipped as COMPONENTS only; the magnitude is derived
+# (brc_tools.nwp.derived.add_shear_fields), not an alias -- asking for
+# "shear_mag_0to6km" as an alias is what produced an all-NaN column at Ashley
+# gate A0.  Note the depth token is load-bearing: a bare "VUCSH" search matches
+# BOTH layers below and makes Herbie return a list (the precip_1hr trap).
+# HRRR has no 0-3 km layer, so 0-3 km shear needs pressure-level winds instead.
+[aliases.shear_u_0to1km]
+description = "0-1 km bulk shear, eastward component"
+units       = "m s-1"
+output_var  = "shear_u_0to1km"
+[aliases.shear_u_0to1km.search]
+hrrr = "VUCSH:0-1000 m above ground"
+rrfs = "VUCSH:0-1000 m above ground"
+
+[aliases.shear_v_0to1km]
+description = "0-1 km bulk shear, northward component"
+units       = "m s-1"
+output_var  = "shear_v_0to1km"
+[aliases.shear_v_0to1km.search]
+hrrr = "VVCSH:0-1000 m above ground"
+rrfs = "VVCSH:0-1000 m above ground"
 
 [aliases.shear_u_0to6km]
 description = "0-6 km bulk shear, eastward component"

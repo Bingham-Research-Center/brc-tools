@@ -45,6 +45,10 @@ class NWPSection:
     terrain1d: np.ndarray  # (n,) m ASL
     pressure_hpa: np.ndarray  # (nz,)
     thetae2d: np.ndarray | None = None  # (nz, n) equiv. potential temp, K (needs dewpoint)
+    # (nz, n) simulated reflectivity, dBZ. Present only when the source carries a
+    # 3-D reflectivity field (WRF's REFL_10CM, i.e. do_radar_ref = 1); None
+    # otherwise, so a convective section and a drainage section share one type.
+    refl2d: np.ndarray | None = None
     termini: tuple[str, str] = ("A", "B")
     orientation: str = "EW"  # accent-colour key for the crosssection helpers
     # True vertical CELL EDGES (nz+1, n) when the source has them -- WRF's w-level

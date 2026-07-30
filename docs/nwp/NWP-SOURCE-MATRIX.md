@@ -105,6 +105,47 @@ What updating `2025.11.3 → 2026.3.0` would buy:
 for the `rap_historical` typo if RAP Herbie support matters later. Env recipe →
 `docs/ENVIRONMENT-SETUP.md`.
 
+## Out of Herbie's scope: ground radar (NEXRAD Level-II)
+
+Not an NWP source and deliberately **not** a `[models.*]` entry, so
+`tests/test_source_matrix.py` does not police it — but the wheel-check is recorded
+here because the convention is to write the decision down.
+
+Herbie is an NWP-archive library; it has no radar templates, so there is nothing to
+reuse and a direct fetch is the only option. `brc_tools/radar/nexrad.py` does it with
+`requests` plus `metpy.io.Level2File` (which decodes Archive II including its internal
+BZ2 chunks) — **no new dependency**. `pyart`, `nexradaws` and `boto3` were all
+considered and none installed.
+
+Transport, probed 2026-07-30. **Level-II is not obtainable for a 2025 case; Level-III
+is, from Iowa State.**
+
+| route | product | verdict |
+|---|---|---|
+| **IEM RIDGE** (`mesonet.agron.iastate.edu`) | **Level-III** | ✅ **THE WORKING ROUTE.** Per-radar georeferenced PNG + world file, ~4–5 min cadence, long historical archive. Verified end to end on KGJX 2025-10-12: 12 scans in 02–03Z, decoded to dBZ, max 64.5 over the tile and 53.5 over Ashley Valley. **Elevation 1 (0.5°) only.** → `brc_tools/radar/iem.py` |
+| NCEI `nexrad-level-3-products` | Level-III | **rolling, not historical.** `archive/KGJX/` holds only the current month (`202607`); `202510` is 404 |
+| NCEI `/data/` | Level-II | **none published.** Level-3 products and coverages only |
+| Unidata THREDDS radar server | Level-II | **no archive.** Only `nexrad/level2/IDD` (rolling real-time) and a case study; the `level2/S3` path returns a server-side `java.lang.NullPointerException` |
+| GCS `gcp-public-data-nexrad-l2` | Level-II | **works, coverage stops 2025-08-01…2025-09-15.** Anonymous listing OK, a 9.6 MB hourly `.tar` fetched and decoded, all of 0.0/0.5/1.2° × REF/VEL resolved. Cannot serve October 2025 |
+| AWS `noaa-nexrad-level2` | Level-II | **anonymous access is denied by bucket policy.** Re-probed 2026-07-30 from CHPC with no sandbox: `AccessDenied` on the global endpoint, the regional `s3.us-east-1` endpoint, `list-type=2`, a direct object GET, and a 2013 date alike. Not an egress problem — `noaa-hrrr-bdp-pds` and `unidata-nexrad-level3` both list `200` from the same host, and the 403 carries `x-amz-bucket-region: us-east-1`, so the request reached the right region and the bucket refused it. Would need credentials |
+
+Both Level-II mirrors answer the same S3 `ListBucketResult` XML, so one parser serves
+either and `MIRRORS` selects between them.
+
+**What this means for a beam-matched comparison.** IEM gives a real observed 0.5°
+reflectivity field, which is one of the three tilts the Ashley case reports
+(0.0 / 0.5 / 1.2°), so that comparison is now possible and the engine's `beam` family
+renders it beside the model on the same colour scale (`compare_observed = true`).
+The 0.0° and 1.2° comparisons remain **impossible** — no archive serves those tilts
+for this date — so a signature reported at 1.2°, including the gate-to-gate couplet,
+cannot be verified against the model. Say so rather than substituting 0.5°.
+
+Level-III caveats worth carrying: values are quantised to 0.5 dBZ and already
+resampled by the NWS product generator onto a regular lat/lon grid, so this is not
+raw polar data; and the velocity product (`N0S`) is fetchable but its index scaling
+is **not** verified in `iem.py`, which refuses it rather than returning unscaled
+indices labelled m/s.
+
 ## Enforcement
 
 Adding any `[models.*]` to `lookups.toml` **must** add a row here (with its Herbie-vs-direct decision) —

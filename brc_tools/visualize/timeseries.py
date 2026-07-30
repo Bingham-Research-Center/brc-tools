@@ -286,10 +286,13 @@ def plot_scalar_timeseries(
     out = Path(out_path)
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
     for i, (label, (times, values)) in enumerate(series.items()):
-        line_style = dict(DEFAULT_RUN_STYLES.get(i, {}))
+        # Marker defaults stay overridable via run_styles: a 3-second model trace
+        # carries ~1200 points and markers on every one of them is a solid band.
+        line_style = {"marker": "o", "ms": 3.5}
+        line_style.update(DEFAULT_RUN_STYLES.get(i, {}))
         if run_styles and label in run_styles:
             line_style.update(run_styles[label])
-        ax.plot(list(times), np.asarray(values), marker="o", ms=3.5, label=label, **line_style)
+        ax.plot(list(times), np.asarray(values), label=label, **line_style)
     ax.set_ylabel(ylabel)
     ax.set_xlabel("valid time (UTC)")
     ax.set_title(title)

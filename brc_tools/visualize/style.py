@@ -75,6 +75,64 @@ VAR_STYLES: dict[str, VarStyle] = {
                                0.0, 5.0, extend="max"),
     "deficit_froude": VarStyle("plasma", "exploratory bulk Froude proxy",
                                 0.0, 2.0, extend="max"),
+    # --- Convective diagnostics ------------------------------------------------
+    # Limits set from MEASURED values on the 20251011 Ashley 600 m run and its
+    # gate-A0 HRRR table, not from Plains intuition: Basin CAPE and shear ranges
+    # are far narrower than a Great Plains default, and a scale that tops out at
+    # 4000 J/kg renders an 800 J/kg environment as uniformly blank.
+    #
+    # Reflectivity keeps the 5 dBZ floor of operational products, so clear air
+    # stays unpainted, and runs to 75 dBZ because this run's domain maximum
+    # reached 70.6 dBZ. NB that exceeds HRRR's own 52-59 dBZ for the same event
+    # and is a known mp_physics = 38 hail-core signature -- a thing to validate,
+    # not a result, and a reason to compare on beam surfaces not column maxima.
+    "refl_comp":      VarStyle("gist_ncar", r"composite reflectivity (dBZ)",
+                                5.0, 75.0, extend="max"),
+    "refl":           VarStyle("gist_ncar", r"reflectivity (dBZ)",
+                                5.0, 75.0, extend="max"),
+    "refl_beam":      VarStyle("gist_ncar", r"reflectivity on beam surface (dBZ)",
+                                5.0, 75.0, extend="max"),
+    "echo_top":       VarStyle("viridis", r"echo top (km MSL)", 2.0, 14.0, extend="max"),
+    # Updraft helicity: 2-5 km peaked at ~19.5 m2 s-2 in the gate-A0 HRRR table,
+    # so a supercell-tuned 0-300 scale would be empty. Kept generous for the
+    # 600 m run, which resolves more than 3 km HRRR can.
+    "uphel_2to5km":   VarStyle("Reds", r"2-5 km updraft helicity (m$^2$ s$^{-2}$)",
+                                0.0, 60.0, extend="max"),
+    "uphel_0to3km":   VarStyle("Reds", r"0-3 km updraft helicity (m$^2$ s$^{-2}$)",
+                                0.0, 40.0, extend="max"),
+    # Vertical vorticity, diverging about zero: the landspout test is whether a
+    # cyclonic shear line exists on the floor BEFORE the updraft arrives, so
+    # anticyclonic values must stay legible rather than being clipped away.
+    # Storm cores reach +-20e-3 s-1 on this run, but a boundary shear line is
+    # 1-5e-3, so the range is deliberately set for the BOUNDARY and lets the core
+    # saturate -- extend="both" says so on the bar. Widening to +-20 to fit the
+    # core would render the feature the landspout test is about as blank.
+    "vert_vorticity": VarStyle("RdBu_r", r"$\zeta$ ($10^{-3}$ s$^{-1}$)",
+                                -10.0, 10.0, diverging=True),
+    # 0-3 km SRH 400-824 m2 s-2 at gate A0; 0-1 km is a fraction of that.
+    "srh_0to3km":     VarStyle("YlOrRd", r"0-3 km SRH (m$^2$ s$^{-2}$)",
+                                0.0, 900.0, extend="max"),
+    "srh_0to1km":     VarStyle("YlOrRd", r"0-1 km SRH (m$^2$ s$^{-2}$)",
+                                0.0, 400.0, extend="max"),
+    # MLCAPE 580-980 J/kg, MLCIN -100..-305 across the six gate-A0 cycles.
+    # High-shear / low-CAPE is the regime, so these are deliberately tight.
+    "cape_ml":        VarStyle("YlOrRd", r"MLCAPE (J kg$^{-1}$)", 0.0, 1200.0, extend="max"),
+    "cape_mu":        VarStyle("YlOrRd", r"MUCAPE (J kg$^{-1}$)", 0.0, 1500.0, extend="max"),
+    "cin_ml":         VarStyle("Purples_r", r"MLCIN (J kg$^{-1}$)", -400.0, 0.0, extend="min"),
+    # Bulk shear: 0-6 km in a high-shear regime; 0-1 km scaled for the low layer.
+    "shear_mag_0to6km": VarStyle("BuPu", r"0-6 km bulk shear (m s$^{-1}$)",
+                                  0.0, 35.0, extend="max"),
+    "shear_mag_0to1km": VarStyle("BuPu", r"0-1 km bulk shear (m s$^{-1}$)",
+                                  0.0, 20.0, extend="max"),
+    # 10 m wind maxima ran 15.9 -> 33.9 m/s domain-wide. This is the scale the
+    # swath-width test is read on, so it must not saturate at the 15 m/s the
+    # winter wind_speed_10m style uses.
+    "wspd10max":      VarStyle("YlOrRd", r"max 10 m wind (m s$^{-1}$)",
+                                0.0, 35.0, extend="max"),
+    "hail_max":       VarStyle("PuBu", r"max hail diameter (mm)", 0.0, 50.0, extend="max"),
+    "tornado_mask":   VarStyle("Greys", "AFWA tornado mask", 0.0, 1.0, extend="neither"),
+    "llws":           VarStyle("YlGnBu", r"0-2 km low-level wind shear (m s$^{-1}$)",
+                                0.0, 25.0, extend="max"),
 }
 
 # Symmetric diverging limits for difference figures (case A minus case B).

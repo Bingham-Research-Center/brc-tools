@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np  # noqa: E402
 
+from brc_tools.nwp import wrf_engine as we  # noqa: E402
 from brc_tools.nwp import wrf_output as wo  # noqa: E402
 from brc_tools.nwp import wrf_section as ws  # noqa: E402
 from brc_tools.visualize import coldpool3d as cp3  # noqa: E402
@@ -40,113 +41,41 @@ from brc_tools.visualize.nwp_maps import plot_nwp_surface_map  # noqa: E402
 from brc_tools.visualize.style import VarStyle, get_style, use_publication_style  # noqa: E402
 from brc_tools.visualize.wrf_curtain import plot_wrf_curtain  # noqa: E402
 
-DEFAULT_OUTPUT_ROOT = Path(os.environ.get(
-    "BRC_TOOLS_OUTPUT_DIR",
-    "/uufs/chpc.utah.edu/common/home/lawson-group6/jrlawson/brc-tools-output"))
-
-_MAP_LAYERS = ("states", "counties", "roads", "rivers", "lakes")
-_TIME_FMT = "%Y-%m-%d_%H:%M"
+# Config, waypoints, colour scales and time selection are shared with the
+# convective engine so the two cannot drift; see brc_tools.nwp.wrf_engine.
+DEFAULT_OUTPUT_ROOT = we.DEFAULT_OUTPUT_ROOT
+_MAP_LAYERS = we.MAP_LAYERS
+_TIME_FMT = we.TIME_FMT
 
 
 # --------------------------------------------------------------------------- #
 # config
 # --------------------------------------------------------------------------- #
 def load_config(path: Path) -> dict:
-    with open(path, "rb") as f:
-        cfg = tomllib.load(f)
-    case = cfg["case"]
-    case["run_dir"] = Path(os.path.expandvars(case["run_dir"])).expanduser()
-    cfg["_sections"] = {s["key"]: s for s in cfg.get("sections", [])}
-    cfg["_views3d"] = {v["key"]: v for v in cfg.get("views3d", [])}
-    return cfg
+    """Case TOML, with ``[[sections]]``/``[[views3d]]`` indexed by key."""
+    return we.load_config(path, index=("sections", "views3d"))
 
 
 def waypoints(group: str | None) -> dict:
     """Title-cased ``{name: {lat, lon}}`` for a ``lookups.toml`` waypoint group."""
-    if not group:
-        return {}
-    from brc_tools.nwp.source import load_lookups
-
-    lu = load_lookups()
-    return {n.replace("_", " ").title(): lu["waypoints"][n]
-            for n in lu["waypoint_groups"][group]}
+    return we.waypoints(group)
 
 
 def style_for(cfg: dict, var: str):
-    """Resolve a variable's :class:`VarStyle`, applying the case's overrides.
-
-    A case whose season or regime does not match the package default (the 2 m
-    theta scale is set for winter cold pools, for instance) retunes it here
-    rather than in the shared style table.
-    """
-    base = get_style(var)
-    over = cfg.get("style", {}).get("overrides", {}).get(var)
-    if not over:
-        return base
-    return VarStyle(
-        cmap=over.get("cmap", base.cmap),
-        label=over.get("label", base.label),
-        vmin=float(over.get("vmin", base.vmin)),
-        vmax=float(over.get("vmax", base.vmax)),
-        extend=over.get("extend", base.extend),
-        diverging=bool(over.get("diverging", base.diverging)),
-    )
+    """Resolve a variable's :class:`VarStyle`, applying the case's overrides."""
+    return we.style_for(cfg, var)
 
 
 # --------------------------------------------------------------------------- #
 # time selection
 # --------------------------------------------------------------------------- #
 def select_times(run_dir: Path, domains: list[int], args) -> list[datetime]:
-    """Resolve which valid time(s) to render.
-
-    ``--hourly``/``--every``/``--all`` sweep whatever the run has written so far,
-    which is the normal way to use this against a job still integrating; the
-    single-time forms (``--valid``/``--lead``, or the default latest-common)
-    render one.
-
-    A sweep takes the **union** across domains, not the intersection: a 3 km parent
-    on hourly output and a 600 m nest on 5-minute output share only whole hours, so
-    intersecting would silently throw away every sub-hourly frame the fine nest has.
-    Each domain then renders only the times it actually holds.
-    """
-    per_domain = {d: set(ws.list_valid_times(run_dir, d)) for d in domains}
-    for d, ts in per_domain.items():
-        if not ts:
-            raise SystemExit(f"no wrfout_d{d:02d}_* under {run_dir}")
-    common = set.intersection(*per_domain.values())
-
-    cadence = 60 if args.hourly else args.every
-    if cadence or args.all_times:
-        union = set().union(*per_domain.values())
-        want = sorted(t for t in union
-                      if args.all_times or (t.second == 0 and t.minute % cadence == 0))
-        if not want:
-            raise SystemExit(f"no valid time matches a {cadence}-minute cadence")
-        print(f"[time] {len(want)} time(s) at "
-              f"{'native' if args.all_times else f'{cadence}-min'} cadence: "
-              f"{want[0]:{_TIME_FMT}} .. {want[-1]:{_TIME_FMT}}")
-        return want
-
-    if args.valid:
-        one = datetime.strptime(args.valid, _TIME_FMT)
-    elif args.lead is not None:
-        one = ws.init_time(run_dir, min(domains)) + timedelta(minutes=args.lead)
-    else:
-        if not common:
-            raise SystemExit(_no_common(per_domain))
-        one = max(common)
-        print(f"[time] latest common valid time -> {one:{_TIME_FMT}}")
-
-    for d, ts in per_domain.items():
-        if one not in ts:
-            print(f"[SKIP] d{d:02d} has no {one:{_TIME_FMT}} "
-                  f"(latest {max(ts):{_TIME_FMT}}) -- domain dropped")
-    return [one]
-
-
-def _no_common(per_domain: dict) -> str:
-    return ("no valid time is present on every requested domain: "
-            + ", ".join(f"d{d:02d}={len(t)} times" for d, t in per_domain.items()))
+    """Resolve which valid time(s) to render (shared with the convective engine)."""
+    return we.select_times(
+        run_dir, domains,
+        valid=args.valid, lead=args.lead, hourly=args.hourly,
+        every=args.every, all_times=args.all_times,
+    )
 
 
 # --------------------------------------------------------------------------- #

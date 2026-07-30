@@ -15,10 +15,15 @@ import numpy as np
 KT = 1.94384
 
 
-def interp_to_height_surface(field3d, z3d_asl, target_m: float) -> np.ndarray:
-    """Interpolate ``field3d`` (nz, ny, nx) to a constant height; NaN below ground.
+def interp_to_height_surface(field3d, z3d_asl, target_m) -> np.ndarray:
+    """Interpolate ``field3d`` (nz, ny, nx) to a target height; NaN below ground.
 
     ``z3d_asl`` must increase along axis 0 (mass levels, geometric height ASL).
+
+    ``target_m`` may be a scalar for a constant-height surface, or an ``(ny, nx)``
+    array for a surface that varies across the grid -- a radar beam surface, for
+    instance (see :func:`brc_tools.radar.beam.sample_on_beam`).  Every operation
+    below is elementwise, so both cases go through the same code path.
     """
     field3d = np.asarray(field3d, dtype=float)
     z3d = np.asarray(z3d_asl, dtype=float)

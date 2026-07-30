@@ -33,11 +33,19 @@ def make_synthetic_wrf(
     lat0: float = 40.0,
     lon0: float = -110.0,
     drop_vars: tuple[str, ...] = (),
+    convective: bool = False,
 ):
     """Return a small in-memory ``xr.Dataset`` mimicking a wrfout file.
 
     ``lat0``/``lon0`` place the grid at a different region (the grid stays regular);
     ``drop_vars`` omits fields to exercise missing-variable handling.
+
+    ``convective=True`` adds the fields a ``do_radar_ref``/``nwp_diagnostics`` run
+    writes -- ``REFL_10CM``, ``REFD_COM``, ``ECHOTOP``, ``UP_HELI_MAX``,
+    ``WSPD10MAX``.  Opt-in so every existing fixture stays byte-identical.
+    ``REFL_10CM`` is shaped to have a single unambiguous 40 dBZ top: it rises to a
+    peak at the middle level and falls above, which is what makes an echo-top
+    routine's "highest crossing" behaviour testable against "lowest crossing".
     """
     import xarray as xr
 
@@ -103,9 +111,72 @@ def make_synthetic_wrf(
             "CEN_LON": lon0 + 0.3,
         },
     )
+    if convective:
+        # Tent profile in the vertical: 10 dBZ at the bottom, peaking mid-column,
+        # falling again above, so a 40 dBZ surface is crossed exactly twice and
+        # highest-vs-lowest crossing give different answers.
+        peak = (nz - 1) / 2.0
+        prof = 60.0 - 25.0 * np.abs(np.arange(nz) - peak)
+        refl = np.broadcast_to(prof.reshape(nz, 1, 1), (nz, ny, nx)).astype(float).copy()
+        # Make one column echo-free so NaN handling is exercised.
+        refl[:, 0, 0] = -30.0
+        ds = ds.assign(
+            {
+                "REFL_10CM": (xyz, _t(refl)),
+                "REFD_COM": (sfc, _t(refl.max(axis=0))),
+                "ECHOTOP": (sfc, _t(np.full((ny, nx), 8000.0))),
+                "UP_HELI_MAX": (sfc, _t(np.full((ny, nx), 25.0))),
+                "WSPD10MAX": (sfc, _t(np.full((ny, nx), 18.0))),
+            }
+        )
     if drop_vars:
         ds = ds.drop_vars([v for v in drop_vars if v in ds])
     return ds
+
+
+def make_synthetic_auxhist(
+    ny: int = 6,
+    nx: int = 6,
+    times=None,
+    *,
+    with_coords: bool = False,
+):
+    """Return a 2-D-only auxiliary-history dataset with a real ``Time`` axis.
+
+    Mirrors what an ``iofields``-defined high-cadence stream actually looks like:
+    several frames per file, no ``bottom_top``, and -- unless ``with_coords`` --
+    **no XLAT/XLONG/HGT**, which is the trap :func:`attach_grid_coords` exists for.
+    """
+    import xarray as xr
+
+    if times is None:
+        times = ["2025-10-12_02:00:00", "2025-10-12_02:01:00", "2025-10-12_02:02:00"]
+    nt = len(times)
+    dims = ("Time", "south_north", "west_east")
+
+    def _f(value):
+        return (dims, np.full((nt, ny, nx), float(value)))
+
+    # One character per element, as WRF's char Times(Time, DateStrLen) really is.
+    # NB list(b"...") gives ints, which dtype="S1" would render as decimal digits.
+    stamps = np.array([list(t) for t in times], dtype="S1")
+    data = {
+        "Times": (("Time", "DateStrLen"), stamps),
+        "REFD_COM": _f(45.0),
+        "ECHOTOP": _f(8000.0),
+        "T2": _f(288.0),
+        "PSFC": _f(83000.0),
+        "U10": _f(3.0),
+        "V10": _f(4.0),
+        # Present in the stream but reset on the HISTORY write, so unusable here.
+        "WSPD10MAX": _f(20.0),
+        "UP_HELI_MAX": _f(30.0),
+    }
+    if with_coords:
+        jj, ii = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
+        data["XLAT"] = (dims, np.broadcast_to(40.0 + jj * 0.1, (nt, ny, nx)).copy())
+        data["XLONG"] = (dims, np.broadcast_to(-110.0 + ii * 0.1, (nt, ny, nx)).copy())
+    return xr.Dataset(data_vars=data, attrs={"DX": 600.0, "DY": 600.0})
 
 
 def write_synthetic_run(

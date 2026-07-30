@@ -189,6 +189,19 @@ def qvapor(ds) -> np.ndarray:
     return np.asarray(_da(ds, "QVAPOR").values)
 
 
+def reflectivity(ds) -> np.ndarray:
+    """Simulated reflectivity (dBZ) on mass levels, from ``REFL_10CM``.
+
+    Written only when the run set ``do_radar_ref = 1``; use ``"REFL_10CM" in ds``
+    to test.  Note this is a *forward-modelled* radar quantity from the
+    microphysics scheme, not a measurement: with a hail-bearing scheme it can run
+    well above what an operational radar reports for the same storm, which is why
+    a comparison against a real radar has to be made on matched beam surfaces
+    rather than against a column maximum.
+    """
+    return np.asarray(_da(ds, "REFL_10CM").values)
+
+
 # --------------------------------------------------------------------------- #
 # winds
 # --------------------------------------------------------------------------- #
