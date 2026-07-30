@@ -51,6 +51,21 @@ RIDGE_PRODUCTS: dict[str, tuple[float, str, str]] = {
     "N0S": (0.5, "storm-relative mean radial velocity", "velocity"),
 }
 
+def observed_elevations(quantity: str = "reflectivity") -> set[float]:
+    """Beam tilts this archive can actually serve, in degrees.
+
+    Today this is ``{0.5}`` -- RIDGE publishes elevation 1 only.  Exposed as a
+    function rather than left implicit in :data:`RIDGE_PRODUCTS` because a caller
+    rendering a *model* beam surface needs to know, before it draws, whether an
+    observed counterpart can exist at that tilt.  A 1.2 deg model panel with no
+    observed panel beside it is correct but easy to misread as "the observation
+    was missing that day", and over the Uinta Basin the distinction is binding:
+    nothing below ~3 km AGL was sampled by radar at all, so a signature seen only
+    in the model must not be described as verified.
+    """
+    return {elev for elev, _desc, qty in RIDGE_PRODUCTS.values() if qty == quantity}
+
+
 #: Index -> dBZ for the reflectivity products.  Index 0 is missing.
 _DBZ_MIN = -32.0
 _DBZ_STEP = 0.5

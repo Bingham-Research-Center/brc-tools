@@ -77,10 +77,17 @@ job. All are fixed; they are recorded because the *class* of mistake will recur.
 | 8 | `parcel_levels` reversed both interpolation arrays | LCL/LFC/EL all reported the surface height | fixed |
 | 9 | Beam titles clipped | The tilt — the one thing that makes the figure meaningful — was cut off | fixed |
 | 10 | `render_aux` passed borrowed coordinates into `plan_dataset`'s `extra` | `plan_dataset` builds `latitude`/`longitude` as coords itself, so xarray rejected the dataset and the whole 1-minute job died. **Found only when the suite was first run** — the family had never been smoke-tested, unlike the other six | fixed |
+| 11 | A transect leaving its nest sampled the **edge column** for the rest of its length | `section_from_plane` ran `cKDTree.query` and threw away the distances it returned. Nearest neighbour has no cutoff, so an off-grid line drew a flat, entirely physical-looking curtain that was an artefact of the search. Was open as gap 5 | fixed — off-grid samples are blanked, `section_coverage` preflights both engines |
+| 12 | A model beam panel with no observed counterpart looked like a missing observation | IEM RIDGE serves 0.5° only, so a 1.2° model figure renders alone. Unlabelled, it invites the "verified against radar" claim `CHK-BEAM` forbids. Was open as gap 7 | fixed — the panel is annotated `MODEL ONLY` with the tilts the archive does serve |
+| 13 | `REFD_COM` and `REFD_MAX` shared one style key | They are different quantities — the column max *at the output instant* vs. the max *over the interval since the last history write*. A run writing both plotted only one, under a label naming the wrong surface. Was open as gap 10 | fixed — separate `refl_comp_max` style |
+| 14 | The field→style and masking tables lived in the script, untested | Unavailable to other callers, and error 13 is exactly what goes unnoticed there. Was open as gap 9 | fixed — moved to `nwp/wrf_convective.py` with tests |
+| 15 | `verify` silently ignored the time-selection flags | `--valid X --figure verify` looked like it honoured `X`. Was open as gap 4 | fixed — says so in the log |
 
 ## Gaps still open
 
-Ordered by how likely they are to bite.
+Ordered by how likely they are to bite. **Rank them by consequence instead** — the
+closing section of this doc says why, and the five closed above (errors 11–15) were
+the ones that made a figure lie rather than the ones that made a sweep tedious.
 
 1. **No idempotence.** `wrf_figures.py` has `--skip-existing` (compares PNG mtime
    against every source file); the winds and convective engines do not. Re-running a
@@ -98,35 +105,26 @@ Ordered by how likely they are to bite.
    rendered. A job that failed 300 of 400 figures looks like a success. **Recommended:**
    return a non-zero exit when the error count exceeds a threshold, and print an
    error tally at the end.
-4. **`verify` ignores the time selection.** It renders its own configured windows
-   regardless of `--valid`/`--every`, which is defensible (they are window products)
-   but surprising: `--valid X --figure verify` silently ignores `X`. **Recommended:**
-   say so in the log line.
+4. ~~**`verify` ignores the time selection.**~~ **Closed** — error 15 above.
 5. **No cross-nest consistency check.** Nothing verifies that a figure labelled d02
-   and one labelled d01 at the same valid time actually came from the same run, or
-   that a `[[sections]]` A→B line lies inside the nest being cut. A transect running
-   off-grid samples the edge column for the rest of its length — silently. `WRF-WINDS.md`
-   warns about this in prose; it should be a preflight check.
+   and one labelled d01 at the same valid time actually came from the same run.
+   *(The other half of this gap — whether a `[[sections]]` A→B line lies inside the
+   nest being cut — is closed; see error 11.)*
 6. **Colour limits are global, not per-window.** The convective styles are set from
    this run's measured maxima, which is right for comparability but means a quiet
    frame at 23:10Z is nearly blank on the same scale that resolves the 02:20Z core.
    Acceptable, but worth a `[style.overrides]` per sweep if a reader is comparing
    early and late frames.
-7. **Observed-radar coverage is tilt-limited and that is easy to forget.** IEM RIDGE
-   gives 0.5° only. The engine renders an observed panel *only* for tilts it has, so
-   a 1.2° model figure appears with no counterpart — correct, but a reader may not
-   notice the absence. **Recommended:** annotate the model panel when no observed
-   counterpart exists at that tilt.
+7. ~~**Observed-radar coverage is tilt-limited.**~~ **Closed** — error 12 above.
+   Note the underlying limit has not moved and cannot: Level-II is unobtainable for
+   a 2025 date (AWS denies anonymous access by bucket policy; the GCS mirror stops
+   before Sept 2025), so 0.0° and 1.2° still have **no** observed counterpart. Only
+   the silence about it is fixed. Transport table: `docs/nwp/NWP-SOURCE-MATRIX.md`.
 8. **No `--dry-run`.** There is no way to ask "what would this render?" before
    committing a job. With four families × three views × 31 times the answer is not
    obvious. **Recommended:** print the planned figure list and exit.
-9. **Two `_MASK_AT_OR_BELOW` / `_SURFACE_FIELDS` tables live in the script**, not the
-   package, so they are untested and unavailable to other callers. **Recommended:**
-   move to `nwp/wrf_convective.py` with tests.
-10. **`REFD_COM` and `REFD_MAX` both map to the `refl_comp` style**, and the
-    collision fallback names the second `refd_max`, which has no style and is
-    therefore skipped with a confusing message. Minor, but it means a run writing
-    both silently plots only one.
+9. ~~**Tables live in the script, not the package.**~~ **Closed** — error 14 above.
+10. ~~**`REFD_COM` and `REFD_MAX` share a style.**~~ **Closed** — error 13 above.
 
 ## The rule that has earned its place
 

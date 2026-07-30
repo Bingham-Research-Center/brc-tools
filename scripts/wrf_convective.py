@@ -51,21 +51,10 @@ from brc_tools.visualize.wrf_curtain import plot_wrf_curtain  # noqa: E402
 
 FAMILIES = ("surface", "aux", "section", "beam", "sounding", "verify", "track")
 
-#: History-stream 2-D fields this engine can plot, mapped to their style key.
-#: Anything here is read from ``wrfout``; the auxiliary stream is handled
-#: separately because its maximum fields reset on the history write.
-_SURFACE_FIELDS = {
-    "REFD_COM": "refl_comp",
-    "REFD_MAX": "refl_comp",
-    "ECHOTOP": "echo_top",
-    "WSPD10MAX": "wspd10max",
-    "UP_HELI_MAX": "uphel_2to5km",
-    "HAIL_MAX2D": "hail_max",
-    "AFWA_LLWS": "llws",
-    "AFWA_CAPE": "cape_ml",
-    "AFWA_CIN": "cin_ml",
-    "TORNADO_MASK": "tornado_mask",
-}
+#: Field -> style tables live in the package (with tests), not here, so other
+#: callers get them too and the REFD_COM/REFD_MAX distinction is enforced in one
+#: place.  See :mod:`brc_tools.nwp.wrf_convective`.
+_SURFACE_FIELDS = wc.SURFACE_FIELDS
 
 
 # --------------------------------------------------------------------------- #
@@ -93,29 +82,9 @@ def _echo_top_km(field):
     return np.asarray(field, dtype=float) / 1000.0
 
 
-#: Values at or below these floors are masked to NaN before plotting.
-#:
-#: Without this, a reflectivity panel paints the whole domain in the low end of the
-#: colour map and clear air reads as data -- on a 213 x 171 km footprint holding one
-#: storm, that is most of the figure. Operational radar products mask below ~5 dBZ
-#: for the same reason. Echo top is 0 where there is no echo at all, not 0 km.
-_MASK_AT_OR_BELOW = {
-    "refl_comp": 5.0,
-    "refl_beam": 5.0,
-    "refl": 5.0,
-    "echo_top": 0.0,
-    "hail_max": 0.0,
-    "tornado_mask": 0.0,
-}
-
-
-def _masked(key: str, field):
-    """Apply the presentation floor for ``key``, if it has one."""
-    floor = _MASK_AT_OR_BELOW.get(key)
-    array = np.asarray(field, dtype=float)
-    if floor is None:
-        return array
-    return np.where(array <= floor, np.nan, array)
+#: Presentation floors also live in the package; see the note above.
+_MASK_AT_OR_BELOW = wc.MASK_AT_OR_BELOW
+_masked = wc.masked
 
 
 def _plan_extra(ds, dom: dict) -> dict:
@@ -248,6 +217,8 @@ def render_sections(cfg, dom, plane, out_dir, ctx, args) -> int:
         if spec is None:
             print(f"[SKIP] {tag} section {key!r}: not in [[sections]]")
             continue
+        if not we.check_section_on_grid(plane, key, spec, tag=tag):
+            continue
         shade = spec.get("shade", "refl")
         wps = we.waypoints(spec.get("waypoint_group"))
         try:
@@ -289,6 +260,20 @@ def _shade_style(shade: str) -> str:
     )
 
 
+def _observed_elevations(spec: dict) -> set[float] | None:
+    """Tilts an observed panel could exist for, or None if none was requested.
+
+    ``None`` means the case never asked for a comparison, so a model-only panel
+    is the expected product and needs no caveat.  A set means it did ask, and any
+    tilt outside that set will render alone.
+    """
+    if not spec.get("compare_observed"):
+        return None
+    from brc_tools.radar import iem
+
+    return iem.observed_elevations()
+
+
 def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
     """Simulated reflectivity sampled on a radar's beam surfaces.
 
@@ -314,6 +299,11 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
             print(f"[SKIP] {tag} beam {key!r}: not in [[beams]]")
             continue
         site = get_site(spec["site"])
+        # Which tilts an observed panel could exist for at all.  A model beam with
+        # no observed counterpart must say so on the figure: the absence is a fact
+        # about the archive, not about the storm, and an unlabelled solo panel
+        # invites exactly the "verified against radar" claim CHK-BEAM forbids.
+        served = _observed_elevations(spec)
         for elev in spec.get("elevations_deg", [0.5]):
             try:
                 surface = rb.beam_surface_asl(plane.lat2d, plane.lon2d, site, float(elev))
@@ -325,6 +315,11 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
                     f"{np.nanmin(agl) / 1000:.1f}-{np.nanmax(agl) / 1000:.1f} km AGL "
                     f"across this domain"
                 )
+                if served is not None and float(elev) not in served:
+                    note += (
+                        f" | MODEL ONLY -- no observed counterpart at this tilt "
+                        f"(archive serves {', '.join(f'{e:g}' for e in sorted(served))} deg)"
+                    )
                 plot_nwp_surface_map(
                     pds, "refl_beam",
                     out_dir / f"beam_{site.id}_{float(elev):g}deg_{tag}_{stamp}.png",
@@ -473,6 +468,13 @@ def render_verify(cfg, out_dir, args) -> int:
     from brc_tools.visualize.timeseries import plot_scalar_timeseries
 
     run_dir = cfg["case"]["run_dir"]
+    # Window products, not per-time ones: each [[verify]] entry carries its own
+    # window, so the sweep flags do not apply. Said out loud because
+    # `--valid X --figure verify` otherwise looks like it honoured X.
+    if any((args.valid, args.lead, args.hourly, args.every, args.all_times,
+            args.start, args.end)):
+        print("[note] verify renders each [[verify]] entry's own configured window; "
+              "the time-selection flags do not apply to it")
     made = 0
     for entry in cfg.get("verify", []):
         key = entry["key"]

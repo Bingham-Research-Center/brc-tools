@@ -181,7 +181,10 @@ left-to-right, the **bottom-left** corner is inside the terrain fill and free.
 1. Copy an existing TOML into the repo that owns the case (for ub-wx WRF
    experiments: `experiments/<id>/figures.toml`).
 2. Set `run_dir`, `[[domains]]`, and the transect endpoints.
-3. Check the transect actually crosses the terrain you meant — sample `HGT` along it
-   before rendering; an endpoint outside a nest silently samples that nest's edge
-   column all the way out.
+3. Check the transect crosses the terrain you meant. A transect leaving the nest is
+   now caught for you: the engine preflights every `[[sections]]` line with
+   `wrf_section.section_coverage` and prints how far along it departs, the off-grid
+   part is blanked rather than filled from the edge column, and a line that misses
+   the nest entirely is skipped. It used to sample that edge column all the way out
+   and draw a flat, entirely physical-looking curtain.
 4. `sbatch scripts/wrf_winds.dtn.slurm --config <that TOML>`.

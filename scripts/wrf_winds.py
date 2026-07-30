@@ -141,6 +141,8 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                 if s is None:
                     print(f"[SKIP] {tag} section {key!r}: not in [[sections]]")
                     continue
+                if not we.check_section_on_grid(plane, key, s, tag=tag):
+                    continue
                 sec_wps = waypoints(s.get("waypoint_group"))
                 try:
                     sec = ws.section_from_plane(
