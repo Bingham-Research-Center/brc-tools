@@ -192,8 +192,12 @@ def render_aux(cfg, dom, valid, init, out_dir, args) -> int:
         if history is None:
             print(f"[SKIP] aux d{number:02d}: no history file to borrow coordinates from")
             return 0
-        coords = wc.attach_grid_coords(aux, history)
-        extra = dict(coords)
+        # attach_grid_coords is called for its GRID-SHAPE CHECK, not for its
+        # coordinates: plan_dataset builds latitude/longitude itself from the
+        # history file below, and passing them in `extra` as well makes xarray
+        # reject the dataset ("found in both data_vars and coords").
+        wc.attach_grid_coords(aux, history)
+        extra: dict[str, np.ndarray] = {}
         for name in dom.get("aux_fields", ["REFD_COM"]):
             if name not in aux:
                 print(f"[SKIP] aux d{number:02d} {name}: not in the stream")
@@ -211,9 +215,7 @@ def render_aux(cfg, dom, valid, init, out_dir, args) -> int:
             ctx = _titles(cfg, dom, ds_hist, valid, init)
             aux_dom = dict(dom)
             aux_dom["tag"] = f"{ctx[0]}_aux"
-            aux_dom["surface_vars"] = [
-                k for k in extra if k not in {"latitude", "longitude", "terrain_height"}
-            ]
+            aux_dom["surface_vars"] = list(extra)
             ctx = (aux_dom["tag"], ctx[1], ctx[2], ctx[3], ctx[4])
             return render_surface(cfg, aux_dom, ds_hist, out_dir, ctx, args, extra=extra)
         finally:

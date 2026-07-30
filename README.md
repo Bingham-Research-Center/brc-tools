@@ -70,6 +70,9 @@ Plus one non-WRF renderer:
   montage (250 hPa jet → 500 hPa flow → 600 hPa moisture/LLJ → surface analysis) for an
   analysis time. Doc: [`docs/FORECAST-FUNNEL.md`](docs/FORECAST-FUNNEL.md).
 
+Before a first sweep on a new case, read [`docs/VISUAL-SUITE-SOP.md`](docs/VISUAL-SUITE-SOP.md) —
+the engine-agnostic procedure, the method errors already found, and the gaps still open.
+
 Per-case configuration lives in the repo that owns the case, never here — e.g.
 `../ub-wx/experiments/20251011-ashley-rotating-cell/figures.toml`, or
 `../latex-jrl-mjd-mdpiair-2026/verification/config/figures/pelican2013.toml`.

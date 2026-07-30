@@ -167,9 +167,20 @@ def select_times(
     """
     lister = times_for or (lambda dom: ws.list_valid_times(run_dir, dom))
     per_domain = {d: set(lister(d)) for d in domains}
-    for dom, stamps in per_domain.items():
-        if not stamps:
-            raise SystemExit(f"no {label} times for d{dom:02d} under {run_dir}")
+
+    # A domain that does not carry the requested stream is SKIPPED, not fatal.
+    # Streams are per-domain in WRF: a run with `auxhist2_interval = 0, 1` writes
+    # the high-cadence stream on the inner nest only, and letting that abort the
+    # whole job means a parent domain listed for context kills the sweep.
+    empty = [d for d, stamps in per_domain.items() if not stamps]
+    for dom in empty:
+        print(f"[SKIP] d{dom:02d} has no {label} times under {run_dir} -- domain dropped")
+        per_domain.pop(dom)
+    if not per_domain:
+        raise SystemExit(
+            f"no {label} times for any requested domain "
+            f"({', '.join(f'd{d:02d}' for d in domains)}) under {run_dir}"
+        )
 
     lo = _as_time(start)
     hi = _as_time(end)

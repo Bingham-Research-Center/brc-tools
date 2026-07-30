@@ -175,9 +175,24 @@ class TestSelectTimes:
         got = we.select_times("/nowhere", [1, 2], times_for=self._lister({1: a, 2: b}))
         assert got == [datetime(2025, 10, 12, 3)]
 
-    def test_no_times_for_a_domain_is_fatal(self):
-        with pytest.raises(SystemExit, match="no wrfout times"):
-            we.select_times("/nowhere", [1], times_for=self._lister({1: []}))
+    def test_a_domain_without_the_stream_is_skipped_not_fatal(self, capsys):
+        """Streams are per-domain in WRF.
+
+        A run with `auxhist2_interval = 0, 1` writes the high-cadence stream on the
+        inner nest only. Letting the absent parent stream abort the job is what
+        killed the first 1-minute sweep of this case.
+        """
+        stamps = [datetime(2025, 10, 12, 2), datetime(2025, 10, 12, 2, 1)]
+        got = we.select_times(
+            "/nowhere", [1, 2], all_times=True,
+            times_for=self._lister({1: [], 2: stamps}), label="auxhist",
+        )
+        assert got == stamps
+        assert "d01 has no auxhist times" in capsys.readouterr().out
+
+    def test_fatal_only_when_no_domain_has_the_stream(self):
+        with pytest.raises(SystemExit, match="for any requested domain"):
+            we.select_times("/nowhere", [1, 2], times_for=self._lister({1: [], 2: []}))
 
     def test_a_cadence_matching_nothing_is_fatal(self):
         stamps = [datetime(2025, 10, 12, 2, 7)]

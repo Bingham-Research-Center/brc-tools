@@ -22,6 +22,9 @@ Project documentation. Topical files only — agent context lives in
   native-eta sections, **reflectivity sampled on a real radar's beam surfaces**, skew-T with a
   parcel path, hodographs, high-cadence `auxhist` access and `tslist` station verification.
   `scripts/wrf_convective.py --config <case.toml>` + `/wrf-convective` skill.
+- **VISUAL-SUITE-SOP.md** — the operating procedure for producing a suite of WRF
+  visuals across all three engines, plus the method errors already found and the
+  gaps still open. Read before a first sweep on a new case.
 - **FORECAST-FUNNEL.md** — NAM "forecast funnel" synoptic montage (250/500/600 hPa + surface analysis) + `/basin-forecast-funnel` skill and `scripts/forecast_funnel.py` CLI.
 - **nwp/NWP-SOURCE-MATRIX.md** — per-source download matrix (Herbie vs direct) + Herbie currency.
 - **nwp/** — HRRR/RRFS roadmap (current operational focus).
