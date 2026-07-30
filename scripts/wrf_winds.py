@@ -24,21 +24,19 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import tomllib
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import numpy as np  # noqa: E402
 
 from brc_tools.nwp import wrf_engine as we  # noqa: E402
 from brc_tools.nwp import wrf_output as wo  # noqa: E402
 from brc_tools.nwp import wrf_section as ws  # noqa: E402
 from brc_tools.visualize import coldpool3d as cp3  # noqa: E402
 from brc_tools.visualize.nwp_maps import plot_nwp_surface_map  # noqa: E402
-from brc_tools.visualize.style import VarStyle, get_style, use_publication_style  # noqa: E402
+from brc_tools.visualize.style import use_publication_style  # noqa: E402
 from brc_tools.visualize.wrf_curtain import plot_wrf_curtain  # noqa: E402
 
 # Config, waypoints, colour scales and time selection are shared with the
@@ -82,7 +80,7 @@ def select_times(run_dir: Path, domains: list[int], args) -> list[datetime]:
 # rendering
 # --------------------------------------------------------------------------- #
 def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
-                  out_root: Path, args) -> int:
+                  out_root: Path, args, ledger) -> int:
     run_dir = cfg["case"]["run_dir"]
     d = int(dom["domain"])
     path = ws.wrfout_path(run_dir, d, valid)
@@ -107,6 +105,7 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
         overlays = {k: bool(cfg.get("map", {}).get(k, False)) for k in _MAP_LAYERS}
         out_dir = out_root / stamp / tag
         made = 0
+        src = [path]  # every figure for this view derives from this one file
 
         # -- plan views -----------------------------------------------------
         pad = float(dom.get("pad_deg", 0.0))
@@ -116,19 +115,20 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
         for var in dom.get("surface_vars", ["wind_speed_10m"]):
             if var not in pds:
                 print(f"[SKIP] {tag} {var}: not written by this run")
+                ledger.note(we.ABSENT, "not written by this run",
+                            family="topdown", domain=d, var=var)
                 continue
             st = style_for(cfg, var)
-            try:
-                plot_nwp_surface_map(
-                    pds, var, out_dir / f"topdown_{var}_{tag}_{stamp}.png",
+            made += ledger.emit(
+                out_dir / f"topdown_{var}_{tag}_{stamp}.png",
+                lambda path, var=var, st=st: plot_nwp_surface_map(
+                    pds, var, path,
                     style=st, waypoints=map_wps,
                     barb_stride=int(dom.get("barb_stride", 6)),
                     extent=extent, overlays=overlays, annotation=an,
-                    title=f"{base} | {st.label}", dpi=args.dpi)
-                made += 1
-            except Exception as exc:  # keep going: one bad panel is not a lost run
-                print(f"[ERR] topdown {tag} {var}: {exc}")
-                traceback.print_exc()
+                    title=f"{base} | {st.label}", dpi=args.dpi),
+                sources=src, family="topdown", domain=d, var=var,
+            )
 
         # -- cross-sections + 3-D cold-pool views ----------------------------
         keys = dom.get("sections", [])
@@ -140,17 +140,22 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                 s = cfg["_sections"].get(key)
                 if s is None:
                     print(f"[SKIP] {tag} section {key!r}: not in [[sections]]")
+                    ledger.note(we.ABSENT, "not in [[sections]]",
+                                family="section", domain=d, var=key)
                     continue
                 if not we.check_section_on_grid(plane, key, s, tag=tag):
+                    ledger.note(we.ABSENT, "transect does not intersect this nest",
+                                family="section", domain=d, var=key)
                     continue
                 sec_wps = waypoints(s.get("waypoint_group"))
-                try:
+
+                def _draw(path, s=s, key=key, sec_wps=sec_wps):
                     sec = ws.section_from_plane(
                         plane, tuple(s["a"]), tuple(s["b"]),
                         n_points=int(s.get("n_points", 240)),
                         termini=tuple(s.get("termini", ("A", "B"))))
                     plot_wrf_curtain(
-                        sec, out_dir / f"xsection_{key}_{tag}_{stamp}.png",
+                        sec, path,
                         shade=s.get("shade", "speed"),
                         style=style_for(cfg, "wind_speed_10m"),
                         title=f"{sec_base} | {s.get('label', key)}",
@@ -166,41 +171,48 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                                  "rect": list(s["loc_rect"]) if s.get("loc_rect") else None,
                                  "waypoints": sec_wps},
                         dpi=args.dpi)
-                    made += 1
-                except Exception as exc:
-                    print(f"[ERR] xsection {tag} {key}: {exc}")
-                    traceback.print_exc()
+
+                made += ledger.emit(
+                    out_dir / f"xsection_{key}_{tag}_{stamp}.png",
+                    _draw, sources=src, family="section", domain=d, var=key,
+                )
             made += render_views3d(cfg, v3d, plane, tag, stamp, sec_base, an,
-                                   out_dir, args)
+                                   out_dir, args, ledger, domain=d, sources=src)
         print(f"  {tag}: {made} figures -> {out_dir}")
         return made
     finally:
         ds.close()
 
 
-def render_views3d(cfg, keys, plane, tag, stamp, sec_base, an, out_dir, args) -> int:
+def render_views3d(cfg, keys, plane, tag, stamp, sec_base, an, out_dir, args,
+                   ledger, *, domain=None, sources=()) -> int:
     """Render the ``[[views3d]]`` cold-pool panels for one domain and time."""
     made = 0
     for key in keys:
         v = cfg["_views3d"].get(key)
         if v is None:
             print(f"[SKIP] {tag} view3d {key!r}: not in [[views3d]]")
+            ledger.note(we.ABSENT, "not in [[views3d]]", family="view3d",
+                        domain=domain, var=key)
             continue
         try:
             rows, cols = cp3.extent_window(plane.lon2d, plane.lat2d, tuple(v["extent"]))
         except Exception as exc:
             print(f"[ERR] view3d {tag} {key}: {exc}")
+            ledger.note(we.ERROR, f"{type(exc).__name__}: {exc}", family="view3d",
+                        domain=domain, var=key)
             continue
         lon, lat = plane.lon2d[rows, cols], plane.lat2d[rows, cols]
         terr = plane.terrain[rows, cols]
         theta, height = plane.theta[:, rows, cols], plane.height[:, rows, cols]
         for iso in (args.theta_iso or v.get("theta_iso", [310.0])):
-            try:
+
+            def _draw(path, iso=iso, v=v, key=key, lon=lon, lat=lat, terr=terr,
+                      theta=theta, height=height):
                 lid = cp3.isentrope_lid(theta, height, terr, float(iso),
                                         max_depth_m=float(v.get("max_depth_m", 1500.0)))
                 cp3.plot_coldpool_3d(
-                    lon, lat, terr, lid,
-                    out_dir / f"coldpool3d_{key}_th{float(iso):g}_{tag}_{stamp}.png",
+                    lon, lat, terr, lid, path,
                     theta_iso=float(iso),
                     title=(f"{sec_base} | {v.get('label', key)} | "
                            rf"cold air below $\theta$ = {float(iso):g} K"),
@@ -212,10 +224,12 @@ def render_views3d(cfg, keys, plane, tag, stamp, sec_base, an, out_dir, args) ->
                     depth_min_m=float(v.get("depth_min_m", 25.0)),
                     depth_max_m=float(v.get("depth_max_m", 600.0)),
                     dpi=args.dpi)
-                made += 1
-            except Exception as exc:
-                print(f"[ERR] view3d {tag} {key} theta={iso}: {exc}")
-                traceback.print_exc()
+
+            made += ledger.emit(
+                out_dir / f"coldpool3d_{key}_th{float(iso):g}_{tag}_{stamp}.png",
+                _draw, sources=sources, family="view3d", domain=domain,
+                var=f"{key}_th{float(iso):g}",
+            )
     return made
 
 
@@ -245,6 +259,7 @@ def main() -> int:
                          "value is regime-dependent: a convective afternoon resolves "
                          "w ~ 1 m/s and wants ~10, a quiescent drainage night ~100.")
     ap.add_argument("--dpi", type=int, default=200)
+    we.add_output_arguments(ap)
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -267,6 +282,12 @@ def main() -> int:
                 if (args.output_dir or cfg["case"].get("output_dir"))
                 else DEFAULT_OUTPUT_ROOT / cfg["case"]["slug"])
 
+    # --report reads what previous jobs recorded; it renders nothing.
+    if args.report:
+        return we.report_coverage(out_root)
+
+    ledger = we.FigureLedger(skip_existing=args.skip_existing, dry_run=args.dry_run)
+
     print(f"[run ] {run_dir}")
     print(f"[init] {init:{_TIME_FMT}}")
     total, absent = 0, 0
@@ -279,18 +300,33 @@ def main() -> int:
             # the log -- so count it and report the total once at the end.
             if not ws.wrfout_path(run_dir, int(dom["domain"]), valid).exists():
                 absent += 1
+                ledger.note(we.ABSENT, "no wrfout at this domain/time",
+                            family="domain", domain=int(dom["domain"]), valid=valid)
                 continue
             # One bad time (a wrfout caught half-written by the running job, say)
             # must not take the rest of the sweep down with it.
             try:
-                total += render_domain(cfg, dom, valid, init, out_root, args)
+                total += render_domain(cfg, dom, valid, init, out_root, args, ledger)
             except Exception as exc:
                 print(f"[ERR] {dom.get('tag', dom['domain'])} {valid:{_TIME_FMT}}: {exc}")
                 traceback.print_exc()
+                ledger.note(we.ERROR, f"{type(exc).__name__}: {exc}",
+                            family="domain", domain=int(dom["domain"]), valid=valid)
+
+    if args.dry_run:
+        print(f"\n[dry ] {ledger.count(we.PLANNED)} figure(s) would be rendered:")
+        for line in ledger.planned_lines():
+            print(line)
+    else:
+        manifest = ledger.write_manifest(
+            out_root, config_path=args.config, run_dir=run_dir, argv=sys.argv[1:],
+        )
+        print(f"[man ] {manifest}")
     print(f"\nDone. {total} figures over {len(times)} time(s) -> {out_root}")
     if absent:
         print(f"({absent} view-times skipped: no wrfout at that domain/time)")
-    return 0 if total else 1
+    print(ledger.summarise())
+    return ledger.exit_code(allow_errors=args.allow_errors)
 
 
 if __name__ == "__main__":

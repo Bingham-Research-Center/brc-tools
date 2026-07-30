@@ -69,6 +69,31 @@ Times behave as in `wrf_winds.py`: a sweep takes the **union** across domains (s
 and with no time flag the latest time present on *every* requested domain is used.
 `--figure aux` on its own sweeps the auxiliary stream's own times.
 
+### Idempotence, dry runs and coverage
+
+Shared by both this engine and `wrf_winds.py` (`brc_tools.nwp.wrf_engine.FigureLedger`):
+
+| flag | what it does |
+|---|---|
+| `--dry-run` | print the exact figure list this job would render, then exit. Nothing is written — no PNGs, no manifest |
+| `--skip-existing` | keep a figure at least as new as every file it derives from. A `wrfout` rewritten by a later run is newer than its figure, so that figure regenerates — safe against a still-writing job |
+| `--allow-errors` | exit 0 even if some figures failed. Without it **any** failure exits non-zero |
+| `--report` | summarise coverage from the manifests already in the output root, then exit. Renders nothing |
+
+Every real job writes `manifest_<jobid>.json` into the output root — config path and
+SHA-256, run dir, argv, and one record per attempted figure with its family, domain,
+valid time, variable and status (`rendered` / `skipped` / `error` / `absent`). Named
+by `SLURM_JOB_ID`, so the normal pattern of several jobs sweeping into one output
+root does not clobber itself.
+
+`absent` is a distinct status on purpose: "this run never wrote that field" and
+"this figure failed" are different answers to *where is my figure?*, and `find`
+cannot tell them apart.
+
+Per-figure failures are still caught and printed, so one bad panel cannot lose a
+run. What changed is that the job can no longer *look* like a success — the old
+`return 0 if total else 1` could not distinguish 400-of-400 from 100-of-400.
+
 ## Case TOML schema
 
 Configuration only. A case names capability; it never defines it. In particular

@@ -28,7 +28,7 @@ from __future__ import annotations
 import argparse
 import sys
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -111,9 +111,11 @@ def _plan_extra(ds, dom: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # families
 # --------------------------------------------------------------------------- #
-def render_surface(cfg, dom, ds, out_dir, ctx, args, *, extra=None) -> int:
+def render_surface(cfg, dom, ds, out_dir, ctx, args, ledger, *, extra=None,
+                   sources=()) -> int:
     """Plan views of whatever 2-D convective fields the run wrote."""
     tag, stamp, base, _short, annotation = ctx
+    number = int(dom["domain"])
     pds = ws.plan_dataset(ds, extra=extra if extra is not None else _plan_extra(ds, dom))
     extent = tuple(dom["extent"]) if dom.get("extent") else ws.plan_extent(
         ds, pad_deg=float(dom.get("pad_deg", 0.0))
@@ -124,24 +126,27 @@ def render_surface(cfg, dom, ds, out_dir, ctx, args, *, extra=None) -> int:
     for var in dom.get("surface_vars", ["refl_comp"]):
         if var not in pds:
             print(f"[SKIP] {tag} {var}: not written by this run")
+            ledger.note(we.ABSENT, "not written by this run",
+                        family="surface", domain=number, var=var)
             continue
         style = we.style_for(cfg, var)
-        try:
-            plot_nwp_surface_map(
-                pds, var, out_dir / f"plan_{var}_{tag}_{stamp}.png",
+        made += ledger.emit(
+            out_dir / f"plan_{var}_{tag}_{stamp}.png",
+            # var/style bound as defaults: this is a loop, and a late-binding
+            # closure would render the last variable once per iteration.
+            lambda path, var=var, style=style: plot_nwp_surface_map(
+                pds, var, path,
                 style=style, waypoints=wps,
                 barb_stride=int(dom.get("barb_stride", 8)),
                 extent=extent, overlays=overlays, annotation=annotation,
                 title=f"{base} | {style.label}", dpi=args.dpi,
-            )
-            made += 1
-        except Exception as exc:  # one bad panel is not a lost run
-            print(f"[ERR] plan {tag} {var}: {exc}")
-            traceback.print_exc()
+            ),
+            sources=sources, family="surface", domain=number, var=var,
+        )
     return made
 
 
-def render_aux(cfg, dom, valid, init, out_dir, args) -> int:
+def render_aux(cfg, dom, valid, init, out_dir, args, ledger) -> int:
     """Plan views from the high-cadence auxiliary stream.
 
     The point of this family is cadence: a ~3 km swath crossing a point in ~4
@@ -155,11 +160,14 @@ def render_aux(cfg, dom, valid, init, out_dir, args) -> int:
         aux, index = wc.open_auxhist(run_dir, number, valid, stream)
     except FileNotFoundError as exc:
         print(f"[SKIP] aux d{number:02d}: {exc}")
+        ledger.note(we.ABSENT, str(exc), family="aux", domain=number, valid=valid)
         return 0
     try:
         history = _nearest_history(run_dir, number, valid)
         if history is None:
             print(f"[SKIP] aux d{number:02d}: no history file to borrow coordinates from")
+            ledger.note(we.ABSENT, "no history file for coordinates",
+                        family="aux", domain=number, valid=valid)
             return 0
         # attach_grid_coords is called for its GRID-SHAPE CHECK, not for its
         # coordinates: plan_dataset builds latitude/longitude itself from the
@@ -170,11 +178,15 @@ def render_aux(cfg, dom, valid, init, out_dir, args) -> int:
         for name in dom.get("aux_fields", ["REFD_COM"]):
             if name not in aux:
                 print(f"[SKIP] aux d{number:02d} {name}: not in the stream")
+                ledger.note(we.ABSENT, "not in the stream", family="aux",
+                            domain=number, valid=valid, var=name)
                 continue
             try:
                 field = wc.aux_field(aux, name, index)
             except ValueError as exc:  # a *_MAX field: refused on purpose
                 print(f"[SKIP] aux d{number:02d} {name}: {exc}")
+                ledger.note(we.ABSENT, str(exc), family="aux",
+                            domain=number, valid=valid, var=name)
                 continue
             key = _SURFACE_FIELDS.get(name, name.lower())
             extra[key] = _masked(key, _echo_top_km(field) if name == "ECHOTOP" else field)
@@ -186,7 +198,13 @@ def render_aux(cfg, dom, valid, init, out_dir, args) -> int:
             aux_dom["tag"] = f"{ctx[0]}_aux"
             aux_dom["surface_vars"] = list(extra)
             ctx = (aux_dom["tag"], ctx[1], ctx[2], ctx[3], ctx[4])
-            return render_surface(cfg, aux_dom, ds_hist, out_dir, ctx, args, extra=extra)
+            # The aux file this frame came from, for --skip-existing. xarray
+            # records it on the dataset; a stream opened some other way just
+            # loses idempotence rather than breaking.
+            aux_src = aux.encoding.get("source")
+            return render_surface(cfg, aux_dom, ds_hist, out_dir, ctx, args, ledger,
+                                  extra=extra,
+                                  sources=[aux_src] if aux_src else [])
         finally:
             ds_hist.close()
     finally:
@@ -207,7 +225,7 @@ def _nearest_history(run_dir, domain: int, valid: datetime):
     return path if path.exists() else None
 
 
-def render_sections(cfg, dom, plane, out_dir, ctx, args) -> int:
+def render_sections(cfg, dom, plane, out_dir, ctx, args, ledger, *, sources=()) -> int:
     """Curtains along the named A->B transects."""
     tag, stamp, _base, short, annotation = ctx
     locator = dict(lon2d=plane.lon2d, lat2d=plane.lat2d, terrain2d=plane.terrain)
@@ -216,19 +234,23 @@ def render_sections(cfg, dom, plane, out_dir, ctx, args) -> int:
         spec = cfg["_sections"].get(key)
         if spec is None:
             print(f"[SKIP] {tag} section {key!r}: not in [[sections]]")
+            ledger.note(we.ABSENT, "not in [[sections]]", family="section", var=key)
             continue
         if not we.check_section_on_grid(plane, key, spec, tag=tag):
+            ledger.note(we.ABSENT, "transect does not intersect this nest",
+                        family="section", var=key)
             continue
         shade = spec.get("shade", "refl")
         wps = we.waypoints(spec.get("waypoint_group"))
-        try:
+
+        def _draw(path, spec=spec, key=key, shade=shade, wps=wps):
             section = ws.section_from_plane(
                 plane, tuple(spec["a"]), tuple(spec["b"]),
                 n_points=int(spec.get("n_points", 240)),
                 termini=tuple(spec.get("termini", ("A", "B"))),
             )
             plot_wrf_curtain(
-                section, out_dir / f"xsection_{shade}_{key}_{tag}_{stamp}.png",
+                section, path,
                 shade=shade,
                 style=we.style_for(cfg, spec.get("style", _shade_style(shade))),
                 title=f"{short} | {spec.get('label', key)}",
@@ -247,10 +269,12 @@ def render_sections(cfg, dom, plane, out_dir, ctx, args) -> int:
                 },
                 dpi=args.dpi,
             )
-            made += 1
-        except Exception as exc:
-            print(f"[ERR] xsection {tag} {key}: {exc}")
-            traceback.print_exc()
+
+        made += ledger.emit(
+            out_dir / f"xsection_{shade}_{key}_{tag}_{stamp}.png",
+            _draw, sources=sources, family="section",
+            domain=int(dom["domain"]), var=key,
+        )
     return made
 
 
@@ -274,7 +298,7 @@ def _observed_elevations(spec: dict) -> set[float] | None:
     return iem.observed_elevations()
 
 
-def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
+def render_beams(cfg, dom, ds, plane, out_dir, ctx, args, ledger, *, sources=()) -> int:
     """Simulated reflectivity sampled on a radar's beam surfaces.
 
     This is the family that exists so a comparison against a distant WSR-88D is
@@ -285,6 +309,8 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
     tag, stamp, _base, _short, annotation = ctx
     if plane.refl is None:
         print(f"[SKIP] {tag} beams: run has no REFL_10CM (needs do_radar_ref = 1)")
+        ledger.note(we.ABSENT, "run has no REFL_10CM (needs do_radar_ref = 1)",
+                    family="beam", domain=int(dom["domain"]))
         return 0
 
     extent = tuple(dom["extent"]) if dom.get("extent") else ws.plan_extent(
@@ -297,6 +323,7 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
         spec = cfg["_beams"].get(key)
         if spec is None:
             print(f"[SKIP] {tag} beam {key!r}: not in [[beams]]")
+            ledger.note(we.ABSENT, "not in [[beams]]", family="beam", var=key)
             continue
         site = get_site(spec["site"])
         # Which tilts an observed panel could exist for at all.  A model beam with
@@ -305,7 +332,8 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
         # invites exactly the "verified against radar" claim CHK-BEAM forbids.
         served = _observed_elevations(spec)
         for elev in spec.get("elevations_deg", [0.5]):
-            try:
+
+            def _draw(path, elev=elev, site=site, served=served):
                 surface = rb.beam_surface_asl(plane.lat2d, plane.lon2d, site, float(elev))
                 sampled = _masked("refl_beam", rb.sample_on_beam(plane.refl, plane.height, surface))
                 agl = surface - plane.terrain
@@ -331,17 +359,21 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
                     title=f"{_short} | {site.id} {float(elev):g} deg beam surface",
                     dpi=args.dpi,
                 )
-                made += 1
-            except Exception as exc:
-                print(f"[ERR] beam {tag} {site.id} {elev}: {exc}")
-                traceback.print_exc()
+
+            made += ledger.emit(
+                out_dir / f"beam_{site.id}_{float(elev):g}deg_{tag}_{stamp}.png",
+                _draw, sources=sources, family="beam",
+                domain=int(dom["domain"]), var=f"{site.id}_{float(elev):g}deg",
+            )
 
         if spec.get("compare_observed"):
-            made += _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args)
+            made += _render_observed(cfg, spec, site, extent, wps, overlays, ctx,
+                                     out_dir, args, ledger)
     return made
 
 
-def _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args) -> int:
+def _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args,
+                     ledger) -> int:
     """Observed Level-III reflectivity at the same tilt, on the same colour scale.
 
     Uses the Iowa State IEM RIDGE archive, which carries elevation 1 (0.5 deg) for
@@ -364,16 +396,20 @@ def _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args)
         )
     except Exception as exc:  # noqa: BLE001 - obs are a bonus, never a precondition
         print(f"[SKIP] observed {site.id} {product}: {type(exc).__name__}: {exc}")
+        ledger.note(we.ABSENT, f"{type(exc).__name__}: {exc}", family="observed",
+                    valid=valid, var=f"{site.id}_{product}")
         return 0
     if field is None:
         print(f"[SKIP] observed {site.id} {product}: no scan within the window of {stamp}")
+        ledger.note(we.ABSENT, "no scan within the window", family="observed",
+                    valid=valid, var=f"{site.id}_{product}")
         return 0
 
     lag = (field.valid_time - valid).total_seconds() / 60.0
-    try:
+
+    def _draw(path, field=field):
         plot_nwp_surface_map(
-            iem.to_plan_dataset(field), "refl_beam",
-            out_dir / f"observed_{site.id}_{product}_{stamp}.png",
+            iem.to_plan_dataset(field), "refl_beam", path,
             style=we.style_for(cfg, "refl_beam"), waypoints=wps,
             extent=extent, overlays=overlays, terrain_contours=False,
             annotation=(
@@ -383,14 +419,16 @@ def _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args)
             title=f"OBSERVED {site.id} {product} {field.elevation_deg:g} deg | {short}",
             dpi=args.dpi,
         )
-        return 1
-    except Exception as exc:
-        print(f"[ERR] observed {site.id} {product}: {exc}")
-        traceback.print_exc()
-        return 0
+
+    # No `sources`: this figure derives from an archive fetch, not a local file,
+    # so mtime idempotence cannot apply and --skip-existing keeps any existing one.
+    return ledger.emit(
+        out_dir / f"observed_{site.id}_{product}_{stamp}.png",
+        _draw, family="observed", valid=valid, var=f"{site.id}_{product}",
+    )
 
 
-def render_soundings(cfg, dom, ds, out_dir, ctx, args) -> int:
+def render_soundings(cfg, dom, ds, out_dir, ctx, args, ledger, *, sources=()) -> int:
     """Skew-T with a parcel path, plus a hodograph, at named points."""
     tag, stamp, _base, short, annotation = ctx
     made = 0
@@ -398,9 +436,24 @@ def render_soundings(cfg, dom, ds, out_dir, ctx, args) -> int:
         spec = cfg["_soundings"].get(key)
         if spec is None:
             print(f"[SKIP] {tag} sounding {key!r}: not in [[soundings]]")
+            ledger.note(we.ABSENT, "not in [[soundings]]", family="sounding", var=key)
             continue
         point = we.waypoint(spec["waypoint"])
         parcel = spec.get("parcel", "ml")
+        skewt_png = out_dir / f"skewt_{key}_{tag}_{stamp}.png"
+        hodo_png = out_dir / f"hodograph_{key}_{tag}_{stamp}.png"
+
+        # Both figures come from one expensive column extraction plus a MetPy
+        # parcel lift, so check idempotence BEFORE paying for it rather than
+        # inside emit() -- this is the family where skipping actually saves time.
+        if ledger.skip_existing and all(
+            ledger.is_current(png, sources) for png in (skewt_png, hodo_png)
+        ):
+            for var in (key, f"{key}_hodograph"):
+                ledger.note(we.SKIPPED, "up to date", family="sounding",
+                            domain=int(dom["domain"]), var=var)
+            continue
+
         try:
             column = wo.extract_column(ds, point["lat"], point["lon"], label=key)
             summary = ce.environment_summary(column, parcel)
@@ -414,37 +467,53 @@ def render_soundings(cfg, dom, ds, out_dir, ctx, args) -> int:
                 column, source=f"WRF {tag}", station=key,
                 valid_time=datetime.strptime(stamp, "%Y%m%d_%H%M"),
             )
-            plot_skewt(
-                sounding, out_dir / f"skewt_{key}_{tag}_{stamp}.png",
-                title=f"{short} | {spec.get('label', key)} | {parcel} parcel",
-                annotation=note, parcel=parcel, mark_levels=True, shade_cape=True,
-                p_top_hpa=float(spec.get("p_top_hpa", 150.0)),
-                t_range=tuple(spec.get("t_range", (-50.0, 30.0))),
-                dpi=args.dpi,
+            made += ledger.emit(
+                skewt_png,
+                # Loop variables bound as defaults throughout: emit() calls this
+                # synchronously so late binding would be harmless today, but it is
+                # one refactor away from not being.
+                lambda path, sounding=sounding, spec=spec, key=key,
+                parcel=parcel, note=note: plot_skewt(
+                    sounding, path,
+                    title=f"{short} | {spec.get('label', key)} | {parcel} parcel",
+                    annotation=note, parcel=parcel, mark_levels=True, shade_cape=True,
+                    p_top_hpa=float(spec.get("p_top_hpa", 150.0)),
+                    t_range=tuple(spec.get("t_range", (-50.0, 30.0))),
+                    dpi=args.dpi,
+                ),
+                sources=sources, family="sounding",
+                domain=int(dom["domain"]), var=key,
             )
-            made += 1
 
             motion = ce.bunkers_storm_motion(column)
             observed = spec.get("observed_motion_ms")
-            plot_hodograph(
-                column.u_kt / 1.94384, column.v_kt / 1.94384,
-                column.height_asl - column.terrain_m,
-                out_dir / f"hodograph_{key}_{tag}_{stamp}.png",
-                title=f"{short} | {spec.get('label', key)}",
-                max_height_m=float(spec.get("hodograph_top_m", 9000.0)),
-                storm_motion=(motion.right_u, motion.right_v),
-                observed_motion=tuple(observed) if observed else None,
-                observed_motion_label=spec.get("observed_motion_label", "observed"),
-                annotation=(
-                    f"0-6 km shear {summary['shear_mag_0to6km']:.1f} m/s | "
-                    f"SRH 0-3 km {summary['srh_0to3km']:.0f} m2/s2"
+            made += ledger.emit(
+                hodo_png,
+                lambda path, column=column, spec=spec, key=key, motion=motion,
+                observed=observed, summary=summary: plot_hodograph(
+                    column.u_kt / 1.94384, column.v_kt / 1.94384,
+                    column.height_asl - column.terrain_m, path,
+                    title=f"{short} | {spec.get('label', key)}",
+                    max_height_m=float(spec.get("hodograph_top_m", 9000.0)),
+                    storm_motion=(motion.right_u, motion.right_v),
+                    observed_motion=tuple(observed) if observed else None,
+                    observed_motion_label=spec.get("observed_motion_label", "observed"),
+                    annotation=(
+                        f"0-6 km shear {summary['shear_mag_0to6km']:.1f} m/s | "
+                        f"SRH 0-3 km {summary['srh_0to3km']:.0f} m2/s2"
+                    ),
+                    dpi=args.dpi,
                 ),
-                dpi=args.dpi,
+                sources=sources, family="sounding",
+                domain=int(dom["domain"]), var=f"{key}_hodograph",
             )
-            made += 1
         except Exception as exc:
+            # Setup failed (column extraction or the parcel lift), so neither
+            # figure exists; emit() never saw it.
             print(f"[ERR] sounding {tag} {key}: {exc}")
             traceback.print_exc()
+            ledger.note(we.ERROR, f"{type(exc).__name__}: {exc}", family="sounding",
+                        domain=int(dom["domain"]), var=key)
     return made
 
 
@@ -453,7 +522,7 @@ _PAIR_COLOURS = ("#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
                  "#8c564b", "#17becf", "#e377c2")
 
 
-def render_verify(cfg, out_dir, args) -> int:
+def render_verify(cfg, out_dir, args, ledger) -> int:
     """Model surface traces against observations at the named stations.
 
     Model values come from the ``tslist`` traces, written every model time step --
@@ -522,20 +591,30 @@ def render_verify(cfg, out_dir, args) -> int:
                     styles[obs_label] = dict(color=colour, ls="--", lw=1.1, marker="o", ms=3.0)
 
             if not series:
+                ledger.note(we.ABSENT, "no model trace for any station",
+                            family="verify", var=key)
                 continue
             drawn = sorted({s for s in obs if any(
                 st.get("stid") == s for st in entry["stations"])})
             print(f"  verify {key}: observations for {drawn or 'NONE (model only)'}")
-            plot_scalar_timeseries(
-                series, out_dir / f"verify_{key}_{variable}.png",
-                ylabel=_ts_label(cfg, variable),
-                title=f"{cfg['case']['label']} | {entry.get('label', key)}",
-                run_styles=styles, figsize=(10.0, 5.0), dpi=args.dpi,
+            made += ledger.emit(
+                out_dir / f"verify_{key}_{variable}.png",
+                lambda path, series=series, styles=styles, entry=entry,
+                key=key, variable=variable: plot_scalar_timeseries(
+                    series, path,
+                    ylabel=_ts_label(cfg, variable),
+                    title=f"{cfg['case']['label']} | {entry.get('label', key)}",
+                    run_styles=styles, figsize=(10.0, 5.0), dpi=args.dpi,
+                ),
+                # The .TS traces grow while a run integrates, so no mtime
+                # idempotence here: a verify panel is always worth redrawing.
+                family="verify", domain=domain, var=key,
             )
-            made += 1
         except Exception as exc:
             print(f"[ERR] verify {key}: {exc}")
             traceback.print_exc()
+            ledger.note(we.ERROR, f"{type(exc).__name__}: {exc}",
+                        family="verify", var=key)
     return made
 
 
@@ -600,7 +679,7 @@ def _ts_style(variable: str) -> str:
     )
 
 
-def render_track(cfg, dom, times, out_dir, args) -> int:
+def render_track(cfg, dom, times, out_dir, args, ledger) -> int:
     """Reflectivity-centroid track over the window, written as a CSV.
 
     Deliberately a table rather than a figure: this is what sizes a nested domain,
@@ -644,44 +723,52 @@ def render_track(cfg, dom, times, out_dir, args) -> int:
             rows.append((valid, lat, lon, int(cells), float(np.nanmax(field))))
 
     if not rows:
+        ledger.note(we.ABSENT, "no times carried reflectivity", family="track",
+                    domain=number)
         return 0
-    out = out_dir / f"track_d{number:02d}.csv"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open("w", encoding="utf-8") as handle:
-        handle.write("valid_utc,centroid_lat,centroid_lon,cells_above_threshold,max_dbz\n")
-        for valid, lat, lon, cells, peak in rows:
-            lat_s = "" if lat is None else f"{lat:.5f}"
-            lon_s = "" if lon is None else f"{lon:.5f}"
-            handle.write(f"{valid:%Y-%m-%dT%H:%MZ},{lat_s},{lon_s},{cells},{peak:.1f}\n")
-    print(f"  track: {len(rows)} times -> {out}")
-    return 1
+
+    def _write(path):
+        with path.open("w", encoding="utf-8") as handle:
+            handle.write("valid_utc,centroid_lat,centroid_lon,cells_above_threshold,max_dbz\n")
+            for valid, lat, lon, cells, peak in rows:
+                lat_s = "" if lat is None else f"{lat:.5f}"
+                lon_s = "" if lon is None else f"{lon:.5f}"
+                handle.write(f"{valid:%Y-%m-%dT%H:%MZ},{lat_s},{lon_s},{cells},{peak:.1f}\n")
+        print(f"  track: {len(rows)} times -> {path}")
+
+    return ledger.emit(
+        out_dir / f"track_d{number:02d}.csv", _write,
+        family="track", domain=number,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # driver
 # --------------------------------------------------------------------------- #
-def render_domain(cfg, dom, valid, init, out_root, families, args) -> int:
+def render_domain(cfg, dom, valid, init, out_root, families, args, ledger) -> int:
     run_dir = cfg["case"]["run_dir"]
     number = int(dom["domain"])
     path = ws.wrfout_path(run_dir, number, valid)
 
     if "aux" in families and not path.exists():
         # The auxiliary stream can hold times the history stream does not.
-        return render_aux(cfg, dom, valid, init, out_root / f"{valid:%Y%m%d_%H%M}", args)
+        return render_aux(cfg, dom, valid, init,
+                          out_root / f"{valid:%Y%m%d_%H%M}", args, ledger)
     if not path.exists():
         return 0
 
+    src = [path]  # every history-stream figure derives from this one file
     ds = wo.open_wrfout(path)
     try:
         ctx = _titles(cfg, dom, ds, valid, init)
         out_dir = out_root / ctx[1] / ctx[0]
         made = 0
         if "surface" in families:
-            made += render_surface(cfg, dom, ds, out_dir, ctx, args)
+            made += render_surface(cfg, dom, ds, out_dir, ctx, args, ledger, sources=src)
         if "aux" in families:
-            made += render_aux(cfg, dom, valid, init, out_root / ctx[1], args)
+            made += render_aux(cfg, dom, valid, init, out_root / ctx[1], args, ledger)
         if "sounding" in families:
-            made += render_soundings(cfg, dom, ds, out_dir, ctx, args)
+            made += render_soundings(cfg, dom, ds, out_dir, ctx, args, ledger, sources=src)
 
         wants_plane = ("section" in families and dom.get("sections")) or (
             "beam" in families and dom.get("beams")
@@ -689,9 +776,11 @@ def render_domain(cfg, dom, valid, init, out_root, families, args) -> int:
         if wants_plane:
             plane = ws.load_plane(ds)  # the expensive read, shared by both families
             if "section" in families:
-                made += render_sections(cfg, dom, plane, out_dir, ctx, args)
+                made += render_sections(cfg, dom, plane, out_dir, ctx, args, ledger,
+                                        sources=src)
             if "beam" in families:
-                made += render_beams(cfg, dom, ds, plane, out_dir, ctx, args)
+                made += render_beams(cfg, dom, ds, plane, out_dir, ctx, args, ledger,
+                                     sources=src)
         print(f"  {ctx[0]}: {made} figures -> {out_dir}")
         return made
     finally:
@@ -714,6 +803,7 @@ def main() -> int:
                         help="override every section's vertical exaggeration; a "
                              "convective updraft wants ~5, a drainage night ~100")
     parser.add_argument("--dpi", type=int, default=200)
+    we.add_output_arguments(parser)
     args = parser.parse_args()
 
     cfg = we.load_config(args.config, index=("sections", "beams", "soundings"))
@@ -737,6 +827,12 @@ def main() -> int:
     use_publication_style(dpi=args.dpi)
     out_root = we.output_root(cfg, args.output_dir, config_path=args.config)
 
+    # --report reads what previous jobs recorded; it renders nothing.
+    if args.report:
+        return we.report_coverage(out_root)
+
+    ledger = we.FigureLedger(skip_existing=args.skip_existing, dry_run=args.dry_run)
+
     # Sweeping the auxiliary stream alone needs its times, not the history's.
     aux_only = families == {"aux"}
     times = we.select_times(
@@ -757,10 +853,10 @@ def main() -> int:
     total = 0
     for valid in times:
         for dom in domains:
-            total += render_domain(cfg, dom, valid, init, out_root, families, args)
+            total += render_domain(cfg, dom, valid, init, out_root, families, args, ledger)
 
     if "verify" in families:
-        total += render_verify(cfg, out_root, args)
+        total += render_verify(cfg, out_root, args, ledger)
     if "track" in families:
         # One CSV per NEST, not per view: a nest may appear as several [[domains]]
         # entries (full extent plus a zoom) and they would otherwise overwrite each
@@ -771,10 +867,20 @@ def main() -> int:
             if number in seen_domains:
                 continue
             seen_domains.add(number)
-            total += render_track(cfg, dom, times, out_root, args)
+            total += render_track(cfg, dom, times, out_root, args, ledger)
 
+    if args.dry_run:
+        print(f"[dry ] {ledger.count(we.PLANNED)} figure(s) would be rendered:")
+        for line in ledger.planned_lines():
+            print(line)
+    else:
+        manifest = ledger.write_manifest(
+            out_root, config_path=args.config, run_dir=run_dir, argv=sys.argv[1:],
+        )
+        print(f"[man ] {manifest}")
     print(f"[done] {total} output(s) -> {out_root}")
-    return 0 if total else 1
+    print(ledger.summarise())
+    return ledger.exit_code(allow_errors=args.allow_errors)
 
 
 if __name__ == "__main__":
