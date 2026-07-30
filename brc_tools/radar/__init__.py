@@ -18,6 +18,12 @@ from brc_tools.radar.beam import (
     great_circle_distance_m,
     sample_on_beam,
 )
+from brc_tools.radar.iem import (
+    RIDGE_PRODUCTS,
+    RidgeField,
+    observed_sweep,
+    read_ridge,
+)
 from brc_tools.radar.nexrad import (
     MIRRORS,
     MOMENT_REFLECTIVITY,
@@ -37,6 +43,10 @@ from brc_tools.radar.sites import RADAR_SITES, RadarSite, get_site
 
 __all__ = [
     "MIRRORS",
+    "RIDGE_PRODUCTS",
+    "RidgeField",
+    "observed_sweep",
+    "read_ridge",
     "MOMENT_REFLECTIVITY",
     "MOMENT_VELOCITY",
     "RadarSweep",

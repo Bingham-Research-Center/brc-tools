@@ -170,10 +170,35 @@ point and KVEL, four verification windows, and a centroid track.
   `do_radar_ref = 1`).
 - **Empty `verify` panel** → no `tslist` output, or the window is outside the run.
 
-## Radar data
+## Radar data — observed
 
-`brc_tools/radar/nexrad.py` fetches and decodes real Level-II volumes (MetPy's
-reader, no new dependency). **Read the transport table in
-`docs/nwp/NWP-SOURCE-MATRIX.md` before relying on it**: NCEI serves no Level-II,
-Unidata THREDDS has no archive, the GCS mirror stops in about September 2025, and
-anonymous AWS listing needs verifying from a DTN.
+Two modules, and for a historical case **only one of them works**:
+
+`brc_tools/radar/iem.py` — **the working route.** Iowa State's IEM RIDGE archive
+serves per-radar **Level-III** base reflectivity as georeferenced PNGs at ~4–5 minute
+cadence, with a long historical reach. Verified on KGJX 2025-10-12. Set
+`compare_observed = true` on a `[[beams]]` entry and the `beam` family renders the
+observed field beside the model's, on the same colour scale and extent.
+
+**It carries elevation 1 (0.5°) only.** A signature reported at 0.0° or 1.2° has no
+observed counterpart for a 2025 date — state that rather than substituting 0.5°.
+Values are quantised to 0.5 dBZ and already resampled onto a lat/lon grid, so this is
+not raw polar data. The velocity product `N0S` is fetchable but its scaling is
+unverified, and `read_ridge` refuses it rather than returning unscaled indices.
+
+`brc_tools/radar/nexrad.py` — Level-II via MetPy's reader. Richer (all tilts, both
+moments, raw polar) but **no archive serves it for October 2025**. Read the transport
+table in `docs/nwp/NWP-SOURCE-MATRIX.md` before relying on it.
+
+Worked example, Ashley Valley at 02:20Z, model-vs-observed on the *same* tilt:
+
+| field | max dBZ | p95 | area > 35 dBZ |
+|---|---|---|---|
+| model column maximum | 47.6 | 35.1 | — |
+| model on 0.0° beam (2.8–3.7 km AGL) | 46.7 | 30.4 | — |
+| model on **0.5°** beam (4.3–5.5 km AGL) | 44.1 | 25.3 | 1.2 % |
+| model on 1.2° beam (6.4–8.0 km AGL) | 11.2 | 6.0 | 0 |
+| **observed 0.5° (IEM `N0B`, 02:18Z)** | **53.5** | **40.5** | **6.4 %** |
+
+Note how much the answer moves with tilt: the column maximum and the 1.2° surface
+differ by 36 dBZ over the same ground. That is the entire argument for this family.

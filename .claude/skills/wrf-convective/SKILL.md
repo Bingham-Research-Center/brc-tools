@@ -82,9 +82,16 @@ three engines, three jobs, and only this one knows about radar beams.
 - Reads **both** `wrfout` filename conventions including `nocolons = .true.`.
 - Basemap overlays need `BRC_TOOLS_BASEMAP_DIR` (the SLURM wrapper points at the
   staged group6 cache); missing layers are skipped, never fatal.
-- Fetching real NEXRAD volumes: check the transport table in
-  `docs/nwp/NWP-SOURCE-MATRIX.md` first. Several obvious routes do not work, and
-  the archive that does is date-limited.
+- **Observed radar comes from Iowa State (IEM RIDGE), not Level-II.** Set
+  `compare_observed = true` on a `[[beams]]` entry and the observed field renders
+  beside the model's on the same colour scale. It is **Level-III, elevation 1
+  (0.5°) only** — so a signature reported at 0.0° or 1.2° has no observed
+  counterpart for a 2025 date. Say that; never substitute 0.5° for 1.2°. Level-II
+  would give every tilt but no archive serves it for October 2025 — see the
+  transport table in `docs/nwp/NWP-SOURCE-MATRIX.md` before assuming otherwise.
+- **Quote the tilt with every reflectivity number.** On the Ashley case the same
+  ground gives 47.6 dBZ as a column maximum, 44.1 on the 0.5° surface and 11.2 on
+  the 1.2° surface. A dBZ figure without its surface is not a measurement.
 
 ## Claims discipline
 

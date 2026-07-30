@@ -51,13 +51,28 @@ WRF, Slurm, GDAL, or an Earthdata login.
 
 ## Claude Code skills
 
-Repo-local skills (slash commands) live in `.claude/skills/`:
+Repo-local skills (slash commands) live in `.claude/skills/`. Each drives a
+TOML-configured engine in `scripts/`, submits to CHPC SLURM, and writes figures
+**outside** the checkout.
 
-- [`/wrf-full-figures`](.claude/skills/wrf-full-figures/SKILL.md) — generate publication
-  "full-figures" (300-DPI versions of the WRF quicklooks) for a WRF case on CHPC SLURM,
-  choosing a specific case/run. Companion doc: [`docs/WRF-FIGURE-ENGINE.md`](docs/WRF-FIGURE-ENGINE.md)
-  (the engine + generic `scripts/wrf_figures.py --config <case.toml>` CLI; per-study cases
-  live in the study repo, e.g. `../latex-jrl-mjd-mdpiair-2026/verification/config/figures/pelican2013.toml`).
+There are **three WRF figure engines and they are not interchangeable** — pick by the
+question you are asking:
+
+| skill | question it answers | engine | doc |
+|---|---|---|---|
+| [`/wrf-full-figures`](.claude/skills/wrf-full-figures/SKILL.md) | publication figure set for a study (300-DPI quicklook equivalents, difference maps, heat-deficit diagnostics) | `scripts/wrf_figures.py` | [`docs/WRF-FIGURE-ENGINE.md`](docs/WRF-FIGURE-ENGINE.md) |
+| [`/wrf-basin-winds`](.claude/skills/wrf-basin-winds/SKILL.md) | drainage and basin winds — 10 m wind plan views plus terrain-filled curtains on **native eta levels** along named transects | `scripts/wrf_winds.py` | [`docs/WRF-WINDS.md`](docs/WRF-WINDS.md) |
+| [`/wrf-convective`](.claude/skills/wrf-convective/SKILL.md) | storm diagnosis — reflectivity, **reflectivity sampled on a real radar's beam surfaces** with the observed scan beside it, gust swaths, updraft helicity, skew-T with parcel path, hodographs, station verification from `tslist` | `scripts/wrf_convective.py` | [`docs/WRF-CONVECTIVE.md`](docs/WRF-CONVECTIVE.md) |
+
+Plus one non-WRF renderer:
+
+- [`/basin-forecast-funnel`](.claude/skills/basin-forecast-funnel/SKILL.md) — NAM synoptic
+  montage (250 hPa jet → 500 hPa flow → 600 hPa moisture/LLJ → surface analysis) for an
+  analysis time. Doc: [`docs/FORECAST-FUNNEL.md`](docs/FORECAST-FUNNEL.md).
+
+Per-case configuration lives in the repo that owns the case, never here — e.g.
+`../ub-wx/experiments/20251011-ashley-rotating-cell/figures.toml`, or
+`../latex-jrl-mjd-mdpiair-2026/verification/config/figures/pelican2013.toml`.
 
 ## CHPC Deployment
 

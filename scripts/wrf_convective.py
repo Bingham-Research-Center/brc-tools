@@ -338,7 +338,59 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args) -> int:
             except Exception as exc:
                 print(f"[ERR] beam {tag} {site.id} {elev}: {exc}")
                 traceback.print_exc()
+
+        if spec.get("compare_observed"):
+            made += _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args)
     return made
+
+
+def _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args) -> int:
+    """Observed Level-III reflectivity at the same tilt, on the same colour scale.
+
+    Uses the Iowa State IEM RIDGE archive, which carries elevation 1 (0.5 deg) for
+    historical dates.  That is one of the tilts a beam-matched comparison needs and
+    is the only observed source available for a 2025 case -- see the transport table
+    in ``docs/nwp/NWP-SOURCE-MATRIX.md``.
+
+    A missing scan is reported, not raised: an archive gap is a fact about the data.
+    """
+    from brc_tools.radar import iem
+
+    tag, stamp, _base, short, annotation = ctx
+    valid = datetime.strptime(stamp, "%Y%m%d_%H%M")
+    product = spec.get("observed_product", "N0B")
+    try:
+        field = iem.observed_sweep(
+            site.id, valid, product=product,
+            window_minutes=float(spec.get("observed_window_minutes", 10.0)),
+            extent=extent,
+        )
+    except Exception as exc:  # noqa: BLE001 - obs are a bonus, never a precondition
+        print(f"[SKIP] observed {site.id} {product}: {type(exc).__name__}: {exc}")
+        return 0
+    if field is None:
+        print(f"[SKIP] observed {site.id} {product}: no scan within the window of {stamp}")
+        return 0
+
+    lag = (field.valid_time - valid).total_seconds() / 60.0
+    try:
+        plot_nwp_surface_map(
+            iem.to_plan_dataset(field), "refl_beam",
+            out_dir / f"observed_{site.id}_{product}_{stamp}.png",
+            style=we.style_for(cfg, "refl_beam"), waypoints=wps,
+            extent=extent, overlays=overlays, terrain_contours=False,
+            annotation=(
+                f"{annotation} | IEM RIDGE {product} | observed {field.valid_time:%H:%MZ} "
+                f"({lag:+.0f} min vs model) | elevation 1 = {field.elevation_deg:g} deg"
+            ),
+            title=f"OBSERVED {site.id} {product} {field.elevation_deg:g} deg | {short}",
+            dpi=args.dpi,
+        )
+        return 1
+    except Exception as exc:
+        print(f"[ERR] observed {site.id} {product}: {exc}")
+        traceback.print_exc()
+        return 0
 
 
 def render_soundings(cfg, dom, ds, out_dir, ctx, args) -> int:
