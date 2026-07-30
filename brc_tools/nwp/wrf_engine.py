@@ -14,9 +14,13 @@ dataclasses rather than plain dicts.  Two engines, one set of plumbing.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import tomllib
-from datetime import datetime, timedelta
+import traceback
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from brc_tools.nwp import wrf_section as ws
@@ -226,6 +230,274 @@ def select_times(
             print(f"[SKIP] d{dom:02d} has no {one:{TIME_FMT}} "
                   f"(latest {max(stamps):{TIME_FMT}}) -- domain dropped")
     return [one]
+
+
+# --------------------------------------------------------------------------- #
+# the render ledger
+# --------------------------------------------------------------------------- #
+#: Statuses a :class:`FigureRecord` can carry.
+RENDERED, SKIPPED, PLANNED, ERROR, ABSENT = (
+    "rendered", "skipped", "planned", "error", "absent")
+
+
+@dataclass
+class FigureRecord:
+    """One attempted figure: what it was, and what happened to it."""
+
+    family: str
+    status: str
+    path: str | None = None
+    domain: int | None = None
+    valid: str | None = None
+    var: str | None = None
+    detail: str = ""
+
+
+class FigureLedger:
+    """The single chokepoint every figure passes through.
+
+    Each family used to render on its own -- ``try: plot(...); made += 1`` /
+    ``except: print("[ERR]")``, repeated at a dozen sites -- and report only an
+    ``int``.  With no chokepoint there was nowhere to put idempotence, a record
+    of what was produced, an error tally, or a dry run, so those read as four
+    separate gaps when they are one missing seam.
+
+    Robustness is unchanged: a failing figure is still caught and printed, and
+    the sweep still continues.  What changes is that the job can now say what it
+    did.
+    """
+
+    def __init__(self, *, skip_existing: bool = False, dry_run: bool = False):
+        self.skip_existing = bool(skip_existing)
+        self.dry_run = bool(dry_run)
+        self.records: list[FigureRecord] = []
+
+    # -- recording ---------------------------------------------------------- #
+    def emit(
+        self,
+        out_path,
+        render_fn,
+        *,
+        sources=(),
+        family: str,
+        domain: int | None = None,
+        valid: datetime | None = None,
+        var: str | None = None,
+    ) -> int:
+        """Render one figure, or decide not to.  Returns 1 if a file was written.
+
+        ``render_fn`` takes the output path, so the decision to render happens
+        before any work does.  ``sources`` are the files the figure derives from;
+        with ``skip_existing`` a figure at least as new as all of them is kept.
+        """
+        out_path = Path(out_path)
+        common = dict(family=family, domain=domain, var=var,
+                      valid=None if valid is None else valid.strftime(TIME_FMT),
+                      path=str(out_path))
+
+        if self.dry_run:
+            self.records.append(FigureRecord(status=PLANNED, **common))
+            return 0
+        if self.skip_existing and self.is_current(out_path, sources):
+            self.records.append(FigureRecord(status=SKIPPED, **common))
+            return 0
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            render_fn(out_path)
+        except Exception as exc:  # one bad panel is not a lost run
+            label = " ".join(str(x) for x in (family, var, out_path.name) if x)
+            print(f"[ERR] {label}: {exc}")
+            traceback.print_exc()
+            self.records.append(
+                FigureRecord(status=ERROR, detail=f"{type(exc).__name__}: {exc}", **common)
+            )
+            return 0
+        self.records.append(FigureRecord(status=RENDERED, **common))
+        return 1
+
+    def note(self, status: str, detail: str, *, family: str,
+             domain: int | None = None, valid: datetime | None = None,
+             var: str | None = None) -> None:
+        """Record something that produced no file -- an absent field, a bad key.
+
+        Keeps the manifest honest about coverage: "not in this run" and "failed"
+        are different answers to "where is my figure?", and ``find`` cannot tell
+        them apart.
+        """
+        self.records.append(FigureRecord(
+            family=family, status=status, detail=detail, domain=domain, var=var,
+            valid=None if valid is None else valid.strftime(TIME_FMT),
+        ))
+
+    def is_current(self, out_path, sources) -> bool:
+        """Whether ``out_path`` is at least as new as every source it derives from.
+
+        A source rewritten by a later WRF run is newer than the figure, so the
+        figure regenerates -- which is what makes this safe to use against a run
+        that is still writing.
+        """
+        out_path = Path(out_path)
+        if not out_path.exists():
+            return False
+        out_mtime = out_path.stat().st_mtime
+        for src in sources:
+            src = Path(src)
+            if not src.exists() or src.stat().st_mtime > out_mtime:
+                return False
+        return True
+
+    # -- reporting ---------------------------------------------------------- #
+    def count(self, status: str) -> int:
+        return sum(1 for r in self.records if r.status == status)
+
+    @property
+    def rendered(self) -> int:
+        return self.count(RENDERED)
+
+    @property
+    def errors(self) -> int:
+        return self.count(ERROR)
+
+    def summarise(self) -> str:
+        """The tally, printed last so it is the final line in a ``.err``."""
+        parts = [f"{self.count(s)} {s}"
+                 for s in (RENDERED, SKIPPED, PLANNED, ERROR, ABSENT)
+                 if self.count(s)]
+        return "[tally] " + (", ".join(parts) if parts else "nothing attempted")
+
+    def planned_lines(self) -> list[str]:
+        """One line per figure a dry run would have rendered."""
+        return [f"  {r.family:9s} {r.valid or '-':16s} {r.path}"
+                for r in self.records if r.status == PLANNED]
+
+    def exit_code(self, *, allow_errors: bool = False) -> int:
+        """0 only if the job actually did what it was asked.
+
+        ``return 0 if total else 1`` could not tell 400-of-400 from 100-of-400:
+        a job that failed three quarters of its figures looked like a success
+        because *something* rendered.  Any error is now non-zero unless the
+        caller opts out.
+        """
+        if self.errors and not allow_errors:
+            return 1
+        if self.dry_run:
+            return 0
+        return 0 if (self.rendered or self.count(SKIPPED)) else 1
+
+    def write_manifest(self, out_root, *, config_path=None, run_dir=None,
+                       argv=None, extra: dict | None = None) -> Path:
+        """Write a machine-readable record of this job under ``out_root``.
+
+        Named by ``SLURM_JOB_ID`` when there is one, because the normal way to
+        sweep a case is several jobs into one output root and a single
+        ``manifest.json`` would have them clobber each other.
+        """
+        out_root = Path(out_root)
+        now = datetime.now(UTC)
+        job = os.environ.get("SLURM_JOB_ID") or now.strftime("%Y%m%dT%H%M%SZ")
+        payload = {
+            "job": job,
+            "written_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "config": None if config_path is None else str(config_path),
+            "config_sha256": _sha256(config_path),
+            "run_dir": None if run_dir is None else str(run_dir),
+            "argv": list(argv) if argv is not None else None,
+            "dry_run": self.dry_run,
+            "skip_existing": self.skip_existing,
+            "counts": {s: self.count(s)
+                       for s in (RENDERED, SKIPPED, PLANNED, ERROR, ABSENT)},
+            "figures": [asdict(r) for r in self.records],
+            **(extra or {}),
+        }
+        out_root.mkdir(parents=True, exist_ok=True)
+        path = out_root / f"manifest_{job}.json"
+        path.write_text(json.dumps(payload, indent=2, sort_keys=False), encoding="utf-8")
+        return path
+
+
+def _sha256(path) -> str | None:
+    """Hash a config so a manifest pins the exact settings a sweep ran under."""
+    if path is None:
+        return None
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def read_manifests(out_root) -> list[dict]:
+    """Every ``manifest_*.json`` under ``out_root``, oldest first."""
+    out_root = Path(out_root)
+    found = []
+    for path in sorted(out_root.glob("manifest_*.json")):
+        try:
+            found.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError) as exc:
+            print(f"[SKIP] unreadable manifest {path.name}: {exc}")
+    return found
+
+
+def report_coverage(out_root) -> int:
+    """Print what a sweep actually produced, across every job in ``out_root``.
+
+    This is the answer to "do we have all the plots?", which was previously
+    answerable only by ``find`` -- and ``find`` cannot distinguish a figure that
+    was never asked for from one that failed.
+    """
+    manifests = read_manifests(out_root)
+    if not manifests:
+        print(f"[report] no manifests under {out_root}")
+        return 1
+
+    print(f"[report] {len(manifests)} job(s) under {out_root}")
+    totals: dict[str, int] = {}
+    per_family: dict[str, dict[str, int]] = {}
+    for man in manifests:
+        argv = man.get("argv") or []
+        counts = man.get("counts", {})
+        summary = ", ".join(f"{v} {k}" for k, v in counts.items() if v)
+        print(f"  job {man.get('job', '?')} [{man.get('written_utc', '?')}] "
+              f"{summary or 'nothing'}")
+        if argv:
+            print(f"      argv: {' '.join(str(a) for a in argv)}")
+        for rec in man.get("figures", []):
+            status = rec.get("status", "?")
+            totals[status] = totals.get(status, 0) + 1
+            fam = per_family.setdefault(rec.get("family", "?"), {})
+            fam[status] = fam.get(status, 0) + 1
+
+    print("  per family:")
+    for fam in sorted(per_family):
+        detail = ", ".join(f"{v} {k}" for k, v in sorted(per_family[fam].items()))
+        print(f"    {fam:9s} {detail}")
+    print("  overall: " + (", ".join(f"{v} {k}" for k, v in sorted(totals.items()))
+                           or "nothing"))
+    failed = totals.get(ERROR, 0)
+    if failed:
+        print(f"  {failed} figure(s) errored -- see the job .err files")
+    return 1 if failed else 0
+
+
+def add_output_arguments(parser) -> None:
+    """Flags shared by both engines for idempotence, dry runs and reporting."""
+    parser.add_argument(
+        "--skip-existing", action="store_true",
+        help="keep figures already newer than every file they derive from; "
+             "makes a re-run after adding one family cheap",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="print the figures that would be rendered, then exit",
+    )
+    parser.add_argument(
+        "--allow-errors", action="store_true",
+        help="exit 0 even if some figures failed (default: any failure exits 1)",
+    )
+    parser.add_argument(
+        "--report", action="store_true",
+        help="summarise coverage from the manifests already in the output root, "
+             "then exit; renders nothing",
+    )
 
 
 def check_section_on_grid(plane, key: str, spec: dict, *, tag: str) -> bool:

@@ -4,6 +4,8 @@ Covers the parts both the winds and convective engines depend on, so a change th
 breaks one is caught rather than discovered on a compute node.
 """
 
+import json
+import os
 from datetime import datetime, timedelta
 
 import pytest
@@ -293,3 +295,177 @@ class TestSectionPreflight:
     def test_n_points_defaults_when_the_case_omits_it(self):
         spec = {"a": (40.1, -109.9), "b": (40.4, -109.6)}
         assert we.check_section_on_grid(self._plane(), "valley", spec, tag="d02") is True
+
+
+class TestFigureLedger:
+    """The render chokepoint: idempotence, manifest, tally and dry run.
+
+    These were four separate gaps in the SOP because each family rendered on its
+    own and reported an int. They are one seam.
+    """
+
+    @staticmethod
+    def _ok(text="fig"):
+        def render(path):
+            path.write_text(text, encoding="utf-8")
+        return render
+
+    @staticmethod
+    def _boom(path):
+        raise RuntimeError("renderer exploded")
+
+    # -- rendering ---------------------------------------------------------- #
+    def test_a_successful_render_writes_and_counts(self, tmp_path):
+        led = we.FigureLedger()
+        out = tmp_path / "sub" / "a.png"
+        assert led.emit(out, self._ok(), family="surface") == 1
+        assert out.read_text() == "fig"          # parent dir created for it
+        assert led.rendered == 1 and led.errors == 0
+
+    def test_a_failing_render_is_caught_and_recorded_not_raised(self, tmp_path):
+        led = we.FigureLedger()
+        assert led.emit(tmp_path / "a.png", self._boom, family="beam") == 0
+        assert led.errors == 1 and led.rendered == 0
+        assert "RuntimeError" in led.records[0].detail
+
+    def test_one_bad_figure_does_not_stop_the_others(self, tmp_path):
+        led = we.FigureLedger()
+        led.emit(tmp_path / "a.png", self._boom, family="beam")
+        led.emit(tmp_path / "b.png", self._ok(), family="beam")
+        assert (led.rendered, led.errors) == (1, 1)
+
+    # -- idempotence (gap 1) ------------------------------------------------ #
+    def test_without_skip_existing_it_re_renders(self, tmp_path):
+        out, src = tmp_path / "a.png", tmp_path / "wrfout"
+        src.write_text("x")
+        out.write_text("old")
+        we.FigureLedger().emit(out, self._ok("new"), sources=[src], family="surface")
+        assert out.read_text() == "new"
+
+    def test_skip_existing_keeps_a_figure_newer_than_its_source(self, tmp_path):
+        out, src = tmp_path / "a.png", tmp_path / "wrfout"
+        src.write_text("x")
+        out.write_text("old")
+        os.utime(src, (1000, 1000))
+        os.utime(out, (2000, 2000))
+        led = we.FigureLedger(skip_existing=True)
+        assert led.emit(out, self._ok("new"), sources=[src], family="surface") == 0
+        assert out.read_text() == "old"
+        assert led.count(we.SKIPPED) == 1
+
+    def test_a_source_rewritten_later_forces_a_re_render(self, tmp_path):
+        # The run is still writing: a newer wrfout must beat an older figure.
+        out, src = tmp_path / "a.png", tmp_path / "wrfout"
+        out.write_text("old")
+        src.write_text("x")
+        os.utime(out, (1000, 1000))
+        os.utime(src, (2000, 2000))
+        led = we.FigureLedger(skip_existing=True)
+        assert led.emit(out, self._ok("new"), sources=[src], family="surface") == 1
+        assert out.read_text() == "new"
+
+    def test_a_missing_source_is_not_current(self, tmp_path):
+        out = tmp_path / "a.png"
+        out.write_text("old")
+        led = we.FigureLedger(skip_existing=True)
+        assert not led.is_current(out, [tmp_path / "gone"])
+
+    # -- dry run (gap 8) ---------------------------------------------------- #
+    def test_dry_run_plans_without_writing(self, tmp_path):
+        led = we.FigureLedger(dry_run=True)
+        out = tmp_path / "a.png"
+        assert led.emit(out, self._ok(), family="surface") == 0
+        assert not out.exists()
+        assert led.count(we.PLANNED) == 1
+        assert any("a.png" in line for line in led.planned_lines())
+
+    def test_a_dry_run_that_planned_nothing_still_exits_zero(self):
+        assert we.FigureLedger(dry_run=True).exit_code() == 0
+
+    # -- exit code (gap 3) -------------------------------------------------- #
+    def test_any_error_exits_non_zero_even_when_most_succeeded(self, tmp_path):
+        # The whole complaint: `return 0 if total else 1` could not tell
+        # 400-of-400 from 399-of-400.
+        led = we.FigureLedger()
+        for i in range(9):
+            led.emit(tmp_path / f"ok{i}.png", self._ok(), family="surface")
+        led.emit(tmp_path / "bad.png", self._boom, family="surface")
+        assert led.rendered == 9
+        assert led.exit_code() == 1
+
+    def test_allow_errors_opts_out(self, tmp_path):
+        led = we.FigureLedger()
+        led.emit(tmp_path / "ok.png", self._ok(), family="surface")
+        led.emit(tmp_path / "bad.png", self._boom, family="surface")
+        assert led.exit_code(allow_errors=True) == 0
+
+    def test_rendering_nothing_at_all_exits_non_zero(self):
+        assert we.FigureLedger().exit_code() == 1
+
+    def test_a_run_that_only_skipped_is_a_success(self, tmp_path):
+        out = tmp_path / "a.png"
+        out.write_text("old")
+        led = we.FigureLedger(skip_existing=True)
+        led.emit(out, self._ok(), family="surface")
+        assert led.exit_code() == 0  # everything was already up to date
+
+    def test_summarise_names_each_status(self, tmp_path):
+        led = we.FigureLedger()
+        led.emit(tmp_path / "ok.png", self._ok(), family="surface")
+        led.emit(tmp_path / "bad.png", self._boom, family="surface")
+        led.note(we.ABSENT, "not written by this run", family="surface", var="hail_max")
+        text = led.summarise()
+        assert "1 rendered" in text and "1 error" in text and "1 absent" in text
+
+    # -- manifest (gap 2) --------------------------------------------------- #
+    def test_manifest_records_what_happened(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("SLURM_JOB_ID", "12345")
+        cfg = tmp_path / "case.toml"
+        cfg.write_text("[case]\n")
+        led = we.FigureLedger()
+        led.emit(tmp_path / "a.png", self._ok(), family="surface",
+                 domain=2, valid=datetime(2025, 10, 12, 2, 20), var="refl_comp")
+        path = led.write_manifest(tmp_path / "out", config_path=cfg,
+                                  run_dir=tmp_path, argv=["--figure", "surface"])
+        assert path.name == "manifest_12345.json"
+        man = json.loads(path.read_text())
+        assert man["counts"]["rendered"] == 1
+        assert man["argv"] == ["--figure", "surface"]
+        assert len(man["config_sha256"]) == 64      # config pinned by hash
+        fig = man["figures"][0]
+        assert fig["family"] == "surface" and fig["domain"] == 2
+        assert fig["var"] == "refl_comp" and fig["valid"] == "2025-10-12_02:20"
+
+    def test_each_slurm_job_gets_its_own_manifest(self, tmp_path, monkeypatch):
+        # Four jobs sweeping into one output root must not clobber each other.
+        root = tmp_path / "out"
+        for job in ("111", "222"):
+            monkeypatch.setenv("SLURM_JOB_ID", job)
+            led = we.FigureLedger()
+            led.emit(tmp_path / f"{job}.png", self._ok(), family="aux")
+            led.write_manifest(root)
+        assert len(list(root.glob("manifest_*.json"))) == 2
+        assert len(we.read_manifests(root)) == 2
+
+    def test_report_reads_every_job_and_flags_failures(self, tmp_path, monkeypatch, capsys):
+        root = tmp_path / "out"
+        monkeypatch.setenv("SLURM_JOB_ID", "777")
+        led = we.FigureLedger()
+        led.emit(tmp_path / "ok.png", self._ok(), family="surface")
+        led.emit(tmp_path / "bad.png", self._boom, family="beam")
+        led.write_manifest(root)
+        capsys.readouterr()
+
+        assert we.report_coverage(root) == 1  # non-zero because one errored
+        out = capsys.readouterr().out
+        assert "1 job(s)" in out and "surface" in out and "beam" in out
+        assert "errored" in out
+
+    def test_report_on_an_empty_root_says_so(self, tmp_path, capsys):
+        assert we.report_coverage(tmp_path) == 1
+        assert "no manifests" in capsys.readouterr().out
+
+    def test_an_unreadable_manifest_is_skipped_not_fatal(self, tmp_path, capsys):
+        (tmp_path / "manifest_bad.json").write_text("{not json")
+        assert we.read_manifests(tmp_path) == []
+        assert "unreadable manifest" in capsys.readouterr().out

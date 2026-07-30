@@ -9,6 +9,9 @@ The pattern is settled and works: **capability in `brc-tools`, configuration in 
 case repo, figures outside every checkout, heavy work on a DTN.** What follows is
 the operating procedure plus an honest list of the gaps still in it.
 
+*Updated 2026-07-30: gaps 1–5 and 7–10 are closed (errors 11–16 below). What is left
+open is gap 5's cross-nest provenance half and gap 6, which needs no code.*
+
 ---
 
 ## The procedure
@@ -28,14 +31,27 @@ the operating procedure plus an honest list of the gaps still in it.
    seven families was never smoke-tested.
 4. **Narrow before you sweep.** `--figure` to select families, `--domain` to select
    nests, `--start`/`--end` to bound the window. A 1-minute sweep of a 5 h run is
-   301 times per domain; unbounded, that is thousands of figures.
+   301 times per domain; unbounded, that is thousands of figures. **`--dry-run`
+   prints the exact list a job would render** — cheaper than discovering the count
+   from a queue.
 5. **Submit to the DTN** (`scripts/*.dtn.slurm`). `lawson-group6` is read-only on
    the notchpeak login nodes, and `lawson-np` is the single node a WRF run occupies.
-6. **Check the `.err` before assuming success.** Family-level failures are caught
-   and printed per figure, so a job can exit 0 having rendered nothing useful.
-7. **Promote the keepers** to `$UB_WX_FIGS_KEEP`. Scratch is the mass output; no
+6. **Check the exit code, then the `.err`.** Per-figure failures are still caught
+   and printed so one bad panel cannot lose a run, but **any failure now exits
+   non-zero** and the `[tally]` line is the last thing printed. `--allow-errors`
+   opts out when some families are expected to fail.
+7. **Ask what you actually got: `--report`.** Every job writes
+   `manifest_<jobid>.json` into the output root, and `--report` summarises coverage
+   across all of them — per family, per status. This is the answer to "do we have
+   all the plots?", which `find` cannot give you because it cannot tell a figure
+   that was never asked for from one that failed.
+8. **Re-run with `--skip-existing`** after adding a family. A figure at least as new
+   as every file it derives from is kept; a `wrfout` rewritten by a later run is
+   newer than its figure, so that figure regenerates. Safe against a still-writing
+   job.
+9. **Promote the keepers** to `$UB_WX_FIGS_KEEP`. Scratch is the mass output; no
    figure images in git.
-8. **Write the finding, with its caveats, into the case's `notes.md`.**
+10. **Write the finding, with its caveats, into the case's `notes.md`.**
 
 ## Worked invocation — the Ashley suite
 
@@ -56,6 +72,9 @@ sbatch scripts/wrf_convective.dtn.slurm --config $CFG --output-dir $OUT \
 # window products: verification panels and the centroid table
 sbatch scripts/wrf_convective.dtn.slurm --config $CFG --output-dir $OUT \
     --figure verify --figure track --every 10
+
+# what did all of that actually produce?
+python scripts/wrf_convective.py --config $CFG --output-dir $OUT --report
 ```
 
 ---
@@ -82,6 +101,7 @@ job. All are fixed; they are recorded because the *class* of mistake will recur.
 | 13 | `REFD_COM` and `REFD_MAX` shared one style key | They are different quantities — the column max *at the output instant* vs. the max *over the interval since the last history write*. A run writing both plotted only one, under a label naming the wrong surface. Was open as gap 10 | fixed — separate `refl_comp_max` style |
 | 14 | The field→style and masking tables lived in the script, untested | Unavailable to other callers, and error 13 is exactly what goes unnoticed there. Was open as gap 9 | fixed — moved to `nwp/wrf_convective.py` with tests |
 | 15 | `verify` silently ignored the time-selection flags | `--valid X --figure verify` looked like it honoured `X`. Was open as gap 4 | fixed — says so in the log |
+| 16 | A sweep could not say what it had done | Four gaps (1, 2, 3, 8) with **one** root cause: every family rendered on its own — `try: plot(...); made += 1` / `except: print("[ERR]")` at a dozen sites — and reported only an `int`. With no chokepoint there was nowhere to put idempotence, a record, an error tally or a dry run, and `return 0 if total else 1` could not tell 400-of-400 from 100-of-400 | fixed — `wrf_engine.FigureLedger`, one seam for all four |
 
 ## Gaps still open
 
@@ -89,22 +109,12 @@ Ordered by how likely they are to bite. **Rank them by consequence instead** —
 closing section of this doc says why, and the five closed above (errors 11–15) were
 the ones that made a figure lie rather than the ones that made a sweep tedious.
 
-1. **No idempotence.** `wrf_figures.py` has `--skip-existing` (compares PNG mtime
-   against every source file); the winds and convective engines do not. Re-running a
-   sweep after adding one family re-renders everything. **Recommended:** lift
-   `_skip_existing` into `wrf_engine.py` and thread it through both engines.
-2. **No manifest of what was produced.** The pelican study keeps
-   `archive-inventory.md` by hand as its SSOT. A sweep that renders 400 figures
-   across four jobs leaves no machine-readable record of which times, families and
-   domains actually succeeded — so "do we have all the plots?" can only be answered
-   by `find`. **Recommended:** emit a `manifest.json` per job (config hash, run dir,
-   times, families, per-figure success/skip/error) and a `--report` mode that
-   summarises coverage.
-3. **Silent per-figure failure.** Each family catches exceptions and prints `[ERR]`,
-   which is right for robustness, but the exit code is 0 as long as *something*
-   rendered. A job that failed 300 of 400 figures looks like a success. **Recommended:**
-   return a non-zero exit when the error count exceeds a threshold, and print an
-   error tally at the end.
+1. ~~**No idempotence.**~~ **Closed** — error 16 below. `--skip-existing` on both
+   engines.
+2. ~~**No manifest of what was produced.**~~ **Closed** — error 16. Each job writes
+   `manifest_<jobid>.json` and `--report` summarises coverage across all of them.
+3. ~~**Silent per-figure failure.**~~ **Closed** — error 16. Any error now exits
+   non-zero (`--allow-errors` opts out) and the tally is the last line printed.
 4. ~~**`verify` ignores the time selection.**~~ **Closed** — error 15 above.
 5. **No cross-nest consistency check.** Nothing verifies that a figure labelled d02
    and one labelled d01 at the same valid time actually came from the same run.
@@ -120,9 +130,7 @@ the ones that made a figure lie rather than the ones that made a sweep tedious.
    a 2025 date (AWS denies anonymous access by bucket policy; the GCS mirror stops
    before Sept 2025), so 0.0° and 1.2° still have **no** observed counterpart. Only
    the silence about it is fixed. Transport table: `docs/nwp/NWP-SOURCE-MATRIX.md`.
-8. **No `--dry-run`.** There is no way to ask "what would this render?" before
-   committing a job. With four families × three views × 31 times the answer is not
-   obvious. **Recommended:** print the planned figure list and exit.
+8. ~~**No `--dry-run`.**~~ **Closed** — error 16.
 9. ~~**Tables live in the script, not the package.**~~ **Closed** — error 14 above.
 10. ~~**`REFD_COM` and `REFD_MAX` share a style.**~~ **Closed** — error 13 above.
 
