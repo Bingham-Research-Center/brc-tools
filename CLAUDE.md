@@ -15,7 +15,7 @@ Repo: **`brc-tools`** (hyphen).
 ## Repo map
 ```
 brc_tools/        installable package
-  nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB), forecast_funnel (NAM synoptic montage data)
+  nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB), wrf_section (wrfout → plan/arbitrary-transect adapter), forecast_funnel (NAM synoptic montage data)
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
   visualize/      planview + timeseries panels; grid.py (field/section plots — brc-wrf seam); figure-engine modules (surface/section/upperair/profile/domains/heatdeficit/deficitflux/funnel/basemap/style)
@@ -42,6 +42,7 @@ figures/          generated output (gitignored)
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-staging cold-start SSOT**; detail in `docs/WRF-INPUT-STAGING.md`; two-stream draft `docs/WRF-GEFS-NAM-FIELD-MAP.md` (parked)
 - `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the active study repo; SSOT index → `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`
+- `docs/WRF-WINDS.md` — basin-winds-style figures from `wrfout` (`brc_tools/nwp/wrf_section.py` + `visualize/wrf_curtain.py` + `visualize/coldpool3d.py` + `scripts/wrf_winds.py --config <case.toml>` + `scripts/wrf_winds.dtn.slurm`); `/wrf-basin-winds` skill. Arbitrary A→B transects flat-shaded on **native eta cells**, plan views, and 3-D isentrope cold-pool views; matched across nests, sweeps a still-writing run. Distinct from the publication engine above; per-case TOMLs live in the repo owning the case (ashley → `../ub-wx/experiments/20260424-ashley-drainage-120m/figures.toml`).
 - `docs/FORECAST-FUNNEL.md` — NAM "forecast funnel" synoptic montage (`brc_tools/nwp/forecast_funnel.py` + `brc_tools/visualize/funnel.py` + `scripts/forecast_funnel.py`); `/basin-forecast-funnel` skill. NAM source auto-picks by init date (Herbie recent / NCEI pre-2017).
 - `WISHLIST-TASKS.md` — prioritised backlog
 
@@ -58,8 +59,9 @@ with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
 a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
 
 A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
-`plot_vertical_section`) is imported by `brc-wrf`'s `wrf_quicklook.py` — signatures
-load-bearing. The publication figure engine built on it (`wrf_figures.py` over
+`plot_vertical_section`, `terrain_contour_levels`) is imported by `brc-wrf`'s
+`wrf_quicklook.py` — signatures load-bearing. That script also shells out to
+`scripts/stage_wrf_inputs.py` to verify a manifest, so its CLI is part of the seam too. The publication figure engine built on it (`wrf_figures.py` over
 `wrf_output.py` + `visualize/*`) is documented in `docs/WRF-FIGURE-ENGINE.md` (Doc map).
 
 ## Conventions
@@ -101,11 +103,17 @@ no client wires it yet); `FR24_API_KEY` is reserved for the skeleton FlightRadar
 ## Testing
 ```
 pytest tests/
+cd /tmp && python -c "import brc_tools, brc_tools.visualize.grid"   # editable install present?
 ```
 Use a conda env with the deps (herbie, polars, pandas, matplotlib, cfgrib, requests).
 Preferred: the dedicated **`brc-tools-2026`** env (`mamba env create -f environment.yml`;
-herbie 2026.3.0 — validated, 180 passed / 2 skipped); the shared `clyfar-nov2025` also works. Fresh
-setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
+herbie 2026.3.0 — validated 2026-07-27, 253 passed / 2 skipped); the shared `clyfar-nov2025` also
+works. Fresh setup → `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
+**Verify the import from OUTSIDE the checkout.** A cwd-inside-the-repo test passes even with no
+install, so a missing `pip install -e .` only shows up later as `ImportError` in `brc-wrf`/`clyfar`
+(both import brc_tools from their own trees). On CHPC that install needs
+`--no-build-isolation` (pypi.org unreachable) and `--no-user` (else pip targets a read-only
+`~/.local/lib`).
 
 ## Related repos
 - `ubair-website` — Node.js receiver for uploads (data contract).
