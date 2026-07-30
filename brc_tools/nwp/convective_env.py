@@ -121,15 +121,18 @@ def _units():
     return units
 
 
-def cape_cin(column, parcel: str = "ml") -> tuple[float, float]:
+def cape_cin(column, parcel: str) -> tuple[float, float]:
     """CAPE and CIN (J/kg) for one named parcel.
 
     Returns ``(cape, cin)`` as plain floats, CIN negative.  ``(nan, nan)`` if the
     profile is too short or the parcel cannot be lifted.
 
-    There is deliberately no default-parcel convenience wrapper: for a
-    low-CAPE environment the parcel choice moves the answer by more than the
-    signal, so it must be stated at every call site.
+    ``parcel`` is deliberately **required**, here and in every function below that
+    takes one: for a low-CAPE environment the parcel choice moves the answer by
+    more than the signal, so it must be stated at every call site.  The Ashley
+    gate-A0 soundings are exactly that regime -- MLCAPE 580-980 J/kg against
+    MLCIN -100 to -305 -- where a silent default would label one parcel's answer
+    as if it were the environment's.
     """
     if parcel not in PARCELS:
         raise ValueError(f"parcel must be one of {PARCELS}, got {parcel!r}")
@@ -175,7 +178,7 @@ def _parcel_start(column, parcel: str):
     return pq[idx], tq[idx], tdq[idx]
 
 
-def parcel_levels(column, parcel: str = "ml") -> ParcelLevels:
+def parcel_levels(column, parcel: str) -> ParcelLevels:
     """LCL, LFC and EL for one parcel, as pressures and heights AGL.
 
     LCL height is meteorologically load-bearing in its own right: a cloud base
@@ -230,7 +233,7 @@ def parcel_levels(column, parcel: str = "ml") -> ParcelLevels:
     )
 
 
-def parcel_profile_c(column, parcel: str = "ml") -> np.ndarray:
+def parcel_profile_c(column, parcel: str) -> np.ndarray:
     """Parcel temperature profile in degC on the column's own pressure levels."""
     import metpy.calc as mpcalc
 
@@ -311,7 +314,7 @@ def bunkers_storm_motion(column) -> StormMotion:
     )
 
 
-def environment_summary(column, parcel: str = "ml") -> dict[str, float]:
+def environment_summary(column, parcel: str) -> dict[str, float]:
     """Every scalar above, as a flat dict for a table row or a figure annotation.
 
     Keys mirror the ``lookups.toml`` alias names where one exists, so a model row
