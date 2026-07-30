@@ -202,3 +202,49 @@ class TestSwathAndCentroid:
         assert one[2] == 49  # 7x7
         assert full[2] == 53  # 49 + 4
         assert one[0] > full[0]  # no longer dragged south by the small cell
+
+
+class TestSurfaceFieldTables:
+    """The field->style and masking tables, moved here from the engine script.
+
+    They were untested while they lived in ``scripts/wrf_convective.py``, and one
+    of them was wrong: two different quantities shared a style key.
+    """
+
+    def test_refd_com_and_refd_max_do_not_share_a_style(self):
+        # A snapshot column maximum and a maximum over the output interval are
+        # different measurements. Sharing a key meant a run writing both plotted
+        # only one, labelled as the other.
+        assert wc.SURFACE_FIELDS["REFD_COM"] != wc.SURFACE_FIELDS["REFD_MAX"]
+
+    def test_every_style_key_is_unique(self):
+        keys = list(wc.SURFACE_FIELDS.values())
+        assert len(keys) == len(set(keys)), "two fields would collide on one style"
+
+    def test_every_style_key_is_registered(self):
+        from brc_tools.visualize import style as st
+
+        for field, key in wc.SURFACE_FIELDS.items():
+            assert key in st.VAR_STYLES, f"{field} -> {key} has no VarStyle"
+
+    def test_refd_max_is_an_interval_maximum_so_it_resets_on_history(self):
+        # Consistency between the two tables: REFD_MAX is a running maximum, and
+        # the aux reader must keep refusing it.
+        assert "REFD_MAX" in wc.RESET_ON_HISTORY
+
+    def test_masked_applies_the_floor(self):
+        out = wc.masked("refl_comp", np.array([0.0, 5.0, 5.1, 40.0]))
+        assert np.isnan(out[0]) and np.isnan(out[1])  # at or below 5 dBZ
+        assert out[2] == pytest.approx(5.1) and out[3] == pytest.approx(40.0)
+
+    def test_masked_passes_through_a_key_with_no_floor(self):
+        field = np.array([-3.0, 0.0, 12.0])
+        assert np.allclose(wc.masked("wspd10max", field), field)
+
+    def test_both_reflectivity_snapshots_and_swaths_are_floored(self):
+        for key in ("refl_comp", "refl_comp_max", "refl_beam", "refl"):
+            assert wc.MASK_AT_OR_BELOW[key] == 5.0
+
+    def test_echo_top_floor_is_zero_not_five(self):
+        # Echo top is 0 where there is no echo at all, not 0 km of echo.
+        assert wc.MASK_AT_OR_BELOW["echo_top"] == 0.0

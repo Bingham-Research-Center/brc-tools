@@ -193,3 +193,27 @@ class TestLive:
         finite = field.values[np.isfinite(field.values)]
         assert finite.size > 100
         assert 40.0 < finite.max() < 70.0
+
+
+class TestObservedElevations:
+    """What tilts this archive can serve, which a model-only panel must declare."""
+
+    def test_ridge_serves_only_the_half_degree_tilt(self):
+        assert iem.observed_elevations() == {0.5}
+
+    def test_the_tilts_the_ashley_case_reports_are_mostly_unserved(self):
+        # CHK-BEAM reports 0.0 / 0.5 / 1.2 deg. Only one has a counterpart, so a
+        # figure at either of the others must say it stands alone.
+        served = iem.observed_elevations()
+        assert 0.5 in served
+        assert 0.0 not in served and 1.2 not in served
+
+    def test_velocity_is_tracked_separately_from_reflectivity(self):
+        # N0S exists but its index scaling is unverified, so it must not be
+        # counted as a reflectivity tilt.
+        assert iem.observed_elevations("velocity") == {0.5}
+        assert iem.observed_elevations("nonesuch") == set()
+
+    def test_derived_from_the_product_table_not_hardcoded(self):
+        expected = {e for e, _d, q in iem.RIDGE_PRODUCTS.values() if q == "reflectivity"}
+        assert iem.observed_elevations() == expected

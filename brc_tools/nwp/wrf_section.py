@@ -40,11 +40,20 @@ from brc_tools.nwp import wrf_output as wo
 from brc_tools.nwp.section import NWPSection
 
 __all__ = ["WRFPlane", "load_plane", "plan_dataset", "plan_extent",
-           "section_from_plane", "extract_wrf_section",
+           "section_from_plane", "extract_wrf_section", "section_coverage",
+           "SectionCoverage", "grid_spacing_km",
            "list_valid_times", "wrfout_path", "init_time"]
 
 _KM_PER_DEG_LAT = 110.574
 _KM_PER_DEG_LON = 111.320
+
+#: How far off the grid a sample may fall before it is treated as outside, in
+#: units of the grid spacing.  A point genuinely inside the mesh is at most
+#: ``sqrt(2)/2 ~= 0.71`` cells from a column centre, so one whole cell leaves
+#: room for grid curvature while still catching a transect that has left the
+#: nest -- which is the case that matters, because nearest-neighbour sampling
+#: has no upper bound and will happily return the boundary column forever.
+_OFFGRID_TOLERANCE_CELLS = 1.0
 
 # WRF writes history filenames as `%Y-%m-%d_%H:%M:%S`, unless the run set
 # `nocolons = .true.` (common on filesystems and tooling that dislike colons), in
@@ -220,6 +229,129 @@ def _sample_line(start, end, n):
     return lon_line, lat_line, np.hypot(dx, dy)
 
 
+def grid_spacing_km(lat2d, lon2d) -> float:
+    """Median distance between adjacent grid columns, in km.
+
+    Used to decide what "off the grid" means for a transect sample.  Taken as a
+    median over both axes rather than from a namelist ``dx``, so it is right for
+    any nest without being told which one it is looking at.
+    """
+    lat2d = np.asarray(lat2d, dtype=float)
+    lon2d = np.asarray(lon2d, dtype=float)
+    coslat = float(np.cos(np.deg2rad(np.mean(lat2d))))
+    x = lon2d * _KM_PER_DEG_LON * coslat
+    y = lat2d * _KM_PER_DEG_LAT
+    steps = []
+    if x.shape[1] > 1:
+        steps.append(np.hypot(np.diff(x, axis=1), np.diff(y, axis=1)).ravel())
+    if x.shape[0] > 1:
+        steps.append(np.hypot(np.diff(x, axis=0), np.diff(y, axis=0)).ravel())
+    if not steps:
+        raise ValueError("grid must have at least two columns in one direction")
+    return float(np.median(np.concatenate(steps)))
+
+
+@dataclass
+class SectionCoverage:
+    """How much of an A->B transect actually lies on the model grid.
+
+    Cheap enough to run as a preflight before the expensive 3-D read, which is
+    the point: a transect that has wandered off the nest should be reported
+    before a sweep spends an hour rendering it.
+    """
+
+    n_points: int
+    n_inside: int
+    grid_spacing_km: float
+    tolerance_km: float  # a sample further than this from a column is "outside"
+    worst_gap_km: float  # largest nearest-column distance anywhere on the line
+    first_outside_km: float | None  # distance from A where it first leaves, or None
+
+    @property
+    def inside_fraction(self) -> float:
+        return self.n_inside / self.n_points if self.n_points else 0.0
+
+    @property
+    def fully_inside(self) -> bool:
+        return self.n_inside == self.n_points
+
+    def describe(self) -> str:
+        """One line naming the problem, for an engine's log."""
+        if self.fully_inside:
+            return f"on-grid ({self.n_points} samples, {self.grid_spacing_km:.2f} km grid)"
+        pct = 100.0 * self.inside_fraction
+        where = ("from the start" if self.first_outside_km is None
+                 else f"from {self.first_outside_km:.1f} km along")
+        return (
+            f"leaves the grid {where}: only {self.n_inside}/{self.n_points} "
+            f"samples ({pct:.0f}%) are on it, worst gap {self.worst_gap_km:.1f} km "
+            f"against a {self.grid_spacing_km:.2f} km grid"
+        )
+
+
+def _nearest_columns(lat2d, lon2d, lat_line, lon_line):
+    """Nearest grid column per sample: ``(jj, ii, distance_km)``.
+
+    The KD-tree is built in kilometres (longitudes scaled by cos(lat)), so the
+    distances it returns are already the quantity we want to threshold on.
+    """
+    from scipy.spatial import cKDTree
+
+    coslat = float(np.cos(np.deg2rad(np.mean(lat2d))))
+    tree = cKDTree(np.column_stack([
+        np.asarray(lat2d, dtype=float).ravel() * _KM_PER_DEG_LAT,
+        np.asarray(lon2d, dtype=float).ravel() * _KM_PER_DEG_LON * coslat,
+    ]))
+    dist_km, flat = tree.query(np.column_stack([
+        lat_line * _KM_PER_DEG_LAT, lon_line * _KM_PER_DEG_LON * coslat]))
+    jj, ii = np.unravel_index(flat, np.shape(lat2d))
+    return jj, ii, dist_km
+
+
+def section_coverage(
+    plane_or_lat2d,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    *,
+    lon2d=None,
+    n_points: int = 240,
+    max_gap_km: float | None = None,
+) -> SectionCoverage:
+    """Whether an A->B transect lies on the grid, without reading the 3-D state.
+
+    Accepts either a :class:`WRFPlane` or a bare ``lat2d`` plus ``lon2d``, so an
+    engine can preflight a transect against a single opened ``wrfout`` before
+    committing to :func:`load_plane`.
+    """
+    if isinstance(plane_or_lat2d, WRFPlane):
+        lat2d, lon2d = plane_or_lat2d.lat2d, plane_or_lat2d.lon2d
+    else:
+        lat2d = plane_or_lat2d
+        if lon2d is None:
+            raise TypeError("pass a WRFPlane, or both lat2d and lon2d")
+
+    lon_line, lat_line, dist_along = _sample_line(start, end, n_points)
+    _, _, gap_km = _nearest_columns(lat2d, lon2d, lat_line, lon_line)
+
+    spacing = grid_spacing_km(lat2d, lon2d)
+    tol = float(max_gap_km) if max_gap_km is not None else _OFFGRID_TOLERANCE_CELLS * spacing
+    outside = gap_km > tol
+    first = None
+    if outside.any():
+        first_idx = int(np.argmax(outside))
+        # None means "outside from terminus A onward", which reads better in a log
+        # than "first leaves at 0.0 km".
+        first = float(dist_along[first_idx]) if first_idx > 0 else None
+    return SectionCoverage(
+        n_points=int(n_points),
+        n_inside=int((~outside).sum()),
+        grid_spacing_km=spacing,
+        tolerance_km=tol,
+        worst_gap_km=float(np.max(gap_km)),
+        first_outside_km=first,
+    )
+
+
 def _unit_ab(start, end) -> tuple[float, float]:
     """Unit (east, north) components of the A->B direction."""
     coslat = np.cos(np.deg2rad(0.5 * (float(start[0]) + float(end[0]))))
@@ -239,6 +371,7 @@ def section_from_plane(
     n_points: int = 240,
     termini: tuple[str, str] = ("A", "B"),
     orientation: str = "EW",
+    max_gap_km: float | None = None,
 ) -> NWPSection:
     """Cut an :class:`NWPSection` from ``plane`` along ``start`` -> ``end``.
 
@@ -250,18 +383,32 @@ def section_from_plane(
     ``start``/``end`` are ``(lat, lon)``.  The along-section component is
     positive toward B.  ``pressure_hpa`` carries the domain-mean level pressures
     for reference; the curtain itself is drawn on geometric height.
-    """
-    from scipy.spatial import cKDTree
 
+    **Samples that fall off the grid are blanked, not fabricated.**  Nearest
+    neighbour has no upper bound, so a transect running past the nest boundary
+    would otherwise keep returning the boundary column for the rest of its
+    length -- a flat, entirely physical-looking curtain that is an artefact of
+    the search.  Anything further than ``max_gap_km`` from a column (default:
+    one grid cell) has its *data* fields set to NaN and is flagged in
+    ``offgrid1d``.  The geometry fields -- heights, terrain, distance, lat/lon --
+    are left intact so the axes and the terrain fill stay well defined and the
+    gap simply reads as missing.  Use :func:`section_coverage` to detect this
+    before paying for :func:`load_plane`.
+    """
     lon_line, lat_line, dist = _sample_line(start, end, n_points)
-    coslat = float(np.cos(np.deg2rad(np.mean(plane.lat2d))))
-    tree = cKDTree(np.column_stack([
-        plane.lat2d.ravel() * _KM_PER_DEG_LAT,
-        plane.lon2d.ravel() * _KM_PER_DEG_LON * coslat,
-    ]))
-    _, flat = tree.query(np.column_stack([
-        lat_line * _KM_PER_DEG_LAT, lon_line * _KM_PER_DEG_LON * coslat]))
-    jj, ii = np.unravel_index(flat, plane.lat2d.shape)
+    jj, ii, gap_km = _nearest_columns(plane.lat2d, plane.lon2d, lat_line, lon_line)
+
+    tol = (float(max_gap_km) if max_gap_km is not None
+           else _OFFGRID_TOLERANCE_CELLS * grid_spacing_km(plane.lat2d, plane.lon2d))
+    offgrid = gap_km > tol
+
+    def _blank(field):
+        """NaN the off-grid columns of a sampled data field."""
+        if field is None or not offgrid.any():
+            return field
+        out = np.array(field, dtype=float, copy=True)
+        out[..., offgrid] = np.nan
+        return out
 
     e_hat, n_hat = _unit_ab(start, end)
     ue = plane.ue[:, jj, ii]
@@ -271,17 +418,18 @@ def section_from_plane(
         lon_line=lon_line,
         lat_line=lat_line,
         height2d=plane.height[:, jj, ii],
-        speed2d=np.hypot(ue, ve),
-        theta2d=plane.theta[:, jj, ii],
-        temp2d=plane.temp[:, jj, ii],
-        along2d=ue * e_hat + ve * n_hat,
-        w2d=plane.w[:, jj, ii],
+        speed2d=_blank(np.hypot(ue, ve)),
+        theta2d=_blank(plane.theta[:, jj, ii]),
+        temp2d=_blank(plane.temp[:, jj, ii]),
+        along2d=_blank(ue * e_hat + ve * n_hat),
+        w2d=_blank(plane.w[:, jj, ii]),
         terrain1d=plane.terrain[jj, ii],
         pressure_hpa=plane.pressure_hpa,
         termini=termini,
         orientation=orientation,
         height_w2d=plane.height_w[:, jj, ii],
-        refl2d=None if plane.refl is None else plane.refl[:, jj, ii],
+        refl2d=None if plane.refl is None else _blank(plane.refl[:, jj, ii]),
+        offgrid1d=offgrid,
     )
 
 

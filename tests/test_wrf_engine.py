@@ -253,3 +253,43 @@ class TestTimeWindow:
 
     def test_no_window_keeps_everything(self):
         assert len(self._select()) == len(self._stamps())
+
+
+class TestSectionPreflight:
+    """The off-grid transect warning, shared by both engines.
+
+    ``WRF-WINDS.md`` warned about this in prose; the point of the helper is that
+    the warning now actually fires, before a sweep spends an hour on a curtain
+    that is an artefact of unbounded nearest-neighbour search.
+    """
+
+    @staticmethod
+    def _plane():
+        from _wrf_synthetic import make_synthetic_wrf
+
+        from brc_tools.nwp import wrf_section as ws
+
+        return ws.load_plane(make_synthetic_wrf())
+
+    def test_an_on_grid_transect_passes_quietly(self, capsys):
+        spec = {"a": (40.1, -109.9), "b": (40.4, -109.6), "n_points": 40}
+        assert we.check_section_on_grid(self._plane(), "valley", spec, tag="d02") is True
+        assert capsys.readouterr().out == ""
+
+    def test_a_partly_off_grid_transect_warns_but_still_renders(self, capsys):
+        spec = {"a": (40.25, -109.75), "b": (40.25, -108.0), "n_points": 60}
+        assert we.check_section_on_grid(self._plane(), "runoff", spec, tag="d02") is True
+        out = capsys.readouterr().out
+        assert "[WARN]" in out and "runoff" in out
+        assert "leaves the grid" in out
+        assert "edge column" in out  # says what was done about it
+
+    def test_a_wholly_off_grid_transect_is_skipped(self, capsys):
+        spec = {"a": (45.0, -100.0), "b": (45.5, -99.0), "n_points": 20}
+        assert we.check_section_on_grid(self._plane(), "elsewhere", spec, tag="d01") is False
+        out = capsys.readouterr().out
+        assert "[SKIP]" in out and "elsewhere" in out
+
+    def test_n_points_defaults_when_the_case_omits_it(self):
+        spec = {"a": (40.1, -109.9), "b": (40.4, -109.6)}
+        assert we.check_section_on_grid(self._plane(), "valley", spec, tag="d02") is True

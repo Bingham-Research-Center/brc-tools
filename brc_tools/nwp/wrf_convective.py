@@ -38,6 +38,57 @@ RESET_ON_HISTORY: frozenset[str] = frozenset({
     "HAILCAST_DIAM_MAX", "TCOLI_MAX", "AFWA_TORNADO", "REFD_COM_MAX",
 })
 
+#: History-stream 2-D fields the convective engines can plot, mapped to their
+#: style key.  Anything here is read from ``wrfout``; the auxiliary stream is
+#: handled separately because its maximum fields reset on the history write
+#: (:data:`RESET_ON_HISTORY`).
+#:
+#: ``REFD_COM`` and ``REFD_MAX`` deliberately do **not** share a key.  They are
+#: different physical quantities -- the column maximum *at the output instant*
+#: versus the maximum *over the interval since the last history write* -- and a
+#: swath of the second is not a snapshot of the first.  Mapping both to
+#: ``refl_comp`` meant a run writing both silently plotted only one, under a
+#: label that named the wrong surface.
+SURFACE_FIELDS: dict[str, str] = {
+    "REFD_COM": "refl_comp",
+    "REFD_MAX": "refl_comp_max",
+    "ECHOTOP": "echo_top",
+    "WSPD10MAX": "wspd10max",
+    "UP_HELI_MAX": "uphel_2to5km",
+    "HAIL_MAX2D": "hail_max",
+    "AFWA_LLWS": "llws",
+    "AFWA_CAPE": "cape_ml",
+    "AFWA_CIN": "cin_ml",
+    "TORNADO_MASK": "tornado_mask",
+}
+
+#: Values at or below these floors are masked to NaN before plotting.
+#:
+#: Without this, a reflectivity panel paints the whole domain in the low end of
+#: the colour map and clear air reads as data -- on a 213 x 171 km footprint
+#: holding one storm, that is most of the figure.  Operational radar products
+#: mask below ~5 dBZ for the same reason.  Echo top is 0 where there is no echo
+#: at all, not 0 km.
+MASK_AT_OR_BELOW: dict[str, float] = {
+    "refl_comp": 5.0,
+    "refl_comp_max": 5.0,
+    "refl_beam": 5.0,
+    "refl": 5.0,
+    "echo_top": 0.0,
+    "hail_max": 0.0,
+    "tornado_mask": 0.0,
+}
+
+
+def masked(key: str, field):
+    """Apply the presentation floor for style ``key``, if it has one."""
+    array = np.asarray(field, dtype=float)
+    floor = MASK_AT_OR_BELOW.get(key)
+    if floor is None:
+        return array
+    return np.where(array <= floor, np.nan, array)
+
+
 _EARTH_R = 6_371_000.0
 
 

@@ -56,6 +56,10 @@ class NWPSection:
     # grid with flat shading instead of resampling onto a regular height axis.
     # Isobaric sources (the HRRR path) have no such edges and leave this None.
     height_w2d: np.ndarray | None = None
+    # (n,) True where the sample fell off the source grid and its data columns
+    # were blanked rather than filled from the nearest edge column.  None when
+    # the sampler did not check.  See wrf_section.section_from_plane.
+    offgrid1d: np.ndarray | None = None
 
 
 def _lon180(lon) -> np.ndarray:

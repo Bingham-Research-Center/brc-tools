@@ -90,6 +90,13 @@ VAR_STYLES: dict[str, VarStyle] = {
                                 5.0, 75.0, extend="max"),
     "refl":           VarStyle("gist_ncar", r"reflectivity (dBZ)",
                                 5.0, 75.0, extend="max"),
+    # REFD_MAX, not REFD_COM: the maximum over the interval since the last
+    # history write, so it is a swath rather than a snapshot. Same scale as
+    # refl_comp on purpose -- the two are meant to be read side by side -- but a
+    # separate key so the label cannot claim the wrong surface.
+    "refl_comp_max":  VarStyle("gist_ncar",
+                                r"max composite reflectivity, output interval (dBZ)",
+                                5.0, 75.0, extend="max"),
     "refl_beam":      VarStyle("gist_ncar", r"reflectivity on beam surface (dBZ)",
                                 5.0, 75.0, extend="max"),
     "echo_top":       VarStyle("viridis", r"echo top (km MSL)", 2.0, 14.0, extend="max"),

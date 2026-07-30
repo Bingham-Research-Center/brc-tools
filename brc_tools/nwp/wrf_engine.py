@@ -228,6 +228,34 @@ def select_times(
     return [one]
 
 
+def check_section_on_grid(plane, key: str, spec: dict, *, tag: str) -> bool:
+    """Preflight an ``[[sections]]`` A->B transect against the nest it will cut.
+
+    Returns ``False`` when the line misses the grid entirely, so the caller can
+    skip it: a transect with no on-grid samples is a blank figure that costs an
+    expensive read and tells a reader nothing.  A *partial* overlap warns and
+    proceeds -- the on-grid part is real data, and
+    :func:`~brc_tools.nwp.wrf_section.section_from_plane` blanks the rest rather
+    than extruding the boundary column across it.
+
+    Shared by both engines so the warning reads the same wherever it appears.
+    ``WRF-WINDS.md`` used to warn about off-grid transects in prose only; this is
+    that warning, made to actually fire.
+    """
+    cov = ws.section_coverage(
+        plane, tuple(spec["a"]), tuple(spec["b"]),
+        n_points=int(spec.get("n_points", 240)),
+    )
+    if cov.fully_inside:
+        return True
+    if cov.n_inside == 0:
+        print(f"[SKIP] {tag} section {key!r}: {cov.describe()}")
+        return False
+    print(f"[WARN] {tag} section {key!r}: {cov.describe()} -- the off-grid part "
+          "is blanked, not filled from the edge column")
+    return True
+
+
 def output_root(cfg: dict, override: str | Path | None = None, *, config_path=None) -> Path:
     """Where figures go: CLI override, then the TOML, then group storage.
 
