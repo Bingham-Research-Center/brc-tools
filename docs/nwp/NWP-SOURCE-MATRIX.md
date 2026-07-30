@@ -105,6 +105,32 @@ What updating `2025.11.3 → 2026.3.0` would buy:
 for the `rap_historical` typo if RAP Herbie support matters later. Env recipe →
 `docs/ENVIRONMENT-SETUP.md`.
 
+## Out of Herbie's scope: ground radar (NEXRAD Level-II)
+
+Not an NWP source and deliberately **not** a `[models.*]` entry, so
+`tests/test_source_matrix.py` does not police it — but the wheel-check is recorded
+here because the convention is to write the decision down.
+
+Herbie is an NWP-archive library; it has no radar templates, so there is nothing to
+reuse and a direct fetch is the only option. `brc_tools/radar/nexrad.py` does it with
+`requests` plus `metpy.io.Level2File` (which decodes Archive II including its internal
+BZ2 chunks) — **no new dependency**. `pyart`, `nexradaws` and `boto3` were all
+considered and none installed.
+
+Transport, probed 2026-07-30. Three of the four obvious routes do not work:
+
+| route | verdict |
+|---|---|
+| NCEI `/data/` | **no Level-II.** Carries `nexrad-level-3-products` and `nexrad_coverages` only |
+| Unidata THREDDS radar server | **no archive.** Catalogue offers `nexrad/level2/IDD` (rolling real-time) and a case study; the `nexrad/level2/S3` path returns a server-side `java.lang.NullPointerException` |
+| GCS `gcp-public-data-nexrad-l2` | **works, but coverage stops between 2025-08-01 and 2025-09-15.** Verified: anonymous listing OK, a 9.6 MB hourly `.tar` fetched and decoded, all of 0.0/0.5/1.2° × REF/VEL resolved. Keys are hourly bundles, not single volumes |
+| AWS `noaa-nexrad-level2` | **authoritative, unverified.** Anonymous listing on the global endpoint returns `AccessDenied`; the regional endpoint was unreachable from the sandbox. Needs a probe from a DTN node |
+
+Both mirrors answer the same S3 `ListBucketResult` XML, so one parser serves either
+and `MIRRORS` in that module selects between them. Consequence for the Ashley
+20251011 case: **GCS cannot serve it** (October 2025 is past the cutoff), so the AWS
+probe is the open item.
+
 ## Enforcement
 
 Adding any `[models.*]` to `lookups.toml` **must** add a row here (with its Herbie-vs-direct decision) —
