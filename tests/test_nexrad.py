@@ -6,6 +6,7 @@ needed.  The network functions are marked ``live`` -- the archive hosts are not
 reachable from a restricted sandbox, and a live fetch belongs in a DTN job.
 """
 
+import os
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -217,8 +218,22 @@ class TestCacheAndNaming:
 
 
 @pytest.mark.live
+@pytest.mark.skipif(
+    not os.environ.get("RUN_LIVE_RADAR"),
+    reason="set RUN_LIVE_RADAR=1 to hit the real Level-II archive",
+)
 class TestLive:
-    """Needs the THREDDS radar server; run from a DTN, not a sandbox."""
+    """Needs a reachable Level-II mirror; run from a DTN, not a sandbox.
+
+    Opt-in, matching the ``RUN_LIVE_HERBIE`` / ``RUN_LIVE_NCEI`` gates in
+    ``test_wrf_staging.py``: a default ``pytest tests/`` must not depend on a
+    network.  These two currently fail even from a DTN -- anonymous access to the
+    AWS bucket (:data:`~brc_tools.radar.nexrad.DEFAULT_MIRROR`) returns 403 from
+    CHPC for every date tried, listing and object GET alike, while the GCS mirror
+    is reachable but its coverage stops before Sept 2025.  That is the same
+    dead end recorded in ``docs/nwp/NWP-SOURCE-MATRIX.md``, which is why the
+    convective engine compares against IEM RIDGE Level-III instead.
+    """
 
     def test_available_volumes_for_the_ashley_window(self):
         volumes = nx.available_volumes(

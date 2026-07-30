@@ -6,6 +6,7 @@ usual here: the payload is an 8-bit palette index, so a wrong offset or step
 silently yields a plausible-looking reflectivity field.
 """
 
+import os
 from datetime import datetime
 
 import numpy as np
@@ -165,8 +166,17 @@ def test_plan_dataset_shape(tmp_path):
 
 
 @pytest.mark.live
+@pytest.mark.skipif(
+    not os.environ.get("RUN_LIVE_RADAR"),
+    reason="set RUN_LIVE_RADAR=1 to hit the real IEM RIDGE archive",
+)
 class TestLive:
-    """Needs mesonet.agron.iastate.edu."""
+    """Needs mesonet.agron.iastate.edu.
+
+    Opt-in, matching the ``RUN_LIVE_HERBIE`` / ``RUN_LIVE_NCEI`` gates in
+    ``test_wrf_staging.py``.  These pass from a DTN; they fail in a restricted
+    sandbox, which is a fact about the sandbox and not about the archive.
+    """
 
     def test_scans_exist_for_the_ashley_window(self):
         scans = iem.available_scans(

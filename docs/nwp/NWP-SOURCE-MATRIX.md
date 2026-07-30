@@ -127,7 +127,7 @@ is, from Iowa State.**
 | NCEI `/data/` | Level-II | **none published.** Level-3 products and coverages only |
 | Unidata THREDDS radar server | Level-II | **no archive.** Only `nexrad/level2/IDD` (rolling real-time) and a case study; the `level2/S3` path returns a server-side `java.lang.NullPointerException` |
 | GCS `gcp-public-data-nexrad-l2` | Level-II | **works, coverage stops 2025-08-01…2025-09-15.** Anonymous listing OK, a 9.6 MB hourly `.tar` fetched and decoded, all of 0.0/0.5/1.2° × REF/VEL resolved. Cannot serve October 2025 |
-| AWS `noaa-nexrad-level2` | Level-II | **authoritative, unverified.** Anonymous listing on the global endpoint returns `AccessDenied`; the regional endpoint was unreachable from the sandbox. Needs a DTN probe |
+| AWS `noaa-nexrad-level2` | Level-II | **anonymous access is denied by bucket policy.** Re-probed 2026-07-30 from CHPC with no sandbox: `AccessDenied` on the global endpoint, the regional `s3.us-east-1` endpoint, `list-type=2`, a direct object GET, and a 2013 date alike. Not an egress problem — `noaa-hrrr-bdp-pds` and `unidata-nexrad-level3` both list `200` from the same host, and the 403 carries `x-amz-bucket-region: us-east-1`, so the request reached the right region and the bucket refused it. Would need credentials |
 
 Both Level-II mirrors answer the same S3 `ListBucketResult` XML, so one parser serves
 either and `MIRRORS` selects between them.
