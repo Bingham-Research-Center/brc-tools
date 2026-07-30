@@ -398,13 +398,22 @@ def render_soundings(cfg, dom, ds, out_dir, ctx, args) -> int:
     return made
 
 
+#: Colour per station pair, so a model trace and its observed counterpart match.
+_PAIR_COLOURS = ("#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e",
+                 "#8c564b", "#17becf", "#e377c2")
+
+
 def render_verify(cfg, out_dir, args) -> int:
     """Model surface traces against observations at the named stations.
 
-    Model values come from the ``tslist`` traces, which are written every model
-    time step -- the only stream fine enough to time a boundary passage.
-    Observations come from Synoptic; without a token the model traces are still
-    plotted alone, because the timing and propagation speed can be read off them.
+    Model values come from the ``tslist`` traces, written every model time step --
+    the only stream fine enough to time a boundary passage.  Observations come from
+    Synoptic, drawn dashed in the same colour as their station's model trace.
+
+    Without a token, or for a station Synoptic does not carry, the model trace is
+    still plotted: the model's internal timing and propagation speed can be read
+    off it alone.  Which stations got observations is printed, so a model-only
+    panel is never mistaken for agreement.
     """
     from brc_tools.visualize.timeseries import plot_scalar_timeseries
 
@@ -414,12 +423,15 @@ def render_verify(cfg, out_dir, args) -> int:
         key = entry["key"]
         domain = int(entry.get("domain", 2))
         variable = entry.get("variable", "wind_speed_10m")
-        stations = entry["stations"]
         window = entry.get("window")
         try:
             series: dict[str, tuple] = {}
-            for station in stations:
+            styles: dict[str, dict] = {}
+            obs = _observations(entry, variable, window) if entry.get("observations", True) else {}
+
+            for index, station in enumerate(entry["stations"]):
                 prefix = station["ts_prefix"]
+                colour = _PAIR_COLOURS[index % len(_PAIR_COLOURS)]
                 path = wt.ts_path(run_dir, prefix, domain)
                 if not path.exists():
                     print(f"[SKIP] verify {key}: no {path.name}")
@@ -434,24 +446,86 @@ def render_verify(cfg, out_dir, args) -> int:
                 if frame.height == 0:
                     print(f"[SKIP] verify {key} {prefix}: no rows in the window")
                     continue
+
                 label = station.get("label", prefix)
-                series[f"{label} (model)"] = (
-                    frame["valid_time"].to_list(),
-                    frame[_ts_column(variable)].to_numpy(),
-                )
+                values = frame[_ts_column(variable)].to_numpy()
+                if variable == "temp_2m":
+                    values = values - 273.15  # obs are degC; compare like with like
+                elif variable == "pressure_surface":
+                    values = values / 100.0  # hPa
+                model_label = f"{label} (model)"
+                series[model_label] = (frame["valid_time"].to_list(), values)
+                styles[model_label] = dict(color=colour, ls="-", marker=None, lw=1.6)
+
+                stid = station.get("stid")
+                if stid and stid in obs:
+                    times, obs_values = obs[stid]
+                    obs_label = f"{label} (obs {stid})"
+                    series[obs_label] = (times, obs_values)
+                    styles[obs_label] = dict(color=colour, ls="--", lw=1.1, marker="o", ms=3.0)
+
             if not series:
                 continue
+            drawn = sorted({s for s in obs if any(
+                st.get("stid") == s for st in entry["stations"])})
+            print(f"  verify {key}: observations for {drawn or 'NONE (model only)'}")
             plot_scalar_timeseries(
                 series, out_dir / f"verify_{key}_{variable}.png",
-                ylabel=we.style_for(cfg, _ts_style(variable)).label,
+                ylabel=_ts_label(cfg, variable),
                 title=f"{cfg['case']['label']} | {entry.get('label', key)}",
-                dpi=args.dpi,
+                run_styles=styles, figsize=(10.0, 5.0), dpi=args.dpi,
             )
             made += 1
         except Exception as exc:
             print(f"[ERR] verify {key}: {exc}")
             traceback.print_exc()
     return made
+
+
+def _observations(entry: dict, variable: str, window) -> dict[str, tuple]:
+    """``{stid: (times, values)}`` from Synoptic, or ``{}`` if unavailable.
+
+    Never fatal: a missing token or an unreachable API must not cost the model
+    traces, which carry the internal timing on their own.
+    """
+    stids = [s["stid"] for s in entry["stations"] if s.get("stid")]
+    if not stids or not window:
+        return {}
+    alias = {"pressure_surface": "pressure_surface"}.get(variable, variable)
+    try:
+        from brc_tools.obs import ObsSource
+
+        frame = ObsSource().timeseries(
+            stids=stids,
+            start=window[0].replace("_", " ") + "Z",
+            end=window[1].replace("_", " ") + "Z",
+            variables=[alias],
+        )
+    except Exception as exc:  # noqa: BLE001 - obs are a bonus, not a precondition
+        print(f"  [obs ] unavailable ({type(exc).__name__}: {exc}); plotting model only")
+        return {}
+    if alias not in frame.columns:
+        print(f"  [obs ] Synoptic returned no {alias}; plotting model only")
+        return {}
+
+    out: dict[str, tuple] = {}
+    for stid in stids:
+        rows = frame.filter(frame["stid"] == stid).drop_nulls(alias).sort("valid_time")
+        if rows.height:
+            values = rows[alias].to_numpy()
+            if alias == "pressure_surface":
+                values = values / 100.0
+            out[stid] = (rows["valid_time"].to_list(), values)
+    return out
+
+
+def _ts_label(cfg: dict, variable: str) -> str:
+    return {
+        "wind_speed_10m": r"10 m wind (m s$^{-1}$)",
+        "wind_dir_10m": r"10 m wind direction ($^{\circ}$)",
+        "temp_2m": r"$T_{2\,\mathrm{m}}$ ($^{\circ}$C)",
+        "pressure_surface": "surface pressure (hPa)",
+    }.get(variable, we.style_for(cfg, _ts_style(variable)).label)
 
 
 def _ts_column(variable: str) -> str:

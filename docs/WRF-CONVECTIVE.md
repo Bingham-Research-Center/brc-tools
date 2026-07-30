@@ -143,6 +143,13 @@ track: over a 213 × 171 km footprint holding several storms, the domain-wide an
 is not a swath at all — measured on the Ashley run, the 45 dBZ bounding box spans
 159 km while the feature near the spotter is 22 km.
 
+**`track` is not an object tracker.** It reports whichever above-threshold cluster
+is largest near the point in each frame, so the result is radius-sensitive and the
+series can jump when a different cluster takes over — the same Ashley frame gives
+40.76 / −109.46 at a 60 km radius and 40.13 / −109.66 at 40 km. Read it as "where is
+the strongest echo near here now", never as a displacement, and inspect the jumps
+before sizing a nest from it.
+
 ## Worked example
 
 `../ub-wx/experiments/20251011-ashley-rotating-cell/figures.toml` — a 600 m nest

@@ -301,8 +301,13 @@ def reflectivity_centroid(
     ``largest_cluster``
         keep only the largest connected above-threshold region.
 
-    This is what sizes a nested domain honestly: a nest placed on the *observed*
-    track is a nest with no storm in it if the model puts the cell elsewhere.
+    **This is not an object tracker, and a series of these is not a storm track.**
+    Cell identity is not maintained between frames: whichever cluster is largest
+    wins, so the answer is radius-sensitive and the series can jump tens of
+    kilometres when a different cluster takes over.  Measured on the Ashley run, the
+    same frame gives 40.76 / -109.46 at a 60 km radius and 40.13 / -109.66 at 40 km.
+    Use it to ask "where is the strongest echo near here now", not to quote a
+    displacement, and inspect the jumps before sizing anything from it.
     """
     refl = np.asarray(refl2d, dtype=float)
     lat = np.asarray(lat2d, dtype=float)
