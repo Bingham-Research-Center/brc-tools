@@ -126,6 +126,16 @@ def add_time_arguments(parser) -> None:
         "--all", dest="all_times", action="store_true",
         help="sweep every valid time at the run's native interval",
     )
+    parser.add_argument(
+        "--start", metavar="TIME",
+        help=f"restrict a sweep to times at or after this ({TIME_FMT.replace('%', '%%')})",
+    )
+    parser.add_argument(
+        "--end", metavar="TIME",
+        help="restrict a sweep to times at or before this. Without --start/--end a "
+             "1-minute sweep of a 5 h run is 301 times per domain, which is almost "
+             "never what you want",
+    )
 
 
 def select_times(
@@ -137,6 +147,8 @@ def select_times(
     hourly: bool = False,
     every: int | None = None,
     all_times: bool = False,
+    start: str | datetime | None = None,
+    end: str | datetime | None = None,
     times_for=None,
     label: str = "wrfout",
 ) -> list[datetime]:
@@ -159,6 +171,9 @@ def select_times(
         if not stamps:
             raise SystemExit(f"no {label} times for d{dom:02d} under {run_dir}")
 
+    lo = _as_time(start)
+    hi = _as_time(end)
+
     cadence = 60 if hourly else every
     if cadence or all_times:
         union = set().union(*per_domain.values())
@@ -166,8 +181,16 @@ def select_times(
             t for t in union
             if all_times or (t.second == 0 and cadence and t.minute % cadence == 0)
         )
+        if lo or hi:
+            before = len(want)
+            want = [t for t in want if (lo is None or t >= lo) and (hi is None or t <= hi)]
+            print(f"[time] window {lo or 'run start'} .. {hi or 'run end'} "
+                  f"keeps {len(want)} of {before} {label} time(s)")
         if not want:
-            raise SystemExit(f"no {label} time matches a {cadence}-minute cadence")
+            raise SystemExit(
+                f"no {label} time matches a {cadence}-minute cadence"
+                + (" inside the requested window" if (lo or hi) else "")
+            )
         how = "native" if all_times else f"{cadence}-min"
         print(f"[time] {len(want)} {label} time(s) at {how} cadence: "
               f"{want[0]:{TIME_FMT}} .. {want[-1]:{TIME_FMT}}")
@@ -222,6 +245,13 @@ def output_root(cfg: dict, override: str | Path | None = None, *, config_path=No
                 "point output_dir or BRC_TOOLS_OUTPUT_DIR at scratch or group storage"
             )
     return root
+
+
+def _as_time(value) -> datetime | None:
+    """Accept a ``YYYY-MM-DD_HH:MM`` string, a datetime, or None."""
+    if value is None or isinstance(value, datetime):
+        return value
+    return datetime.strptime(str(value), TIME_FMT)
 
 
 def _git_root(start: Path) -> Path | None:

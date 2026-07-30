@@ -414,7 +414,8 @@ def render_soundings(cfg, dom, ds, out_dir, ctx, args) -> int:
                 f"0-6 km shear {summary['shear_mag_0to6km']:.1f} m/s"
             )
             sounding = sounding_from_column(
-                column, source=f"WRF {tag}", station=key, valid_time=ctx and None
+                column, source=f"WRF {tag}", station=key,
+                valid_time=datetime.strptime(stamp, "%Y%m%d_%H%M"),
             )
             plot_skewt(
                 sounding, out_dir / f"skewt_{key}_{tag}_{stamp}.png",
@@ -738,6 +739,7 @@ def main() -> int:
         run_dir, numbers,
         valid=args.valid, lead=args.lead, hourly=args.hourly,
         every=args.every, all_times=args.all_times,
+        start=args.start, end=args.end,
         times_for=(lambda d: wc.list_aux_times(run_dir, d)) if aux_only else None,
         label="auxhist" if aux_only else "wrfout",
     )
@@ -756,7 +758,15 @@ def main() -> int:
     if "verify" in families:
         total += render_verify(cfg, out_root, args)
     if "track" in families:
+        # One CSV per NEST, not per view: a nest may appear as several [[domains]]
+        # entries (full extent plus a zoom) and they would otherwise overwrite each
+        # other's output while double-counting the total.
+        seen_domains: set[int] = set()
         for dom in domains:
+            number = int(dom["domain"])
+            if number in seen_domains:
+                continue
+            seen_domains.add(number)
             total += render_track(cfg, dom, times, out_root, args)
 
     print(f"[done] {total} output(s) -> {out_root}")

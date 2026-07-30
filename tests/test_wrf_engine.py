@@ -4,7 +4,7 @@ Covers the parts both the winds and convective engines depend on, so a change th
 breaks one is caught rather than discovered on a compute node.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -196,3 +196,45 @@ def test_overlays_default_off(config):
     assert overlays["counties"] is False
     assert overlays["rivers"] is False  # absent from the TOML
     assert set(overlays) == set(we.MAP_LAYERS)
+
+
+class TestTimeWindow:
+    """--start/--end. Without them a 1-minute sweep of a 5 h run is 301 times."""
+
+    @staticmethod
+    def _stamps():
+        base = datetime(2025, 10, 12, 1, 0)
+        return [base + timedelta(minutes=k) for k in range(0, 121, 10)]
+
+    def _select(self, **kwargs):
+        stamps = self._stamps()
+        return we.select_times("/nowhere", [2], every=10,
+                               times_for=lambda d: stamps, **kwargs)
+
+    def test_start_only(self):
+        got = self._select(start="2025-10-12_02:00")
+        assert got[0] == datetime(2025, 10, 12, 2, 0)
+        assert got[-1] == datetime(2025, 10, 12, 3, 0)
+
+    def test_end_only(self):
+        got = self._select(end="2025-10-12_01:30")
+        assert got[-1] == datetime(2025, 10, 12, 1, 30)
+
+    def test_both_bounds_are_inclusive(self):
+        got = self._select(start="2025-10-12_01:20", end="2025-10-12_01:40")
+        assert got == [
+            datetime(2025, 10, 12, 1, 20),
+            datetime(2025, 10, 12, 1, 30),
+            datetime(2025, 10, 12, 1, 40),
+        ]
+
+    def test_datetime_objects_are_accepted(self):
+        got = self._select(start=datetime(2025, 10, 12, 2, 30))
+        assert got[0] == datetime(2025, 10, 12, 2, 30)
+
+    def test_an_empty_window_is_fatal_and_says_why(self):
+        with pytest.raises(SystemExit, match="inside the requested window"):
+            self._select(start="2025-10-12_09:00")
+
+    def test_no_window_keeps_everything(self):
+        assert len(self._select()) == len(self._stamps())
