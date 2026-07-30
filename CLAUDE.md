@@ -15,12 +15,13 @@ Repo: **`brc-tools`** (hyphen).
 ## Repo map
 ```
 brc_tools/        installable package
-  nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB), wrf_section (wrfout → plan/arbitrary-transect adapter), forecast_funnel (NAM synoptic montage data)
+  nwp/            NWPSource (Herbie), lookups.toml, derived, alignment, case_study, wrf_staging (WRF/WPS GRIB), wrf_section (wrfout → plan/arbitrary-transect adapter), wrf_convective (auxhist stream + convective diagnostics), convective_env (MetPy parcel/shear/SRH), wrf_tslist (.TS traces + level profiles), wrf_engine (shared TOML/time plumbing for the winds + convective engines), forecast_funnel (NAM synoptic montage data)
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
   visualize/      planview + timeseries panels; grid.py (field/section plots — brc-wrf seam); figure-engine modules (surface/section/upperair/profile/domains/heatdeficit/deficitflux/funnel/basemap/style)
   download/       Synoptic obs script, push_data uploader, HRRR helpers
   api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB) + aqs (EPA AQS AirData bulk), both auth-free
+  radar/          NEXRAD Level-II ingest + 4/3-Earth beam geometry (observations, not NWP — sibling of satellite/)
   satellite/      MODIS context imagery (NASA CMR timing + GIBS corrected reflectance, cached, provenance sidecars)
   utils/          lookups, small helpers
 scripts/          operational scripts + case studies
@@ -43,6 +44,7 @@ figures/          generated output (gitignored)
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-staging cold-start SSOT**; detail in `docs/WRF-INPUT-STAGING.md`; two-stream draft `docs/WRF-GEFS-NAM-FIELD-MAP.md` (parked)
 - `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the active study repo; SSOT index → `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`
 - `docs/WRF-WINDS.md` — basin-winds-style figures from `wrfout` (`brc_tools/nwp/wrf_section.py` + `visualize/wrf_curtain.py` + `visualize/coldpool3d.py` + `scripts/wrf_winds.py --config <case.toml>` + `scripts/wrf_winds.dtn.slurm`); `/wrf-basin-winds` skill. Arbitrary A→B transects flat-shaded on **native eta cells**, plan views, and 3-D isentrope cold-pool views; matched across nests, sweeps a still-writing run. Distinct from the publication engine above; per-case TOMLs live in the repo owning the case (ashley → `../ub-wx/experiments/20260424-ashley-drainage-120m/figures.toml`).
+- `docs/WRF-CONVECTIVE.md` — convective diagnostics from `wrfout` (`brc_tools/radar/` + `nwp/wrf_convective.py` + `nwp/convective_env.py` + `nwp/wrf_tslist.py` + `visualize/hodograph.py` + `scripts/wrf_convective.py --config <case.toml>` + `scripts/wrf_convective.dtn.slurm`); `/wrf-convective` skill. Reflectivity plan views + native-eta sections, **reflectivity sampled on a real WSR-88D's beam surfaces** (a fixed height AGL is not the same measurement — one KGJX beam spans 2.0–13.7 km AGL across a 600 m nest), MetPy parcel/shear/hodograph products, high-cadence `auxhist` access, and `tslist` station verification. Config/time plumbing shared with the winds engine via `nwp/wrf_engine.py`. Third engine — distinct from both above.
 - `docs/FORECAST-FUNNEL.md` — NAM "forecast funnel" synoptic montage (`brc_tools/nwp/forecast_funnel.py` + `brc_tools/visualize/funnel.py` + `scripts/forecast_funnel.py`); `/basin-forecast-funnel` skill. NAM source auto-picks by init date (Herbie recent / NCEI pre-2017).
 - `WISHLIST-TASKS.md` — prioritised backlog
 
