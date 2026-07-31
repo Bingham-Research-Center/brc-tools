@@ -174,6 +174,33 @@ VAR_STYLES: dict[str, VarStyle] = {
     # winter wind_speed_10m style uses.
     "wspd10max":      VarStyle("YlOrRd", r"max 10 m wind (m s$^{-1}$)",
                                 0.0, 35.0, extend="max"),
+    # --- Surface mesoanalysis --------------------------------------------------
+    # The fields a forecaster reads to find a boundary, which WRF does not write
+    # and the suite therefore could not show.  Signs are set so that POSITIVE is
+    # the feature being hunted: both convergence fields are the negative of the
+    # divergence, so a convergence line is a positive maximum.
+    #
+    # Diverging maps for both, because the sign is the whole content -- a
+    # sequential ramp would draw convergence and divergence the same colour and
+    # lose the boundary in the difference field around it.
+    "conv_10m":       VarStyle("RdBu_r",
+                                r"10 m convergence $-\nabla\!\cdot V$ ($10^{-3}$ s$^{-1}$)",
+                                -5.0, 5.0, diverging=True),
+    "mfc_10m":        VarStyle("BrBG",
+                                r"moisture flux conv. $-\nabla\!\cdot(qV)$ "
+                                r"(g kg$^{-1}$ h$^{-1}$)",
+                                -10.0, 10.0, diverging=True),
+    # Theta-e sees the moisture a temperature map misses: an outflow edge two
+    # kelvin cooler but markedly drier is a sharp gradient here and nothing on T2.
+    "theta_e_2m":     VarStyle("RdYlBu_r", r"$\theta_{e,2\,\mathrm{m}}$ (K)", 315.0, 345.0),
+    "theta_e_grad_2m": VarStyle("magma", r"$|\nabla\theta_e|$ (K km$^{-1}$)",
+                                 0.0, 10.0, extend="max"),
+    "dewpoint_2m":    VarStyle("YlGn", r"$T_{d,2\,\mathrm{m}}$ ($^{\circ}$C)",
+                                -10.0, 20.0),
+    # Dark = dry: a large depression is the deep sub-cloud layer that turns a
+    # modest core into a downburst, so it must not read as "nothing here".
+    "dewpoint_depression_2m": VarStyle("YlOrBr", r"$T-T_d$ at 2 m (K)",
+                                        0.0, 30.0, extend="max"),
     "hail_max":       VarStyle("PuBu", r"max hail diameter (mm)", 0.0, 50.0, extend="max"),
     "tornado_mask":   VarStyle("Greys", "AFWA tornado mask", 0.0, 1.0, extend="neither"),
     "llws":           VarStyle("YlGnBu", r"0-2 km low-level wind shear (m s$^{-1}$)",

@@ -509,3 +509,27 @@ class TestStyleGammaOverride:
 
     def test_untouched_variables_keep_a_linear_scale(self):
         assert we.style_for({}, "theta").gamma is None
+
+
+class TestMapLayers:
+    def test_cities_is_reachable_from_a_case_toml(self):
+        """basemap.draw_cities existed but MAP_LAYERS omitted it, and the engines
+        build their overlay dict by iterating exactly that tuple -- so no case
+        could switch it on."""
+        assert "cities" in we.MAP_LAYERS
+        assert we.overlays_from({"map": {"cities": True}})["cities"] is True
+
+    def test_layers_default_off(self):
+        overlays = we.overlays_from({})
+        assert set(overlays) == set(we.MAP_LAYERS)
+        assert not any(overlays.values())
+
+    def test_every_layer_is_one_add_reference_overlays_accepts(self):
+        """A layer name that the renderer does not take is a silent no-op."""
+        import inspect
+
+        from brc_tools.visualize.basemap import add_reference_overlays
+
+        accepted = inspect.signature(add_reference_overlays).parameters
+        for layer in we.MAP_LAYERS:
+            assert layer in accepted, f"{layer} is not a add_reference_overlays kwarg"

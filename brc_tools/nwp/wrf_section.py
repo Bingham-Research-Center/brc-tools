@@ -125,9 +125,15 @@ def plan_dataset(ds, *, extra: dict | None = None):
     Field names are :mod:`brc_tools.visualize.style` keys, because
     :func:`~brc_tools.visualize.nwp_maps.plot_nwp_surface_map` looks the colour
     scale up by variable name: ``wind_speed_10m``, ``wind_u_10m``,
-    ``wind_v_10m``, ``theta_2m``, ``temp_2m``, ``pblh``, plus ``terrain_height``
-    and 2-D ``latitude``/``longitude``.  ``pblh`` is omitted when the run did not
-    write ``PBLH``.  ``extra`` adds ``{name: 2-D array}`` pairs verbatim.
+    ``wind_v_10m``, ``theta_2m``, ``temp_2m``, plus ``terrain_height`` and 2-D
+    ``latitude``/``longitude``.
+
+    Present only when the run wrote what they need, and named-skipped by the
+    engines otherwise: ``pblh`` (``PBLH``), ``tsk_minus_t2`` (``TSK``),
+    ``snow_depth`` (``SNOWH``), ``conv_10m`` (``U10``/``V10``).
+
+    ``extra`` adds ``{name: 2-D array}`` pairs verbatim, and wins over anything
+    built here -- that is how the convective engine injects its own diagnostics.
     """
     import xarray as xr
 
@@ -142,6 +148,24 @@ def plan_dataset(ds, *, extra: dict | None = None):
     }
     if "PBLH" in ds:
         fields["pblh"] = wo.surface_field(ds, "PBLH")
+    # Cold-pool context that the run already writes and nothing could plot.
+    # TSK-T2 is the surface decoupling: strongly negative is a surface radiating
+    # under a decoupled layer, which is the pool forming, and it says so hours
+    # before the theta field looks unusual.  Snow is the albedo/emissivity
+    # control on that whole process.
+    if "TSK" in ds:
+        fields["tsk_minus_t2"] = wo.surface_field(ds, "TSK") - wo.surface_field(ds, "T2")
+    if "SNOWH" in ds:
+        fields["snow_depth"] = wo.surface_field(ds, "SNOWH")
+    # Surface convergence, from the same map-factor operator the convective
+    # mesoanalysis and the deficit transport use -- one implementation, so a
+    # convergence line means the same thing in all three.
+    if "U10" in ds and "V10" in ds:
+        from brc_tools.nwp.wrf_convective import horizontal_divergence
+
+        fields["conv_10m"] = -horizontal_divergence(
+            ds, wo.surface_field(ds, "U10"), wo.surface_field(ds, "V10"),
+            earth_relative=False) * 1000.0
     fields.update(extra or {})
     return xr.Dataset(
         {k: (("y", "x"), np.asarray(a, dtype=float)) for k, a in fields.items()},
