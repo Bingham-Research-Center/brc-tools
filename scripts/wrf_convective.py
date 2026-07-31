@@ -865,8 +865,11 @@ def main() -> int:
                         help="restrict to this nest (repeatable)")
     parser.add_argument("--output-dir", type=Path, help="override the output root")
     parser.add_argument("--w-exag", type=float,
-                        help="override every section's vertical exaggeration; a "
-                             "convective updraft wants ~5, a drainage night ~100")
+                        help="override every section's vertical exaggeration. One rule: "
+                             "typical |u| / typical |w|, which puts the typical "
+                             "vector at 45 deg -- a deep convective core wants ~5, "
+                             "a drainage night ~100. NOT the plot aspect; see "
+                             "docs/WRF-WINDS.md")
     parser.add_argument("--dpi", type=int, default=200)
     we.add_output_arguments(parser)
     args = parser.parse_args()

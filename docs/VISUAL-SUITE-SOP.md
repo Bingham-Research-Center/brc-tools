@@ -9,7 +9,7 @@ The pattern is settled and works: **capability in `brc-tools`, configuration in 
 case repo, figures outside every checkout, heavy work on a DTN.** What follows is
 the operating procedure plus an honest list of the gaps still in it.
 
-*Updated 2026-07-30: gaps 1–5 and 7–10 are closed (errors 11–16 below). What is left
+*Updated 2026-07-30: gaps 1–5 and 7–10 are closed (errors 11–19 below). What is left
 open is gap 5's cross-nest provenance half and gap 6, which needs no code.*
 
 ---
@@ -30,7 +30,10 @@ open is gap 5's cross-nest provenance half and gap 6, which needs no code.*
    optional advice: error 10 below reached a submitted job precisely because one of
    seven families was never smoke-tested.
 4. **Narrow before you sweep.** `--figure` to select families, `--domain` to select
-   nests, `--start`/`--end` to bound the window. A 1-minute sweep of a 5 h run is
+   nests, `--start`/`--end` to bound the window. All four exist on **both** sweep
+   engines now (they are `wrf_engine.add_time_arguments`); until error 19 below the
+   winds engine had neither `--figure` nor `--start`/`--end`, so this step was an
+   argparse error against one of the two engines it is written for. A 1-minute sweep of a 5 h run is
    301 times per domain; unbounded, that is thousands of figures. **`--dry-run`
    prints the exact list a job would render** — cheaper than discovering the count
    from a queue.
@@ -102,6 +105,10 @@ job. All are fixed; they are recorded because the *class* of mistake will recur.
 | 14 | The field→style and masking tables lived in the script, untested | Unavailable to other callers, and error 13 is exactly what goes unnoticed there. Was open as gap 9 | fixed — moved to `nwp/wrf_convective.py` with tests |
 | 15 | `verify` silently ignored the time-selection flags | `--valid X --figure verify` looked like it honoured `X`. Was open as gap 4 | fixed — says so in the log |
 | 16 | A sweep could not say what it had done | Four gaps (1, 2, 3, 8) with **one** root cause: every family rendered on its own — `try: plot(...); made += 1` / `except: print("[ERR]")` at a dozen sites — and reported only an `int`. With no chokepoint there was nowhere to put idempotence, a record, an error tally or a dry run, and `return 0 if total else 1` could not tell 400-of-400 from 100-of-400 | fixed — `wrf_engine.FigureLedger`, one seam for all four |
+| 17 | The winds engine drew **every** section shade on the 10 m wind scale | `style_for(cfg, "wind_speed_10m")` was passed for all of them, so a `shade = "theta"` curtain came out on a 0-15 m s⁻¹ `YlGnBu` ramp, clipped at 15, under a colourbar reading "10 m wind". The convective engine's fallback did the same to θ_e with a reflectivity scale | fixed — one shared shade→style table, tested against the shade→field table |
+| 18 | Updraft helicity painted the whole domain | `MASK_AT_OR_BELOW` covered the reflectivity family and not UH, which is ~0 over almost every cell of almost every frame. Error 5 again, in the one field nobody re-checked | fixed — floor 5, scale 5→50 on a `gamma = 0.6` ramp |
+| 19 | A curtain could not say **which** wind it drew | The fill was always `\|V\|` and never said so, and the component *crossing* the section could not be plotted at all because nothing computed it. A 12 m s⁻¹ along-valley jet and 12 m s⁻¹ of cross-valley flow were the same colour | fixed — `normal2d` (+ into the page), per-shade colourbar labels, and an orientation stamp naming the bearing |
+| 20 | `w_exag` had **four** published values for one knob | 5, 8–15, 10 and 100 across two skills and two docs, justified as "the plot aspect". The quiver uses `angles="uv"`, where the drawn angle depends on the component ratio alone and the data aspect does not enter — measured: `u = v` draws at 45° whether the panel spans 10 km or 200 km | fixed — one rule, `\|u\|÷\|w\|`, which reproduces all four as different *regimes*; `docs/WRF-WINDS.md` owns it |
 
 ## Gaps still open
 
@@ -143,3 +150,24 @@ in the figure itself. On the Ashley case the same ground reads 47.6 dBZ as a col
 maximum, 44.1 on the 0.5° beam surface and 11.2 on the 1.2° surface. A reflectivity
 number without its surface is not a measurement, and a figure that does not print its
 surface invites the reader to invent one.
+
+Errors 17–20 sharpen that into a second rule, about labels rather than about
+looking: **a figure must state the quantity, not just the variable.** "10 m wind
+(m s⁻¹)" over a vertical section names a variable and answers none of the questions
+a reader has — is this a magnitude, the component along the cut, or the flow
+crossing it? Those are three different numbers, they were all drawn identically, and
+only one of them was ever actually plotted. The same defect put an unlabelled model
+reflectivity panel beside a labelled observed one on a shared colour scale.
+
+The cheap defence is the same in both cases: derive the label from what was
+computed, not from what the variable is called, and put the orientation, the
+surface, and the source on the figure itself.
+
+And errors 18 and 20 are worth reading together. Both are numbers that were
+*inherited* rather than chosen — a masking table that grew field by field and never
+revisited which fields still lacked an entry, and a knob whose stated justification
+("the plot aspect") was never checked against what matplotlib actually does with it.
+Neither is a bug in the sense of a wrong line of code. Both made figures that misled.
+When a constant in this repo carries a comment explaining *why* it has that value,
+that comment is load-bearing: it is what lets the next person tell a measured value
+from a guess that has been sitting there long enough to look measured.
