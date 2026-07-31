@@ -119,3 +119,72 @@ class TestConvectiveStyles:
     def test_srh_covers_the_measured_maximum(self):
         # 0-3 km SRH reached 824 m2 s-2 at 02Z in the 23Z cycle.
         assert st.VAR_STYLES["srh_0to3km"].vmax >= 824.0
+
+
+# --------------------------------------------------------------------------- #
+# non-linear norms
+# --------------------------------------------------------------------------- #
+def test_linear_styles_pass_vmin_vmax_not_a_norm():
+    """The default path is unchanged: no gamma means no norm, so every existing
+    variable renders exactly as it did."""
+    s = st.get_style("theta")
+    assert s.gamma is None
+    assert st.build_norm(s) is None
+    assert st.norm_kwargs(s) == {"vmin": s.vmin, "vmax": s.vmax}
+
+
+def test_gamma_style_builds_a_power_norm_carrying_the_limits():
+    s = st.get_style("uphel_2to5km")
+    norm = st.build_norm(s)
+    assert norm is not None
+    assert norm.gamma == s.gamma
+    assert (norm.vmin, norm.vmax) == (s.vmin, s.vmax)
+
+
+def test_norm_kwargs_are_exclusive():
+    """matplotlib raises when handed both a norm and vmin/vmax, so the helper
+    must return one or the other -- never both."""
+    kw = st.norm_kwargs(st.get_style("uphel_2to5km"))
+    assert set(kw) == {"norm"}
+    assert "vmin" not in kw and "vmax" not in kw
+
+
+def test_gamma_below_one_favours_the_low_end():
+    """gamma < 1 is the point: a value a fifth of the way up the range must land
+    well above a fifth of the way through the colour map, or the weak-signal band
+    the scale exists for is still crushed."""
+    norm = st.build_norm(st.get_style("uphel_2to5km"))
+    lo, hi = norm.vmin, norm.vmax
+    fifth = lo + 0.2 * (hi - lo)
+    assert float(norm(fifth)) > 0.35
+
+
+def test_updraft_helicity_scale_starts_at_its_masking_floor():
+    """The colour floor and the masking floor are the same number on purpose:
+    otherwise 'masked' and 'weak' are two indistinguishable shades."""
+    from brc_tools.nwp.wrf_convective import MASK_AT_OR_BELOW
+
+    for key in ("uphel_2to5km", "uphel_0to3km"):
+        s = st.get_style(key)
+        assert s.vmin == MASK_AT_OR_BELOW[key] == 5.0
+        assert s.vmax == 50.0
+        assert s.extend == "max"
+
+
+def test_section_wind_component_styles_are_diverging():
+    """A signed component on a sequential ramp would draw flow into the page and
+    out of it in the same colour."""
+    for key in ("wind_normal", "wind_along"):
+        s = st.get_style(key)
+        assert s.diverging is True
+        assert s.vmin == -s.vmax
+
+
+def test_varstyle_still_accepts_levels_for_the_pelican_case_toml_path():
+    """`wrf_figures._varstyle_from_dict` passes `levels=` unconditionally, so the
+    field cannot be dropped however dead it looks -- removing it raises TypeError
+    on every pelican style override, and no test exercised that constructor."""
+    from brc_tools.nwp.wrf_figures import _varstyle_from_dict
+
+    assert _varstyle_from_dict({"cmap": "viridis"}).levels is None
+    assert _varstyle_from_dict({"cmap": "viridis", "levels": [1, 2, 3]}).levels == (1, 2, 3)

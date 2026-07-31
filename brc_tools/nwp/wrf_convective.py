@@ -69,6 +69,13 @@ SURFACE_FIELDS: dict[str, str] = {
 #: holding one storm, that is most of the figure.  Operational radar products
 #: mask below ~5 dBZ for the same reason.  Echo top is 0 where there is no echo
 #: at all, not 0 km.
+#:
+#: Updraft helicity is the same problem in a field that looked exempt: it is near
+#: zero over almost every cell of almost every frame, so an unmasked panel is a
+#: domain-wide pale red wash with the storm somewhere inside it.  The 5 m2 s-2
+#: floor matches the bottom of its colour scale (:data:`~brc_tools.visualize.style
+#: .VAR_STYLES`), so masked and merely-weak are the same thing rather than two
+#: indistinguishable shades.
 MASK_AT_OR_BELOW: dict[str, float] = {
     "refl_comp": 5.0,
     "refl_comp_max": 5.0,
@@ -77,6 +84,8 @@ MASK_AT_OR_BELOW: dict[str, float] = {
     "echo_top": 0.0,
     "hail_max": 0.0,
     "tornado_mask": 0.0,
+    "uphel_2to5km": 5.0,
+    "uphel_0to3km": 5.0,
 }
 
 

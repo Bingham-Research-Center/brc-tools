@@ -44,6 +44,11 @@ class NWPSection:
     w2d: np.ndarray  # (nz, n) vertical velocity, m/s
     terrain1d: np.ndarray  # (n,) m ASL
     pressure_hpa: np.ndarray  # (nz,)
+    # (nz, n) horizontal wind NORMAL to the transect, + INTO THE PAGE, m/s.  The
+    # component the in-plane vectors necessarily discard, and the only one that
+    # answers "is the flow crossing this line?".  For a west-to-east transect it
+    # is the northerly (+v) component.  None for sources that did not compute it.
+    normal2d: np.ndarray | None = None
     thetae2d: np.ndarray | None = None  # (nz, n) equiv. potential temp, K (needs dewpoint)
     # (nz, n) simulated reflectivity, dBZ. Present only when the source carries a
     # 3-D reflectivity field (WRF's REFL_10CM, i.e. do_radar_ref = 1); None
@@ -180,12 +185,17 @@ def extract_nwp_section(
     tnorm = np.hypot(tx, ty) or 1.0
     tx, ty = tx / tnorm, ty / tnorm
     along = u * tx + v * ty
+    # Normal component, + into the page: the LEFT-hand normal of A->B, so a
+    # west-to-east line makes northerly flow positive.  Same convention as
+    # wrf_section.section_from_plane -- see its docstring for why it is the
+    # opposite sign to the outward normal used for boundary fluxes.
+    normal = u * (-ty) + v * tx
 
     # Mask fields below the terrain surface (isobaric levels under ground are
     # extrapolated); keep height2d valid so pcolormesh can still place the cells,
     # and let the terrain fill cover them.
     below = hgt < terrain1d[None, :]
-    for a in (speed, theta, temp, along, w) + ((thetae,) if thetae is not None else ()):
+    for a in (speed, theta, temp, along, normal, w) + ((thetae,) if thetae is not None else ()):
         a[below] = np.nan
 
     return NWPSection(
@@ -197,6 +207,7 @@ def extract_nwp_section(
         theta2d=theta,
         temp2d=temp,
         along2d=along,
+        normal2d=normal,
         w2d=w,
         terrain1d=terrain1d,
         pressure_hpa=np.array(levels, dtype=float),
