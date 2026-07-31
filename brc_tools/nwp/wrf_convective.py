@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 
 from brc_tools.nwp import wrf_output as wo
-from brc_tools.nwp.wrf_section import _parse_stamp, _lon180
+from brc_tools.nwp.wrf_section import _lon180, _parse_stamp
 
 #: Fields whose accumulation window is reset by the **history** write, not by the
 #: write of the stream they appear in.
@@ -268,6 +268,105 @@ def vertical_vorticity(ds, *, earth_relative: bool = True) -> np.ndarray:
     dv_dx = np.gradient(ve, dx, axis=2)
     du_dy = np.gradient(ue, dy, axis=1)
     return dv_dx - du_dy
+
+
+#: Style key -> the ``wrfout`` fields it needs.  A run missing any of them gets
+#: the panel named-skipped rather than a crash, the same contract as
+#: :data:`SURFACE_FIELDS`.
+MESO_REQUIRES: dict[str, tuple[str, ...]] = {
+    "dewpoint_2m": ("PSFC", "Q2"),
+    "dewpoint_depression_2m": ("PSFC", "Q2", "T2"),
+    "theta_e_2m": ("PSFC", "Q2", "T2"),
+    "theta_e_grad_2m": ("PSFC", "Q2", "T2"),
+    "conv_10m": ("U10", "V10"),
+    "mfc_10m": ("U10", "V10", "Q2"),
+}
+
+
+def horizontal_divergence(ds, u, v, *, earth_relative: bool = True) -> np.ndarray:
+    """Horizontal divergence of a 2-D vector field on the mass grid (per second).
+
+    A thin name over :func:`brc_tools.nwp.wrf_output.horizontal_flux_divergence`,
+    whose docstring says "W m-2" because it was written for the cold-pool heat
+    flux.  The operator is unit-agnostic -- the result carries the input's units
+    per metre -- and reusing it means surface convergence gets the same
+    map-factor form as the deficit transport instead of a second, subtly
+    different differencing.
+
+    Note this *does* apply the map factor while :func:`vertical_vorticity`
+    deliberately does not.  The asymmetry is inherited, not chosen: vorticity
+    argues the correction is far below the truncation error at 600 m, which is
+    true, and the flux operator was written to be exact for an integral over a
+    large domain.  Both are defensible; the point is that neither is silently
+    guessing, and a convergence line diagnosed here is directly comparable with a
+    deficit-flux convergence computed by the same operator.
+    """
+    return wo.horizontal_flux_divergence(ds, u, v, earth_relative=earth_relative)
+
+
+def surface_dewpoint_c(ds) -> np.ndarray:
+    """2 m dewpoint (deg C) from ``PSFC`` and ``Q2``, Magnus form.
+
+    WRF writes no 2 m dewpoint.  ``Q2`` is a mixing ratio and ``PSFC`` is the
+    surface pressure, which is what the column routine already reduces; this is
+    the same function applied to one level.
+    """
+    return wo._dewpoint_c(wo.surface_field(ds, "PSFC"), wo.surface_field(ds, "Q2"))
+
+
+def surface_theta_e(ds) -> np.ndarray:
+    """2 m equivalent potential temperature (K), Bolton (1980) Eq. 43.
+
+    The mesoanalysis field for a boundary: theta-e sees the moisture a
+    temperature map misses, so an outflow edge that is only two degrees cooler
+    but markedly drier reads as a sharp gradient here and as nothing on T2.
+    """
+    from brc_tools.nwp.derived import theta_e
+
+    temp_k = wo.surface_field(ds, "T2")
+    dew_k = surface_dewpoint_c(ds) + 273.15
+    pres_hpa = wo.surface_field(ds, "PSFC") / 100.0
+    return np.asarray(theta_e(temp_k, dew_k, pres_hpa), dtype=float)
+
+
+def meso_field(ds, key: str) -> np.ndarray:
+    """One derived surface-mesoanalysis field by style key.
+
+    Signs are chosen so that **positive means the thing you are looking for**:
+    ``conv_10m`` and ``mfc_10m`` are *convergence*, i.e. the negative of the
+    divergence, because a mesoanalyst hunting a boundary wants the line to be a
+    positive maximum rather than a negative one.
+    """
+    from brc_tools.nwp.derived import horizontal_gradient_magnitude
+
+    if key not in MESO_REQUIRES:
+        raise KeyError(f"unknown mesoanalysis field {key!r}; "
+                       f"known: {sorted(MESO_REQUIRES)}")
+    missing = [v for v in MESO_REQUIRES[key] if v not in ds]
+    if missing:
+        raise KeyError(f"{key} needs {', '.join(missing)}, absent from this run")
+
+    if key == "dewpoint_2m":
+        return surface_dewpoint_c(ds)
+    if key == "dewpoint_depression_2m":
+        return (wo.surface_field(ds, "T2") - 273.15) - surface_dewpoint_c(ds)
+    if key == "theta_e_2m":
+        return surface_theta_e(ds)
+    if key == "theta_e_grad_2m":
+        # dx from the FILE, not the 3 km HRRR default the helper carries: on a
+        # 600 m nest that default understates every gradient five-fold.
+        dx, _dy = wo.dx_dy(ds)
+        return np.asarray(
+            horizontal_gradient_magnitude(surface_theta_e(ds), dx_m=dx)) * 1000.0
+
+    u10, v10 = wo.surface_field(ds, "U10"), wo.surface_field(ds, "V10")
+    if key == "conv_10m":
+        # 10^-3 s^-1, matching the style's label.
+        return -horizontal_divergence(ds, u10, v10, earth_relative=False) * 1000.0
+    # Moisture flux convergence: -div(q * V).  Units g/kg per hour.
+    q = wo.surface_field(ds, "Q2")
+    flux = -horizontal_divergence(ds, q * u10, q * v10, earth_relative=False)
+    return flux * 1000.0 * 3600.0
 
 
 def echo_top_height(ds, *, threshold_dbz: float = 40.0, refl3d=None) -> np.ndarray:

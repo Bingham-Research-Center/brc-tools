@@ -91,6 +91,11 @@ def make_synthetic_wrf(
             "COSALPHA": (sfc, _t(np.ones((ny, nx)))),
             "SINALPHA": (sfc, _t(np.zeros((ny, nx)))),
             "PSFC": (sfc, _t(np.full((ny, nx), 90000.0))),
+            # 2 m mixing ratio, with a west-east gradient on purpose: T2 and PSFC
+            # are uniform, so a constant Q2 would make every moisture diagnostic
+            # (theta-e, its gradient, moisture-flux convergence) identically zero
+            # and the tests over them vacuous.
+            "Q2": (sfc, _t(0.002 + 0.001 * (ii / max(nx - 1, 1)))),
             "T2": (sfc, _t(np.full((ny, nx), 270.0))),
             "TH2": (sfc, _t(np.full((ny, nx), 275.0))),
             "U10": (sfc, _t(np.full((ny, nx), 3.0))),

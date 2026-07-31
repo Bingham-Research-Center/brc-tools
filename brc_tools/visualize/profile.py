@@ -422,16 +422,79 @@ def _stability_bands(z, theta, z_top, *, min_thick=80.0, merge_gap=120.0):
     return [b for b in raw if b[1] - b[0] >= min_thick]
 
 
-def _profile_barbs(ax, x, z, u, v, z_top, color):
+def _barb_levels(z, z_top, *, interval_m=None, n=14):
+    """Indices of the levels to draw barbs at, paced in HEIGHT not level index.
+
+    Eta levels are stretched -- tens of metres apart near the ground and hundreds
+    aloft -- so every-nth-level would crowd the surface and leave the free
+    atmosphere bare.  ``interval_m`` gives a fixed metre spacing (comparable
+    across figures and cases); the default keeps the historical behaviour of ``n``
+    barbs spread over whatever depth is visible.
+    """
+    z = np.asarray(z, float)
+    if z.size == 0:
+        return np.empty(0, dtype=int)
+    top = min(float(z.max()), float(z_top))
+    if interval_m:
+        targets = np.arange(float(z.min()), top + 0.5 * interval_m, float(interval_m))
+    else:
+        targets = np.linspace(float(z.min()), float(z.max()), n)
+    return np.unique([int(np.abs(z - t).argmin()) for t in targets])
+
+
+def _profile_barbs(ax, x, z, u, v, z_top, color, *, interval_m=None):
     z, u, v = np.asarray(z, float), np.asarray(u, float), np.asarray(v, float)
     m = np.isfinite(z) & np.isfinite(u) & np.isfinite(v) & (z <= z_top)
     z, u, v = z[m], u[m], v[m]
     if z.size == 0:
         return
-    targets = np.linspace(z.min(), z.max(), 14)
-    idx = np.unique([int(np.abs(z - t).argmin()) for t in targets])
+    idx = _barb_levels(z, z_top, interval_m=interval_m)
     ax.barbs(np.full(idx.size, x), z[idx], u[idx], v[idx],
              length=6, color=color, linewidth=0.7, zorder=5)
+
+
+def _profile_speed_bars(ax, z, u, v, z_top, color, *, interval_m=None,
+                        barbs: bool = True):
+    """Wind speed as minimal horizontal bars against height, barbs at the tips.
+
+    An alternative to a column of barbs: the bar carries the magnitude at every
+    model level -- so a nocturnal jet reads as a bulge rather than as two barbs
+    that happen to have an extra flag -- and a barb at the tip of every nth bar
+    carries the direction without the clutter of one per level.
+    """
+    z, u, v = np.asarray(z, float), np.asarray(u, float), np.asarray(v, float)
+    m = np.isfinite(z) & np.isfinite(u) & np.isfinite(v) & (z <= z_top)
+    z, u, v = z[m], u[m], v[m]
+    if z.size == 0:
+        return
+    spd = np.hypot(u, v)
+    ax.barh(z, spd, height=np.gradient(z) * 0.72, color=color, alpha=0.30,
+            linewidth=0, zorder=2)
+    ax.plot(spd, z, color=color, lw=1.0, zorder=3)
+    if barbs:
+        idx = _barb_levels(z, z_top, interval_m=interval_m)
+        ax.barbs(spd[idx], z[idx], u[idx], v[idx], length=5.5, color=color,
+                 linewidth=0.7, zorder=5)
+
+
+def _humidity_trace(snd, kind: str):
+    """``(values, axis_label)`` for the humidity overlay: RH (%) or q (g/kg)."""
+    from brc_tools.nwp.derived import (
+        mixing_ratio,
+        relative_humidity,
+        saturation_vapor_pressure,
+    )
+
+    temp_k = np.asarray(snd.temperature_c, float) + 273.15
+    dew_k = np.asarray(snd.dewpoint_c, float) + 273.15
+    if kind == "rh":
+        # derived.relative_humidity already returns percent, not a fraction.
+        return np.asarray(relative_humidity(temp_k, dew_k), float), "RH (%)"
+    if kind == "q":
+        pres_pa = np.asarray(snd.pressure_hpa, float) * 100.0
+        q = mixing_ratio(saturation_vapor_pressure(dew_k), pres_pa)
+        return np.asarray(q, float) * 1000.0, r"mixing ratio $q$ (g kg$^{-1}$)"
+    raise ValueError(f"humidity must be 'rh' or 'q', got {kind!r}")
 
 
 def plot_theta_wind_profile(
@@ -443,6 +506,9 @@ def plot_theta_wind_profile(
     crest_m: float | None = None,
     y_top_m: float = 5500.0,
     annotation: str | None = None,
+    humidity: str | None = None,
+    wind_bars: bool = False,
+    barb_interval_m: float | None = None,
     figsize: tuple[float, float] = (8.2, 8.0),
     dpi: int = 300,
 ) -> Path:
@@ -456,6 +522,21 @@ def plot_theta_wind_profile(
 
     The first model in ``models`` is the reference for the stability shading and the
     change-shading (filled between the first and last model curve).
+
+    Three options are **off by default**, so the pelican ``thetaz`` family renders
+    exactly as it always has:
+
+    ``humidity``
+        ``"rh"`` or ``"q"`` adds a humidity trace on a twin axis.  θ alone cannot
+        distinguish a dry residual layer from a moist one at the same
+        temperature, and which it is decides whether the layer will mix out.
+    ``wind_bars``
+        Draw wind *speed* as horizontal bars at every level with barbs at the
+        bar tips, instead of a column of barbs at a nominal x.  A low-level jet
+        is then a visible bulge rather than something inferred from flag counts.
+    ``barb_interval_m``
+        Pace barbs every N metres rather than spreading a fixed count over the
+        visible depth, so two figures with different tops stay comparable.
     """
     import matplotlib
 
@@ -509,21 +590,55 @@ def plot_theta_wind_profile(
         ax.axhline(crest_m, color="k", lw=0.7, ls="--", zorder=1)
         ax.text(ax.get_xlim()[1], crest_m, " crest", fontsize=7, va="bottom", ha="right")
 
+    axh = None
+    if humidity:
+        # Twin axis, dashed and desaturated: it must read as a second quantity
+        # sharing the height axis, never as another theta curve.
+        axh = ax.twiny()
+        for i, lab in enumerate(labels):
+            vals, hlabel = _humidity_trace(models[lab], humidity)
+            axh.plot(vals, m_z[lab], color="#1b7837", lw=1.3, zorder=3,
+                     ls="-" if i == 0 else "--",
+                     alpha=1.0 if i == 0 else 0.55,
+                     label=f"{hlabel.split()[0]} {lab}")
+        axh.set_xlabel(hlabel, fontsize=9, color="#1b7837")
+        axh.tick_params(axis="x", colors="#1b7837", labelsize=8)
+        if humidity == "rh":
+            axh.set_xlim(0.0, 100.0)
+        else:
+            axh.set_xlim(left=0.0)
+
     # wind panel: model columns then obs, evenly spaced
     profs = [(lab, models[lab], DEFAULT_RUN_STYLES.get(i, {}).get("color", "black"))
              for i, lab in enumerate(labels)]
     if obs is not None:
         profs.append(("obs", obs, "k"))
-    xs = np.linspace(0.28, 0.82, len(profs))
-    for x, (lab, snd, color) in zip(xs, profs):
-        _profile_barbs(axw, x, _heights(snd, z0), snd.u_kt, snd.v_kt, y_top_m, color)
-    axw.set_xlim(0.15, 0.95)
-    axw.set_xticks(list(xs))
-    axw.set_xticklabels([lab for lab, _s, _c in profs], fontsize=8)
-    axw.set_title("wind (kt)", fontsize=9)
-    axw.tick_params(left=False)
-    for s in ("top", "right", "left"):
-        axw.spines[s].set_visible(False)
+    if wind_bars:
+        # The panel's x-axis becomes a real speed axis rather than a set of
+        # nominal slots, so the bars are readable as magnitudes.
+        for _lab, snd, color in profs:
+            if snd.u_kt is None or snd.v_kt is None:
+                continue
+            _profile_speed_bars(axw, _heights(snd, z0), snd.u_kt, snd.v_kt, y_top_m,
+                                color, interval_m=barb_interval_m)
+        axw.set_xlim(left=0.0)
+        axw.set_xlabel("kt", fontsize=8)
+        axw.set_title("wind speed + direction", fontsize=9)
+        axw.grid(True, axis="x", alpha=0.25)
+        for s in ("top", "right"):
+            axw.spines[s].set_visible(False)
+    else:
+        xs = np.linspace(0.28, 0.82, len(profs))
+        for x, (lab, snd, color) in zip(xs, profs):
+            _profile_barbs(axw, x, _heights(snd, z0), snd.u_kt, snd.v_kt, y_top_m,
+                           color, interval_m=barb_interval_m)
+        axw.set_xlim(0.15, 0.95)
+        axw.set_xticks(list(xs))
+        axw.set_xticklabels([lab for lab, _s, _c in profs], fontsize=8)
+        axw.set_title("wind (kt)", fontsize=9)
+        axw.tick_params(left=False)
+        for s in ("top", "right", "left"):
+            axw.spines[s].set_visible(False)
 
     ax.set_ylim(z0 - 50.0, y_top_m)
     vis = [m_th[lab][m_z[lab] <= y_top_m] for lab in labels]
@@ -533,10 +648,14 @@ def plot_theta_wind_profile(
     ax.set_xlim(float(np.nanmin(vis)) - 1.5, float(np.nanmax(vis)) + 2.5)
     ax.set_xlabel(r"potential temperature  $\theta$  (K)")
     ax.set_ylabel("height (m MSL)")
-    ax.set_title(title, fontsize=10)
+    # The humidity twin puts its own ticks and label along the top, so the title
+    # needs room or it lands on them.
+    ax.set_title(title, fontsize=10, pad=30 if axh is not None else None)
     ax.grid(True, axis="y", alpha=0.25)
 
     handles, _ = ax.get_legend_handles_labels()
+    if axh is not None:
+        handles += axh.get_legend_handles_labels()[0]
     handles += [Patch(fc=band_c["inversion"], alpha=0.25, label="inversion (very stable)"),
                 Patch(fc=band_c["unstable"], alpha=0.25, label="unstable (dθ/dz<0)")]
     ax.legend(handles=handles, loc="lower right", fontsize=7.5, framealpha=0.9)

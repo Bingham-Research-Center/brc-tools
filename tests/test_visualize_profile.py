@@ -157,3 +157,87 @@ class TestSkewTConvectiveAdditions:
         out = tmp_path / "tiny.png"
         assert plot_skewt(tiny, out, title="t", parcel="ml", mark_levels=True) == out
         assert out.stat().st_size > 0
+
+
+# --------------------------------------------------------------------------- #
+# opt-in profile options (PR-B) -- all default off so `thetaz` is unchanged
+# --------------------------------------------------------------------------- #
+def _demo_sounding():
+    from brc_tools.visualize.profile import Sounding
+
+    z = np.linspace(1500.0, 5000.0, 40)
+    p = 1013.25 * (1.0 - 2.25577e-5 * z) ** 5.25588
+    t = 20.0 - 6.5e-3 * (z - 1500.0)
+    return Sounding(
+        pressure_hpa=p, temperature_c=t, dewpoint_c=t - 8.0,
+        u_kt=np.linspace(2.0, 40.0, z.size), v_kt=np.full(z.size, 5.0),
+        source="WRF", station="demo", height_m=z,
+    )
+
+
+def test_barb_levels_are_paced_in_height_not_level_index():
+    """Eta levels are stretched, so every-nth-level crowds the surface.  A fixed
+    metre interval must give near-uniform height spacing whatever the grid."""
+    from brc_tools.visualize.profile import _barb_levels
+
+    # deliberately stretched: dense low down, sparse aloft
+    z = 1500.0 + np.cumsum(np.linspace(10.0, 400.0, 60))
+    idx = _barb_levels(z, z_top=z.max(), interval_m=500.0)
+    gaps = np.diff(z[idx])
+    assert gaps.min() > 250.0        # nothing crowded together
+    assert gaps.max() < 900.0        # nothing left bare
+
+
+def test_barb_levels_default_keeps_the_historical_count():
+    from brc_tools.visualize.profile import _barb_levels
+
+    z = np.linspace(1500.0, 5000.0, 80)
+    assert _barb_levels(z, z_top=5000.0).size == 14
+
+
+def test_humidity_trace_rh_is_percent_not_a_fraction():
+    """derived.relative_humidity already returns 0-100; scaling it again would
+    put every value off the axis."""
+    from brc_tools.visualize.profile import _humidity_trace
+
+    vals, label = _humidity_trace(_demo_sounding(), "rh")
+    assert "%" in label
+    assert 10.0 < float(np.nanmax(vals)) <= 100.0
+
+
+def test_humidity_trace_q_is_positive_and_in_g_per_kg():
+    from brc_tools.visualize.profile import _humidity_trace
+
+    vals, label = _humidity_trace(_demo_sounding(), "q")
+    assert "q" in label
+    assert 0.0 < float(np.nanmax(vals)) < 40.0
+
+
+def test_humidity_kind_is_validated():
+    from brc_tools.visualize.profile import _humidity_trace
+
+    with pytest.raises(ValueError, match="rh"):
+        _humidity_trace(_demo_sounding(), "specific")
+
+
+def test_profile_options_default_off_so_thetaz_is_unchanged():
+    """The pelican `thetaz` family calls this renderer.  Every option added for
+    the winds engine must be opt-in or that frozen figure set moves."""
+    import inspect
+
+    from brc_tools.visualize.profile import plot_theta_wind_profile
+
+    sig = inspect.signature(plot_theta_wind_profile).parameters
+    assert sig["humidity"].default is None
+    assert sig["wind_bars"].default is False
+    assert sig["barb_interval_m"].default is None
+
+
+def test_theta_wind_profile_renders_with_every_option_on(tmp_path):
+    from brc_tools.visualize.profile import plot_theta_wind_profile
+
+    out = plot_theta_wind_profile(
+        {"02Z": _demo_sounding()}, tmp_path / "p.png", title="WRF | demo",
+        humidity="rh", wind_bars=True, barb_interval_m=400.0, dpi=60,
+    )
+    assert out.exists() and out.stat().st_size > 0

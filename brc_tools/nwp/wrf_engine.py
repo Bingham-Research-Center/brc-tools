@@ -35,7 +35,13 @@ DEFAULT_OUTPUT_ROOT = Path(
 )
 
 #: Natural-Earth overlay layers a case TOML may switch on under ``[map]``.
-MAP_LAYERS = ("states", "counties", "roads", "rivers", "lakes")
+#: ``[map]`` switches a case TOML may set.  ``cities`` draws population-ranked
+#: Natural-Earth place labels and was implemented in ``basemap.draw_cities`` but
+#: missing from this tuple, so no case could reach it -- the engines build their
+#: overlay dict by iterating exactly this list.  Complements the curated
+#: ``[waypoints]`` in ``lookups.toml``: those are the places a Basin study names
+#: deliberately, these are whatever else is big enough to orient a reader.
+MAP_LAYERS = ("states", "counties", "roads", "rivers", "lakes", "cities")
 
 #: ``--valid`` / display format.
 TIME_FMT = "%Y-%m-%d_%H:%M"

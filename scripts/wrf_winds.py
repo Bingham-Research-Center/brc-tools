@@ -34,11 +34,23 @@ from brc_tools.nwp import wrf_output as wo  # noqa: E402
 from brc_tools.nwp import wrf_section as ws  # noqa: E402
 from brc_tools.visualize import coldpool3d as cp3  # noqa: E402
 from brc_tools.visualize.nwp_maps import plot_nwp_surface_map  # noqa: E402
+from brc_tools.visualize.profile import (  # noqa: E402
+    plot_theta_wind_profile,
+    sounding_from_column,
+)
 from brc_tools.visualize.style import use_publication_style  # noqa: E402
 from brc_tools.visualize.wrf_curtain import (  # noqa: E402
     plot_wrf_curtain,
     shade_style_key,
 )
+
+#: Selectable with ``--figure`` (repeatable); default is all of them.
+#:
+#: ``topdown``  surface plan views -- wind, theta, PBLH, convergence, snow.
+#: ``section``  terrain-filled curtains on native eta levels along A->B lines.
+#: ``profile``  theta + humidity profiles with a wind panel at named points.
+#: ``view3d``   3-D isentrope lid over hillshaded terrain.
+FAMILIES = ("topdown", "section", "profile", "view3d")
 
 # Config, waypoints, colour scales and time selection are shared with the
 # convective engine so the two cannot drift; see brc_tools.nwp.wrf_engine.
@@ -50,8 +62,8 @@ _TIME_FMT = we.TIME_FMT
 # config
 # --------------------------------------------------------------------------- #
 def load_config(path: Path) -> dict:
-    """Case TOML, with ``[[sections]]``/``[[views3d]]`` indexed by key."""
-    return we.load_config(path, index=("sections", "views3d"))
+    """Case TOML, with ``[[sections]]``/``[[views3d]]``/``[[profiles]]`` indexed."""
+    return we.load_config(path, index=("sections", "views3d", "profiles"))
 
 
 def waypoints(group: str | None) -> dict:
@@ -73,6 +85,7 @@ def select_times(run_dir: Path, domains: list[int], args) -> list[datetime]:
         run_dir, domains,
         valid=args.valid, lead=args.lead, hourly=args.hourly,
         every=args.every, all_times=args.all_times,
+        start=args.start, end=args.end,
     )
 
 
@@ -80,7 +93,7 @@ def select_times(run_dir: Path, domains: list[int], args) -> list[datetime]:
 # rendering
 # --------------------------------------------------------------------------- #
 def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
-                  out_root: Path, args, ledger) -> int:
+                  out_root: Path, args, ledger, families=FAMILIES) -> int:
     run_dir = cfg["case"]["run_dir"]
     d = int(dom["domain"])
     path = ws.wrfout_path(run_dir, d, valid)
@@ -112,7 +125,8 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
         extent = tuple(dom["extent"]) if dom.get("extent") else ws.plan_extent(ds, pad_deg=pad)
         pds = ws.plan_dataset(ds)
         map_wps = waypoints(dom.get("waypoint_group"))
-        for var in dom.get("surface_vars", ["wind_speed_10m"]):
+        for var in (dom.get("surface_vars", ["wind_speed_10m"])
+                    if "topdown" in families else []):
             if var not in pds:
                 print(f"[SKIP] {tag} {var}: not written by this run")
                 ledger.note(we.ABSENT, "not written by this run",
@@ -132,8 +146,8 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
             )
 
         # -- cross-sections + 3-D cold-pool views ----------------------------
-        keys = dom.get("sections", [])
-        v3d = dom.get("views3d", [])
+        keys = dom.get("sections", []) if "section" in families else []
+        v3d = dom.get("views3d", []) if "view3d" in families else []
         if keys or v3d:
             plane = ws.load_plane(ds)   # the expensive read; shared by both families
             loc = dict(lon2d=plane.lon2d, lat2d=plane.lat2d, terrain2d=plane.terrain)
@@ -184,10 +198,59 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                 )
             made += render_views3d(cfg, v3d, plane, tag, stamp, sec_base, an,
                                    out_dir, args, ledger, domain=d, sources=src)
+
+        if "profile" in families:
+            made += render_profiles(cfg, dom, ds, tag, stamp, sec_base, an, out_dir,
+                                    args, ledger, domain=d, sources=src)
         print(f"  {tag}: {made} figures -> {out_dir}")
         return made
     finally:
         ds.close()
+
+
+def render_profiles(cfg, dom, ds, tag, stamp, sec_base, an, out_dir, args, ledger,
+                    *, domain=None, sources=()) -> int:
+    """theta + humidity profiles with a wind panel, at named waypoints.
+
+    Deliberately not a skew-T.  A skew-T is built to read a deep convective
+    parcel path; a basin study is asking how deep the stable layer is and whether
+    the air above it is dry enough to mix down, and theta-versus-height answers
+    that directly -- inversion depth is a slope you can see, not a curve you
+    interpret against a background of adiabats.  The convective engine keeps the
+    skew-T, because there the parcel path *is* the question.
+    """
+    made = 0
+    for key in dom.get("profiles", []):
+        spec = cfg["_profiles"].get(key)
+        if spec is None:
+            print(f"[SKIP] {tag} profile {key!r}: not in [[profiles]]")
+            ledger.note(we.ABSENT, "not in [[profiles]]", family="profile",
+                        domain=domain, var=key)
+            continue
+        wp = we.waypoint(spec["waypoint"])
+
+        def _draw(path, spec=spec, key=key, wp=wp):
+            col = wo.extract_column(ds, float(wp["lat"]), float(wp["lon"]))
+            snd = sounding_from_column(
+                col, source=f"WRF {tag}", station=spec.get("label", key))
+            plot_theta_wind_profile(
+                {f"{sec_base.split('|')[-1].strip()}": snd}, path,
+                title=we.compose_title(we.SOURCE_WRF, sec_base,
+                                       spec.get("label", key)),
+                annotation=an,
+                crest_m=spec.get("crest_m"),
+                y_top_m=float(spec.get("y_top_m", 5500.0)),
+                humidity=spec.get("humidity", "rh"),
+                wind_bars=bool(spec.get("wind_bars", True)),
+                barb_interval_m=float(spec.get("barb_interval_m", 250.0)),
+                dpi=args.dpi,
+            )
+
+        made += ledger.emit(
+            out_dir / f"profile_{key}_{tag}_{stamp}.png",
+            _draw, sources=sources, family="profile", domain=domain, var=key,
+        )
+    return made
 
 
 def render_views3d(cfg, keys, plane, tag, stamp, sec_base, an, out_dir, args,
@@ -244,17 +307,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--config", required=True, type=Path, help="case TOML")
     ap.add_argument("--run-dir", type=Path, help="override the TOML run directory")
-    ap.add_argument("--valid", help=f"exact valid time, {_TIME_FMT.replace('%', '%%')}")
-    ap.add_argument("--lead", type=int, help="minutes after init")
-    ap.add_argument("--hourly", action="store_true",
-                    help="sweep every whole-hour valid time written so far "
-                         "(shorthand for --every 60)")
-    ap.add_argument("--every", type=int, metavar="MIN",
-                    help="sweep every valid time on a MIN-minute cadence (e.g. 15). "
-                         "A domain that lacks a given time is skipped for it")
-    ap.add_argument("--all", dest="all_times", action="store_true",
-                    help="sweep every valid time at the run's native output "
-                         "interval (a 5-minute nest makes this a lot of figures)")
+    # The shared set, so --start/--end exist here too.  They did not, which made
+    # docs/VISUAL-SUITE-SOP.md's "bound the window" step an argparse error on one
+    # of the two engines it is written for.
+    we.add_time_arguments(ap)
+    ap.add_argument(
+        "--figure", action="append", metavar="FAMILY",
+        help=f"restrict to a family ({'|'.join(FAMILIES)}); repeatable",
+    )
     ap.add_argument("--theta-iso", type=float, action="append", metavar="K",
                     help="override the [[views3d]] isentrope(s) for the 3-D "
                          "cold-pool panels (repeatable)")
@@ -275,6 +335,11 @@ def main() -> int:
     run_dir = cfg["case"]["run_dir"]
     if not run_dir.is_dir():
         raise SystemExit(f"run directory not found: {run_dir}")
+
+    families = tuple(args.figure) if args.figure else FAMILIES
+    unknown = [f for f in families if f not in FAMILIES]
+    if unknown:
+        raise SystemExit(f"unknown --figure {unknown}; choose from {list(FAMILIES)}")
 
     doms = [d for d in cfg.get("domains", [])
             if not args.domain or int(d["domain"]) in args.domain]
@@ -313,7 +378,8 @@ def main() -> int:
             # One bad time (a wrfout caught half-written by the running job, say)
             # must not take the rest of the sweep down with it.
             try:
-                total += render_domain(cfg, dom, valid, init, out_root, args, ledger)
+                total += render_domain(cfg, dom, valid, init, out_root, args,
+                                       ledger, families=families)
             except Exception as exc:
                 print(f"[ERR] {dom.get('tag', dom['domain'])} {valid:{_TIME_FMT}}: {exc}")
                 traceback.print_exc()

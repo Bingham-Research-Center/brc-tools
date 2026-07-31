@@ -6,6 +6,8 @@ switched on per nest in the case TOML:
 
 ``surface``   plan views from the history stream -- composite reflectivity,
               gust swath, updraft helicity, echo top, vertical vorticity.
+``meso``      surface mesoanalysis -- theta-e, dewpoint, 10 m convergence and
+              moisture-flux convergence: what the storm is running into.
 ``aux``       the same kind of plan view from a high-cadence auxiliary stream,
               which is the only way to see a feature the history stream aliases.
 ``section``   reflectivity / vertical-velocity / theta curtains along A->B lines.
@@ -52,7 +54,8 @@ from brc_tools.visualize.wrf_curtain import (  # noqa: E402
     shade_style_key,
 )
 
-FAMILIES = ("surface", "aux", "section", "beam", "sounding", "verify", "track")
+FAMILIES = ("surface", "meso", "aux", "section", "beam", "sounding", "verify",
+            "track")
 
 #: Field -> style tables live in the package (with tests), not here, so other
 #: callers get them too and the REFD_COM/REFD_MAX distinction is enforced in one
@@ -117,27 +120,38 @@ def _plan_extra(ds, dom: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # families
 # --------------------------------------------------------------------------- #
-def render_surface(cfg, dom, ds, out_dir, ctx, args, ledger, *, extra=None,
-                   sources=()) -> int:
-    """Plan views of whatever 2-D convective fields the run wrote."""
+def _plan_views(cfg, dom, ds, pds, out_dir, ctx, args, ledger, *, variables, family,
+                prefix, sources=()) -> int:
+    """Render a list of style keys from one plan dataset, through the ledger.
+
+    ``ds`` is the raw ``wrfout`` -- ``plan_extent`` reads ``XLAT``/``XLONG``,
+    which the plan dataset renames.
+    """
     tag, stamp, base, _short, annotation = ctx
     number = int(dom["domain"])
-    pds = ws.plan_dataset(ds, extra=extra if extra is not None else _plan_extra(ds, dom))
     extent = tuple(dom["extent"]) if dom.get("extent") else ws.plan_extent(
         ds, pad_deg=float(dom.get("pad_deg", 0.0))
     )
     wps = we.waypoints(dom.get("waypoint_group"))
     overlays = we.overlays_from(cfg)
     made = 0
-    for var in dom.get("surface_vars", ["refl_comp"]):
+    for var in variables:
         if var not in pds:
             print(f"[SKIP] {tag} {var}: not written by this run")
             ledger.note(we.ABSENT, "not written by this run",
-                        family="surface", domain=number, var=var)
+                        family=family, domain=number, var=var)
             continue
-        style = we.style_for(cfg, var)
+        try:
+            style = we.style_for(cfg, var)
+        except KeyError:
+            # Was outside the emit closure and uncaught, so one unknown style key
+            # in one case TOML killed the whole sweep instead of one panel.
+            print(f"[SKIP] {tag} {var}: no entry in VAR_STYLES")
+            ledger.note(we.ERROR, "no entry in VAR_STYLES",
+                        family=family, domain=number, var=var)
+            continue
         made += ledger.emit(
-            out_dir / f"plan_{var}_{tag}_{stamp}.png",
+            out_dir / f"{prefix}_{var}_{tag}_{stamp}.png",
             # var/style bound as defaults: this is a loop, and a late-binding
             # closure would render the last variable once per iteration.
             lambda path, var=var, style=style: plot_nwp_surface_map(
@@ -147,9 +161,45 @@ def render_surface(cfg, dom, ds, out_dir, ctx, args, ledger, *, extra=None,
                 extent=extent, overlays=overlays, annotation=annotation,
                 title=we.compose_title(we.SOURCE_WRF, base, style.label), dpi=args.dpi,
             ),
-            sources=sources, family="surface", domain=number, var=var,
+            sources=sources, family=family, domain=number, var=var,
         )
     return made
+
+
+def render_surface(cfg, dom, ds, out_dir, ctx, args, ledger, *, extra=None,
+                   sources=()) -> int:
+    """Plan views of whatever 2-D convective fields the run wrote."""
+    pds = ws.plan_dataset(ds, extra=extra if extra is not None else _plan_extra(ds, dom))
+    return _plan_views(cfg, dom, ds, pds, out_dir, ctx, args, ledger,
+                       variables=dom.get("surface_vars", ["refl_comp"]),
+                       family="surface", prefix="plan", sources=sources)
+
+
+def render_meso(cfg, dom, ds, out_dir, ctx, args, ledger, *, sources=()) -> int:
+    """Surface mesoanalysis: the fields that locate a boundary.
+
+    Its own family rather than more ``surface_vars`` because it answers a
+    different question and is swept separately -- reflectivity tells you where
+    the storm *is*, these tell you what it is running into, and on a long sweep
+    you usually want one or the other.
+
+    Every field here is derived (WRF writes none of them), so a run missing an
+    input gets that panel named-skipped, not the whole family.
+    """
+    tag = str(dom.get("tag") or f"d{int(dom['domain']):02d}")
+    extra: dict[str, np.ndarray] = {}
+    for key in dom.get("meso_vars", []):
+        try:
+            extra[key] = wc.meso_field(ds, key)
+        except KeyError as exc:
+            print(f"[SKIP] {tag} {key}: {exc}")
+            ledger.note(we.ABSENT, str(exc), family="meso",
+                        domain=int(dom["domain"]), var=key)
+    if not extra:
+        return 0
+    return _plan_views(cfg, dom, ds, ws.plan_dataset(ds, extra=extra), out_dir,
+                       ctx, args, ledger, variables=list(extra), family="meso",
+                       prefix="meso", sources=sources)
 
 
 def render_aux(cfg, dom, valid, init, out_dir, args, ledger) -> int:
@@ -778,6 +828,8 @@ def render_domain(cfg, dom, valid, init, out_root, families, args, ledger) -> in
         made = 0
         if "surface" in families:
             made += render_surface(cfg, dom, ds, out_dir, ctx, args, ledger, sources=src)
+        if "meso" in families:
+            made += render_meso(cfg, dom, ds, out_dir, ctx, args, ledger, sources=src)
         if "aux" in families:
             made += render_aux(cfg, dom, valid, init, out_root / ctx[1], args, ledger)
         if "sounding" in families:
