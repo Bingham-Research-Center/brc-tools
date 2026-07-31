@@ -1,14 +1,14 @@
 # WRF winds — basin-winds-style figures from a WRF run
 
-The WRF counterpart of the ub-wx `basin-winds` HRRR case. For each nest it renders
+The WRF counterpart of the ub-wx `basin-winds` HRRR case. Four families, selected
+with `--figure` (repeatable; default is all of them):
 
-- **plan views** — a surface field (10 m wind speed by default) with earth-relative
-  barbs, terrain contours, Natural-Earth reference overlays, and town labels;
-- **cross-sections** — terrain-filled wind curtains along named A→B geographic
-  lines, with θ contours, in-plane (along + exaggerated `w`) vectors, along-line
-  town markers, and the geographic locator inset;
-- **3-D cold-pool views** — hillshaded terrain with the θ = θ_iso surface floating
-  above it as a lid coloured by the depth of air it caps.
+| `--figure` | renders |
+|---|---|
+| `topdown` | **plan views** — a surface field with earth-relative barbs, terrain contours, Natural-Earth overlays and town labels |
+| `section` | **cross-sections** — terrain-filled curtains on native eta levels along named A→B lines, with θ contours, in-plane vectors, along-line town markers and a locator inset |
+| `profile` | **vertical profiles** — θ and humidity against height at named waypoints, with a wind-speed panel and height-paced barbs |
+| `view3d` | **3-D cold-pool views** — hillshaded terrain with the θ = θ_iso surface floating above it as a lid coloured by the depth of air it caps |
 
 Plan views use the same renderer as the HRRR path (`brc_tools.visualize.nwp_maps`),
 so the two are directly comparable. The vertical is where they part company.
@@ -50,10 +50,15 @@ writing.
 # on a DTN: lawson-group6 is read-only on login nodes, and lawson-np is usually
 # busy running the very job you want to look at
 sbatch scripts/wrf_winds.dtn.slurm --config <case.toml> [--run-dir <run>] \
+       [--figure topdown --figure section --figure profile --figure view3d] \
        [--hourly | --every 15 | --all | --valid 2025-09-08_22:00 | --lead 120] \
+       [--start 2025-09-08_18:00] [--end 2025-09-09_06:00] \
        [--domain 2] [--w-exag 10] [--theta-iso 311] [--output-dir <dir>] [--dpi 200]
 ```
 
+- `--figure` selects families (repeatable); `--start`/`--end` bound a sweep. Both
+  are shared with `wrf_convective.py` via `wrf_engine.add_time_arguments`, so the
+  procedure in `docs/VISUAL-SUITE-SOP.md` is the same against either engine.
 - `--every MIN` sweeps every valid time on a MIN-minute cadence; `--hourly` is
   shorthand for `--every 60`; `--all` takes the run's native output interval.
   Sweeps use the **union** of times across domains, not the intersection — a 3 km
@@ -152,6 +157,16 @@ quiver_stride = [5, 10]           # (vertical, horizontal), in MODEL LEVELS
 loc_extent = [lon0, lon1, lat0, lat1]   # locator inset map window
 loc_rect = [x, y, w, h]                 # inset placement, axes fraction
 
+[[profiles]]                      # keys referenced by [[domains]].profiles
+key = "vernal"
+label = "Vernal"
+waypoint = "vernal"               # a lookups.toml waypoint name, not coordinates
+y_top_m = 4200.0
+crest_m = 3300.0                  # optional reference line
+humidity = "rh"                   # "rh" | "q" | omit for none  (default "rh")
+wind_bars = true                  # speed bars + barbs at the tips (default true)
+barb_interval_m = 250.0           # barbs every N metres of HEIGHT (default 250)
+
 [[views3d]]
 key = "ashley_pool"
 label = "Ashley + Dry Fork cold pool"
@@ -171,18 +186,92 @@ the curtain is flat-shaded on the model's own cells, so oversampling just draws
 duplicated columns as visible repeats.
 
 `surface_vars` are **style keys**, because the renderer looks the colour scale up by
-variable name: `wind_speed_10m`, `theta_2m`, `temp_2m`, `pblh`. A variable the run
-did not write is named-skipped.
+variable name. A variable the run did not write is named-skipped, never fatal:
 
-### Choosing `w_exag`
+| key | needs | what it is for |
+|---|---|---|
+| `wind_speed_10m` | always | the default |
+| `theta_2m`, `temp_2m` | always | |
+| `pblh` | `PBLH` | zero at f00 — a real value, not a bug |
+| `tsk_minus_t2` | `TSK` | **surface decoupling**: strongly negative is ground radiating under a decoupled layer, which says a pool is forming hours before θ looks unusual |
+| `snow_depth` | `SNOWH` | the albedo/emissivity control on that whole process |
+| `conv_10m` | `U10`/`V10` | 10 m convergence, diverging about zero; same map-factor operator as the convective `meso` family and the deficit transport |
 
-The renderer's docstring suggests the plot aspect (transect length ÷ visible depth),
-which is right when `w` is small — the HRRR case uses 100. It is **not** a geometric
-constant: it is set by the regime. A convective afternoon on a 600 m mesh resolves
-`w ~ 1–3 m s⁻¹`, so an exaggeration of 100 makes every vector vertical and hides the
-along-transect flow entirely; ~8–15 reads correctly. A quiescent drainage night has
-`w` two orders of magnitude smaller and wants the geometric value back. Put the
-common regime in the TOML and switch with `--w-exag` for the other.
+### Map context
+
+`[map]` switches, all default **false**: `states`, `counties`, `roads` (Natural-Earth
+major highways), `rivers`, `lakes`, `cities` (population-ranked place labels).
+
+Named places come from two independent sources and it is worth using both:
+`waypoint_group` names a curated group in `nwp/lookups.toml` — the places a Basin
+study refers to deliberately, with elevations and station IDs — while `cities = true`
+adds whatever else is large enough to orient a reader unfamiliar with the area.
+
+Overlays need `BRC_TOOLS_BASEMAP_DIR` (the SLURM wrapper points at the staged group6
+cache); a missing layer is skipped, never fatal.
+
+### Choosing `w_exag` — one rule, not four numbers
+
+**This is the single source of truth for `w_exag`.** `WRF-CONVECTIVE.md`, both
+skills and both `--w-exag` help strings point here rather than restating a value;
+they used to quote 5, 8–15, 10 and 100 for the same knob.
+
+The rule:
+
+```
+w_exag  ≈  typical |u|  ÷  typical |w|      (both along the transect, in the layer you care about)
+```
+
+That puts the typical vector at **45°**, which is where a two-component vector is
+most readable — flatter and the vertical motion is invisible, steeper and the
+along-transect flow is.
+
+It is **not** the plot aspect, and the renderer's older docstring was wrong to
+suggest it. The quiver is drawn with matplotlib's default `angles="uv"`, where the
+arrow direction comes from the component ratio alone and the axes' data aspect does
+not enter: `u = v` draws at 45° whether the panel spans 10 km or 200 km. That the
+geometric value happened to match for the HRRR case is a coincidence of that case's
+numbers.
+
+The rule reproduces every value previously in circulation, which is why they
+disagreed — they are different regimes, not different opinions:
+
+| regime | typical \|u\| | typical \|w\| | `w_exag` |
+|---|---|---|---|
+| deep convective core, 600 m mesh | ~10 m s⁻¹ | ~2 m s⁻¹ | **~5** |
+| convective afternoon boundary layer | ~10 m s⁻¹ | ~1 m s⁻¹ | **~10** |
+| quiescent drainage night | ~2 m s⁻¹ | ~0.02 m s⁻¹ | **~100** |
+| isobaric HRRR section | ~10 m s⁻¹ | ~0.1 m s⁻¹ | **~100** |
+
+Put the case's usual regime in the TOML and switch with `--w-exag` for the other.
+**A sweep crossing sunset crosses regimes**, so one value cannot serve both ends of
+it; render the last hour and check before trusting the night frames.
+
+The factor is printed in the quiver key, so a reader always knows the vertical has
+been stretched and by how much.
+
+### What the fill and the vectors mean
+
+A curtain's colour and its arrows are **different measurements on the same plane**,
+and the figure now says which:
+
+| `shade` | fill is | note |
+|---|---|---|
+| `speed` | `\|V\| = √(u²+v²)` | magnitude only — a cross-valley gale and an along-valley jet look identical |
+| `along` | in-plane component, **+ toward B** | the component the arrows draw |
+| `normal` | the flow **crossing** the section, **+ into the page** | diverging scale; for a W→E transect this is the north–south component |
+| `w` | vertical velocity | |
+| `theta`, `theta_e`, `temp`, `refl` | the scalar named | |
+
+Two things are drawn on every curtain because a signed field is uninterpretable
+without them:
+
+- an **orientation stamp** below the axes — `A→B 090° (W→E) | into page = N`;
+- a note that the vectors are **in-plane only** (along-transect + exaggerated `w`),
+  so the normal component is discarded from them, not folded in.
+
+For a west-to-east cut, `shade = "normal"` is the one that shows cross-valley
+exchange; `speed` cannot, because it has no sign.
 
 ### Choosing `theta_iso`
 

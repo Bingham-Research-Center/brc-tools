@@ -70,8 +70,36 @@ Plus one non-WRF renderer:
   montage (250 hPa jet → 500 hPa flow → 600 hPa moisture/LLJ → surface analysis) for an
   analysis time. Doc: [`docs/FORECAST-FUNNEL.md`](docs/FORECAST-FUNNEL.md).
 
+### Which figure answers which question
+
+The two sweep engines pick families with `--figure` (repeatable):
+
+| `/wrf-basin-winds` | answers |
+|---|---|
+| `topdown` | what the surface looks like — wind, θ₂ₘ, PBLH, surface decoupling (TSK−T₂ₘ), snow, 10 m convergence |
+| `section` | vertical structure along a named A→B line, on the model's own eta cells |
+| `profile` | how deep the stable layer is, and whether the air above it is dry enough to mix down |
+| `view3d` | how far the cold pool has filled the basin |
+
+| `/wrf-convective` | answers |
+|---|---|
+| `surface` | where the storm is — reflectivity, gust swath, updraft helicity, echo top, vorticity |
+| `meso` | what it is running into — θₑ, dewpoint, convergence, moisture-flux convergence |
+| `aux` | the same at the high-cadence stream's interval, for a feature the history aliases |
+| `section` | vertical structure — reflectivity / `w` / θ curtains |
+| `beam` | **what the radar would have seen**, on real beam surfaces, optionally beside the observed scan |
+| `sounding` | the environment — skew-T with parcel path, plus a hodograph |
+| `verify` | whether it happened at the right time at a real station (`tslist`) |
+| `track` | where the strongest echo went — a CSV, not a figure |
+
+Both engines share `--start`/`--end`, `--every`, `--dry-run`, `--skip-existing`,
+`--report` and `--allow-errors`.
+
 Before a first sweep on a new case, read [`docs/VISUAL-SUITE-SOP.md`](docs/VISUAL-SUITE-SOP.md) —
 the engine-agnostic procedure, the method errors already found, and the gaps still open.
+Two habits it exists to enforce: **render one time from every family and actually open
+the files before sweeping**, and **state the physical surface** (beam tilt, height,
+layer, accumulation window) on the figure itself.
 
 Per-case configuration lives in the repo that owns the case, never here — e.g.
 `../ub-wx/experiments/20251011-ashley-rotating-cell/figures.toml`, or

@@ -44,6 +44,7 @@ Select with `--figure` (repeatable); default is all of them.
 | family | reads | produces |
 |---|---|---|
 | `surface` | `wrfout` | plan views: composite reflectivity, `WSPD10MAX` swath, updraft helicity, echo top, vertical vorticity at a chosen height AGL |
+| `meso` | `wrfout` | **surface mesoanalysis** — θₑ, dewpoint, dewpoint depression, 10 m convergence, moisture-flux convergence, θₑ gradient. What the storm is running *into* |
 | `aux` | `auxhist<N>` | the same, at the auxiliary stream's cadence |
 | `section` | `wrfout` | reflectivity / `w` / θ curtains on native eta levels along A→B lines |
 | `beam` | `wrfout` | **`REFL_10CM` sampled on a named radar's beam surfaces** |
@@ -110,12 +111,25 @@ waypoint name and a radar ICAO id.
 | `output_dir` | optional; else `$BRC_TOOLS_OUTPUT_DIR/<slug>`. Refused if inside the brc-tools or case checkout |
 
 ### `[map]`
-`states`, `counties`, `roads`, `rivers`, `lakes` — booleans, default false.
+`states`, `counties`, `roads`, `rivers`, `lakes`, `cities` — booleans, default
+false.  `cities` adds population-ranked Natural-Earth place labels, complementing
+the curated `waypoint_group`.
 
 ### `[style.overrides.<var>]`
-`cmap`, `label`, `vmin`, `vmax`, `extend`, `diverging`. The convective entries in
-`brc_tools/visualize/style.py` are already set from measured values; override only
-where a case genuinely differs.
+`cmap`, `label`, `vmin`, `vmax`, `extend`, `diverging`, `gamma`. The convective
+entries in `brc_tools/visualize/style.py` are already set from measured values;
+override only where a case genuinely differs.
+
+`gamma` shades on a `PowerNorm` rather than a linear ramp; `gamma < 1` spends more
+of the colour range on low values.  Set it to `0` to force a variable back to
+linear.
+
+**Updraft helicity** uses it: `5 → 50 m² s⁻², gamma 0.6`, masked below 5.  The floor
+is 5 because UH is near zero over almost every cell of almost every frame and an
+unmasked panel is a domain-wide pale wash; the top is 50 because a 600 m nest
+resolves cores an order of magnitude above the ~19.5 the 3 km HRRR table peaked at;
+and the ramp is non-linear because a *linear* 5–50 scale crushes the 5–20 band the
+mesocyclone signal actually lives in.
 
 ### `[[domains]]` — one per view (a nest may appear more than once)
 | key | meaning |
@@ -127,9 +141,34 @@ where a case genuinely differs.
 | `waypoint_group` | a `lookups.toml` group |
 | `vorticity_level_agl_m` | height for the `vert_vorticity` panel |
 | `surface_vars` | style keys to plot from `wrfout` |
+| `meso_vars` | keys for the `meso` family (see below) |
 | `aux_fields` | WRF field names to plot from the auxiliary stream |
 | `aux_stream` | stream number, default 2 |
 | `sections` / `beams` / `soundings` | keys into the arrays below |
+
+### `meso_vars` — surface mesoanalysis
+
+WRF writes none of these; all are derived (`brc_tools/nwp/wrf_convective.py`), and a
+run missing an input gets that panel named-skipped rather than the family lost.
+
+| key | needs | is |
+|---|---|---|
+| `theta_e_2m` | `PSFC`, `Q2`, `T2` | θₑ, Bolton (1980) Eq. 43. Sees the moisture a temperature map misses: an outflow edge two kelvin cooler but markedly drier is sharp here and invisible on T2 |
+| `theta_e_grad_2m` | ” | \|∇θₑ\| in K km⁻¹ — a frontogenesis proxy, i.e. where that gradient is tightening |
+| `dewpoint_2m` | `PSFC`, `Q2` | 2 m dewpoint, °C |
+| `dewpoint_depression_2m` | `PSFC`, `Q2`, `T2` | T − Td. A deep dry sub-cloud layer is what turns a modest core into a downburst |
+| `conv_10m` | `U10`, `V10` | 10 m **convergence** `−∇·V`, 10⁻³ s⁻¹ |
+| `mfc_10m` | `U10`, `V10`, `Q2` | **moisture-flux convergence** `−∇·(qV)`, g kg⁻¹ h⁻¹ |
+
+**Positive is the feature you are hunting.** Both convergence fields are the
+*negative* of the divergence, so a boundary is a positive maximum on a diverging
+scale rather than a negative one lost among the divergence around it.
+
+The gradient uses the **file's own `dx`**, not the 3 km HRRR default that
+`derived.horizontal_gradient_magnitude` carries — on a 600 m nest that default
+understates every gradient five-fold. Convergence uses the same map-factor operator
+as the cold-pool deficit transport (`wrf_output.horizontal_flux_divergence`), so a
+convergence line means the same thing across all three diagnostics.
 
 ### `[[beams]]`
 `key`, `site` (ICAO, from `brc_tools/radar/sites.py`), `elevations_deg`.
@@ -143,16 +182,25 @@ actually scanned.
 `theta_interval`, `quiver_stride`, `offset_km`, `waypoint_group`, `loc_extent`,
 `loc_rect`.
 
-`w_exag` is regime-dependent: a convective updraft resolves several m/s and wants
-~5; a drainage night wants ~100. Getting it wrong makes every vector vertical.
+`w_exag` follows one rule -- `typical |u| ÷ typical |w|`, which puts the typical
+vector at 45°. A deep convective core wants ~5, a drainage night ~100. It is *not*
+the plot aspect. Derivation and the full table: **`docs/WRF-WINDS.md`**, which owns
+this knob; getting it wrong makes every vector vertical.
+
+`shade = "normal"` colours the wind **crossing** the section (+ into the page) on a
+diverging scale -- the component the in-plane vectors necessarily discard. Every
+curtain carries an orientation stamp resolving "into the page" to a compass
+direction. Conventions: `docs/WRF-WINDS.md`.
 
 ### `[[soundings]]`
 `key`, `label`, `waypoint` (a `lookups.toml` name), `parcel` (`sb`|`ml`|`mu`),
 `p_top_hpa`, `t_range`, `hodograph_top_m`, `observed_motion_ms`,
 `observed_motion_label`.
 
-There is no default parcel in the capability layer: in a 300–500 J/kg environment
-the parcel choice moves CAPE by more than the signal, so state it.
+The **capability** layer has no default parcel; the **engine** falls back to `ml`
+if a `[[soundings]]` entry omits it. State it anyway: in a 300–500 J/kg
+environment the parcel choice moves CAPE by more than the signal, so an
+unstated `ml` is a number nobody chose.
 
 ### `[[verify]]`
 `key`, `label`, `domain`, `variable`
@@ -227,3 +275,23 @@ Worked example, Ashley Valley at 02:20Z, model-vs-observed on the *same* tilt:
 
 Note how much the answer moves with tilt: the column maximum and the 1.2° surface
 differ by 36 dBZ over the same ground. That is the entire argument for this family.
+
+## Provenance: every figure says what it is
+
+`wrf_engine.compose_title` puts a source token first on every title:
+
+| token | on |
+|---|---|
+| `WRF` | anything derived from `wrfout`, `auxhist` or `tslist` |
+| `OBSERVED` | the IEM RIDGE panel |
+| `WRF vs OBS` | a `verify` panel that resolved at least one observing station |
+
+This matters most where it used to be missing. The observed radar panel was
+labelled and the **model** beam panel beside it was not — two reflectivity plan
+views on the same colour scale, one simulated and one measured, distinguished only
+by which file they were written to. The whole argument for the `beam` family is that
+model and observation are compared on a matched surface, and a reader who cannot
+tell which panel is which cannot read that comparison.
+
+A `verify` panel with no station resolved reads `WRF`, not `WRF vs OBS` — a model
+trace on its own, which is a different figure from a verification.
