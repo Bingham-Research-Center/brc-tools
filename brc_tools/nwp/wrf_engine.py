@@ -110,7 +110,37 @@ def style_for(cfg: dict, var: str) -> VarStyle:
         vmax=float(over["vmax"]) if "vmax" in over else base.vmax,
         extend=over.get("extend", base.extend),
         diverging=bool(over.get("diverging", base.diverging)),
+        # `gamma = 0` would be a silently broken PowerNorm, so an explicit falsy
+        # value means "make this linear again" rather than "use exponent zero".
+        gamma=(float(over["gamma"]) or None) if "gamma" in over else base.gamma,
     )
+
+
+# --------------------------------------------------------------------------- #
+# figure provenance
+# --------------------------------------------------------------------------- #
+#: Leading token on a title, naming where the numbers came from.
+#:
+#: Only one figure in the suite ever said: the IEM RIDGE panel was prefixed
+#: ``OBSERVED``, and the *model* beam panel rendered beside it said nothing at
+#: all.  Two reflectivity plan views on one colour scale, one simulated and one
+#: measured, distinguished only by which file they were written to -- and the
+#: whole argument for the beam family is that model and observation are being
+#: compared on a matched surface.  A reader who cannot tell which is which cannot
+#: read the comparison, and a figure that omits it invites the claim that the
+#: model was verified when it was only plotted.
+SOURCE_WRF = "WRF"
+SOURCE_OBSERVED = "OBSERVED"
+SOURCE_COMPARISON = "WRF vs OBS"
+
+
+def compose_title(source: str, *parts: str) -> str:
+    """``'WRF | d02 0.6 km | valid ... | composite reflectivity'``.
+
+    ``source`` leads because it is the first thing that has to be true; empty
+    parts are dropped so callers can pass optional fragments straight through.
+    """
+    return " | ".join(str(p) for p in (source, *parts) if p)
 
 
 def add_time_arguments(parser) -> None:

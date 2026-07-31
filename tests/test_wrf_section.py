@@ -133,3 +133,53 @@ class TestOffGridBlanking:
         )
         assert not sec.offgrid1d.any()
         assert np.isfinite(sec.speed2d).all()
+
+
+class TestSectionNormalComponent:
+    """The wind crossing the section, which the in-plane vectors discard.
+
+    Sign convention: ``+normal`` is INTO THE PAGE -- the left-hand normal of
+    A->B -- so on a west-to-east transect drawn with A at the left, northerly
+    flow is positive.  These pin that down, because a sign error here is
+    invisible in the figure and reverses the meaning of every curtain.
+    """
+
+    @staticmethod
+    def _uniform(plane, east, north):
+        """Replace the plane's wind with a uniform (east, north) field."""
+        plane.ue = np.full_like(plane.ue, float(east))
+        plane.ve = np.full_like(plane.ve, float(north))
+        return plane
+
+    def test_northerly_flow_is_positive_into_the_page_on_a_west_east_line(self, plane):
+        # A due-north wind (v = +10) across a west-to-east cut.
+        sec = ws.section_from_plane(self._uniform(plane, 0.0, 10.0),
+                                    (40.2, -109.9), (40.2, -109.6), n_points=20)
+        assert np.allclose(sec.normal2d, 10.0)
+        assert np.allclose(sec.along2d, 0.0)
+
+    def test_reversing_the_transect_reverses_the_sign(self, plane):
+        """A->B and B->A are the same ground seen from opposite sides, so the
+        viewer's 'into the page' flips.  If it did not, the convention would be
+        a property of the compass rather than of the figure."""
+        p = self._uniform(plane, 0.0, 10.0)
+        west_east = ws.section_from_plane(p, (40.2, -109.9), (40.2, -109.6), n_points=20)
+        east_west = ws.section_from_plane(p, (40.2, -109.6), (40.2, -109.9), n_points=20)
+        assert np.allclose(west_east.normal2d, -east_west.normal2d)
+
+    def test_along_and_normal_are_orthogonal_and_conserve_speed(self, plane):
+        """Whatever the line's bearing, the two components must decompose the
+        horizontal wind exactly -- no energy invented or lost by the rotation."""
+        sec = ws.section_from_plane(self._uniform(plane, 6.0, -8.0),
+                                    INSIDE_A, INSIDE_B, n_points=20)
+        assert np.allclose(np.hypot(sec.along2d, sec.normal2d), 10.0)
+        assert np.allclose(sec.speed2d, 10.0)
+
+    def test_offgrid_samples_are_blanked_in_the_normal_field_too(self, plane):
+        """The blanking must cover every data field; a component that escaped it
+        would redraw the edge-column artefact the sampler exists to prevent."""
+        sec = ws.section_from_plane(self._uniform(plane, 3.0, 4.0),
+                                    (40.2, -109.9), (40.2, -109.0), n_points=40)
+        assert sec.offgrid1d.any()
+        assert np.isnan(sec.normal2d[:, sec.offgrid1d]).all()
+        assert not np.isnan(sec.normal2d[:, ~sec.offgrid1d]).any()

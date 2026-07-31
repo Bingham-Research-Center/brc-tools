@@ -22,7 +22,6 @@ hourly output lags a fine nest on 5-minute output.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import traceback
 from datetime import datetime
@@ -30,18 +29,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
 from brc_tools.nwp import wrf_engine as we  # noqa: E402
 from brc_tools.nwp import wrf_output as wo  # noqa: E402
 from brc_tools.nwp import wrf_section as ws  # noqa: E402
 from brc_tools.visualize import coldpool3d as cp3  # noqa: E402
 from brc_tools.visualize.nwp_maps import plot_nwp_surface_map  # noqa: E402
 from brc_tools.visualize.style import use_publication_style  # noqa: E402
-from brc_tools.visualize.wrf_curtain import plot_wrf_curtain  # noqa: E402
+from brc_tools.visualize.wrf_curtain import (  # noqa: E402
+    plot_wrf_curtain,
+    shade_style_key,
+)
 
 # Config, waypoints, colour scales and time selection are shared with the
 # convective engine so the two cannot drift; see brc_tools.nwp.wrf_engine.
-DEFAULT_OUTPUT_ROOT = we.DEFAULT_OUTPUT_ROOT
 _MAP_LAYERS = we.MAP_LAYERS
 _TIME_FMT = we.TIME_FMT
 
@@ -126,7 +126,8 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                     style=st, waypoints=map_wps,
                     barb_stride=int(dom.get("barb_stride", 6)),
                     extent=extent, overlays=overlays, annotation=an,
-                    title=f"{base} | {st.label}", dpi=args.dpi),
+                    title=we.compose_title(we.SOURCE_WRF, base, st.label),
+                    dpi=args.dpi),
                 sources=src, family="topdown", domain=d, var=var,
             )
 
@@ -148,17 +149,22 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                                 family="section", domain=d, var=key)
                     continue
                 sec_wps = waypoints(s.get("waypoint_group"))
+                shade = s.get("shade", "speed")
 
-                def _draw(path, s=s, key=key, sec_wps=sec_wps):
+                def _draw(path, s=s, key=key, sec_wps=sec_wps, shade=shade):
                     sec = ws.section_from_plane(
                         plane, tuple(s["a"]), tuple(s["b"]),
                         n_points=int(s.get("n_points", 240)),
                         termini=tuple(s.get("termini", ("A", "B"))))
                     plot_wrf_curtain(
                         sec, path,
-                        shade=s.get("shade", "speed"),
-                        style=style_for(cfg, "wind_speed_10m"),
-                        title=f"{sec_base} | {s.get('label', key)}",
+                        shade=shade,
+                        # Per SHADE, not a fixed wind scale: this used to pass
+                        # wind_speed_10m for every shade, so a theta curtain came
+                        # out on a 0-15 m/s ramp labelled "10 m wind".
+                        style=style_for(cfg, s.get("style", shade_style_key(shade))),
+                        title=we.compose_title(we.SOURCE_WRF, sec_base,
+                                               s.get("label", key)),
                         annotation=an, waypoints=sec_wps,
                         waypoint_offset_km=float(s.get("offset_km", 15.0)),
                         y_top_m=float(s.get("y_top_m", 3000.0)),
@@ -173,7 +179,7 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                         dpi=args.dpi)
 
                 made += ledger.emit(
-                    out_dir / f"xsection_{key}_{tag}_{stamp}.png",
+                    out_dir / f"xsection_{shade}_{key}_{tag}_{stamp}.png",
                     _draw, sources=src, family="section", domain=d, var=key,
                 )
             made += render_views3d(cfg, v3d, plane, tag, stamp, sec_base, an,
@@ -214,8 +220,9 @@ def render_views3d(cfg, keys, plane, tag, stamp, sec_base, an, out_dir, args,
                 cp3.plot_coldpool_3d(
                     lon, lat, terr, lid, path,
                     theta_iso=float(iso),
-                    title=(f"{sec_base} | {v.get('label', key)} | "
-                           rf"cold air below $\theta$ = {float(iso):g} K"),
+                    title=we.compose_title(
+                        we.SOURCE_WRF, sec_base, v.get("label", key),
+                        rf"cold air below $\theta$ = {float(iso):g} K"),
                     annotation=an,
                     stride=int(v.get("stride", 2)),
                     elev=float(v.get("elev", 22.0)),
@@ -278,9 +285,9 @@ def main() -> int:
     use_publication_style(dpi=args.dpi)
     times = select_times(run_dir, numbers, args)
     init = ws.init_time(run_dir, min(numbers))
-    out_root = (args.output_dir or Path(os.path.expandvars(cfg["case"]["output_dir"]))
-                if (args.output_dir or cfg["case"].get("output_dir"))
-                else DEFAULT_OUTPUT_ROOT / cfg["case"]["slug"])
+    # we.output_root, not an inlined copy: the shared resolver carries the guard
+    # that refuses an output path inside the brc-tools or case checkout.
+    out_root = we.output_root(cfg, args.output_dir, config_path=args.config)
 
     # --report reads what previous jobs recorded; it renders nothing.
     if args.report:

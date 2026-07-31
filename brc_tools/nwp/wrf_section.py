@@ -380,9 +380,25 @@ def section_from_plane(
     Nearest is measured in kilometres (longitudes scaled by cos(lat)), so the
     pick does not drift east-west the way a raw-degree distance would.
 
-    ``start``/``end`` are ``(lat, lon)``.  The along-section component is
-    positive toward B.  ``pressure_hpa`` carries the domain-mean level pressures
-    for reference; the curtain itself is drawn on geometric height.
+    ``start``/``end`` are ``(lat, lon)``.  ``pressure_hpa`` carries the
+    domain-mean level pressures for reference; the curtain itself is drawn on
+    geometric height.
+
+    **Two wind components, two conventions, both signed:**
+
+    * ``along2d`` is positive **toward B** -- the in-plane horizontal flow, the
+      component the section's vectors draw.
+    * ``normal2d`` is positive **into the page**: the left-hand normal of A->B,
+      which for a west-to-east transect is the northerly (``+v``) component.
+      This is the flow *crossing* the line, which the in-plane vectors discard
+      entirely, so a curtain that shades ``speed`` can show a strong wind whose
+      direction is invisible.
+
+    The into-the-page sign is deliberately the **opposite** of the rightward
+    normal in :func:`brc_tools.nwp.wrf_output.integrate_flux_transect`.  That one
+    orients a boundary so a flux integral has a consistent outward sense; this one
+    orients a *viewer* standing at A looking toward B.  Neither is more correct;
+    they answer different questions, and the figure states which it is showing.
 
     **Samples that fall off the grid are blanked, not fabricated.**  Nearest
     neighbour has no upper bound, so a transect running past the nest boundary
@@ -411,6 +427,11 @@ def section_from_plane(
         return out
 
     e_hat, n_hat = _unit_ab(start, end)
+    # Left-hand normal of A->B, so +normal points INTO THE PAGE for a curtain
+    # drawn with A on the left.  NB this is the opposite sign to the rightward
+    # normal in wrf_output.integrate_flux_transect: that one orients a boundary
+    # for a flux integral, this one orients a viewer looking at a figure.
+    e_nrm, n_nrm = -n_hat, e_hat
     ue = plane.ue[:, jj, ii]
     ve = plane.ve[:, jj, ii]
     return NWPSection(
@@ -422,6 +443,7 @@ def section_from_plane(
         theta2d=_blank(plane.theta[:, jj, ii]),
         temp2d=_blank(plane.temp[:, jj, ii]),
         along2d=_blank(ue * e_hat + ve * n_hat),
+        normal2d=_blank(ue * e_nrm + ve * n_nrm),
         w2d=_blank(plane.w[:, jj, ii]),
         terrain1d=plane.terrain[jj, ii],
         pressure_hpa=plane.pressure_hpa,

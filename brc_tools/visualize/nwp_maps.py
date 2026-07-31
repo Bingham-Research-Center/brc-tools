@@ -101,9 +101,28 @@ def plot_nwp_surface_map(
         vmax = st.vmax
     label = st.label if st is not None else field
 
+    # A style carrying `gamma` shades on a PowerNorm instead of a linear ramp.
+    # matplotlib raises if handed both a norm and vmin/vmax, so the limits move
+    # into the norm and the direct kwargs go to None.  Explicit vmin/vmax from the
+    # caller still win -- they are resolved above and feed the norm.
+    norm, ticks = None, None
+    if st is not None and st.gamma is not None:
+        from matplotlib.colors import PowerNorm
+        from matplotlib.ticker import MaxNLocator
+
+        norm = PowerNorm(float(st.gamma), vmin=vmin, vmax=vmax)
+        if vmin is not None and vmax is not None:
+            # Ticks at round values, not at even distances along the bar: their
+            # uneven spacing is what tells the reader the scale is not linear.
+            ticks = MaxNLocator(nbins=6, steps=[1, 2, 5, 10]).tick_values(vmin, vmax)
+            ticks = [t for t in ticks if vmin <= t <= vmax]
+        vmin = vmax = None
+
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
-    mesh = ax.pcolormesh(lon2d, lat2d, fld, cmap=cmap, vmin=vmin, vmax=vmax, shading="auto")
-    fig.colorbar(mesh, ax=ax, shrink=0.85, extend=(st.extend if st else "neither"), label=label)
+    mesh = ax.pcolormesh(lon2d, lat2d, fld, cmap=cmap, vmin=vmin, vmax=vmax,
+                         norm=norm, shading="auto")
+    fig.colorbar(mesh, ax=ax, shrink=0.85, extend=(st.extend if st else "neither"),
+                 label=label, ticks=ticks)
 
     if terrain_contours and terrain_var and terrain_var in ds:
         terr = _sel(ds, terrain_var, time_index)

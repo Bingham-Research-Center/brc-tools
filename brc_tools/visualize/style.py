@@ -25,9 +25,21 @@ class VarStyle:
     label: str
     vmin: float | None = None
     vmax: float | None = None
+    #: Accepted from a pelican case TOML (``wrf_figures._varstyle_from_dict``) and
+    #: **read by nothing** -- no renderer builds a BoundaryNorm from it.  Kept
+    #: because that constructor passes it unconditionally, so dropping the field
+    #: would raise on any study style override; do not reach for it expecting
+    #: discrete bands.  ``gamma`` below is the norm that is actually wired.
     levels: tuple[float, ...] | None = None
     extend: str = "both"
     diverging: bool = False
+    #: Exponent for a :class:`~matplotlib.colors.PowerNorm` ramp between ``vmin``
+    #: and ``vmax``.  ``None`` (the default) is the ordinary linear scale, so an
+    #: entry that does not set it renders exactly as it always has.  ``gamma < 1``
+    #: spends more of the colour range on low values -- the right shape for a
+    #: field whose interesting signal sits just above its floor while rare cores
+    #: run an order of magnitude higher.  See :func:`build_norm`.
+    gamma: float | None = None
 
 
 # Fixed ranges tuned for a February Uinta Basin cold-air pool and validated
@@ -55,6 +67,21 @@ VAR_STYLES: dict[str, VarStyle] = {
     "pblh":           VarStyle("YlOrRd", "PBLH (m)", 0.0, 1000.0, extend="max"),
     "tsk_minus_t2":   VarStyle("RdBu_r", r"$T_{\mathrm{skin}}-T_{2\,\mathrm{m}}$ (K)", -8.0, 8.0, diverging=True),
     "w":              VarStyle("RdBu_r", r"$w$ (m s$^{-1}$)", -0.5, 0.5, diverging=True),
+    # --- Cross-section wind components -----------------------------------------
+    # Three different quantities that a curtain could shade, and the labels say
+    # which, because they are not interchangeable and the figure is the only place
+    # a reader can find out. `wind_speed_10m` covers the fourth (bare magnitude).
+    #
+    # The normal component is the one that needs a diverging map: it is signed by
+    # construction, and a sequential ramp would render flow into the page and flow
+    # out of it as the same colour. Positive is INTO THE PAGE -- for a west-to-east
+    # transect that is the northerly (+v) component. See wrf_section.section_from_plane.
+    "wind_normal":    VarStyle("RdBu_r",
+                                r"section-normal wind (m s$^{-1}$, $+$ into page)",
+                                -10.0, 10.0, diverging=True),
+    "wind_along":     VarStyle("RdBu_r",
+                                r"along-transect wind (m s$^{-1}$, $+$ toward B)",
+                                -15.0, 15.0, diverging=True),
     "theta_crest":    VarStyle("RdYlBu_r", r"$\theta$ (K)", 285.0, 300.0),
     "temp_adv":       VarStyle("RdBu_r", r"T adv (K h$^{-1}$)", -3.0, 3.0, diverging=True),
     # Air temperature on a mid-tropospheric pressure surface (default 600 hPa), for the
@@ -100,13 +127,24 @@ VAR_STYLES: dict[str, VarStyle] = {
     "refl_beam":      VarStyle("gist_ncar", r"reflectivity on beam surface (dBZ)",
                                 5.0, 75.0, extend="max"),
     "echo_top":       VarStyle("viridis", r"echo top (km MSL)", 2.0, 14.0, extend="max"),
-    # Updraft helicity: 2-5 km peaked at ~19.5 m2 s-2 in the gate-A0 HRRR table,
-    # so a supercell-tuned 0-300 scale would be empty. Kept generous for the
-    # 600 m run, which resolves more than 3 km HRRR can.
+    # Updraft helicity, on a floor-to-core scale rather than a linear one.
+    #
+    # Three choices, none of them cosmetic. The floor is 5 because UH is near zero
+    # over most of any domain and a linear ramp from 0 paints all of it a pale red
+    # that reads as weak signal -- the same failure the reflectivity floor exists
+    # to prevent. Below 5 is masked (see wrf_convective.MASK_AT_OR_BELOW), so clear
+    # air stays unpainted. The top is 50 because the 600 m nest resolves cores an
+    # order of magnitude above the ~19.5 m2 s-2 the 3 km gate-A0 HRRR table peaked
+    # at, and a scale ending near that peak saturates on every real updraft.
+    #
+    # gamma = 0.6 is what makes the pair work: a linear 5-50 scale would spend
+    # most of its colour on values a Basin storm rarely reaches and leave the
+    # 5-20 band -- where the mesocyclone signal actually lives -- crushed into
+    # two shades. The ramp is slow at the bottom and coarse at the top.
     "uphel_2to5km":   VarStyle("Reds", r"2-5 km updraft helicity (m$^2$ s$^{-2}$)",
-                                0.0, 60.0, extend="max"),
+                                5.0, 50.0, extend="max", gamma=0.6),
     "uphel_0to3km":   VarStyle("Reds", r"0-3 km updraft helicity (m$^2$ s$^{-2}$)",
-                                0.0, 40.0, extend="max"),
+                                5.0, 50.0, extend="max", gamma=0.6),
     # Vertical vorticity, diverging about zero: the landspout test is whether a
     # cyclonic shear line exists on the floor BEFORE the updraft arrives, so
     # anticyclonic values must stay legible rather than being clipped away.
@@ -197,6 +235,35 @@ def use_publication_style(*, dpi: int = 300) -> None:
 def get_style(var: str) -> VarStyle:
     """Return the fixed :class:`VarStyle` for a variable key (KeyError if unknown)."""
     return VAR_STYLES[var]
+
+
+def build_norm(st: VarStyle):
+    """A :class:`~matplotlib.colors.Normalize` for ``st``, or ``None`` if linear.
+
+    Returns ``None`` unless the style sets ``gamma``, so every existing variable
+    keeps passing plain ``vmin``/``vmax`` and renders unchanged.
+
+    Callers must pass the result as ``norm=`` **instead of** ``vmin``/``vmax``:
+    matplotlib raises if given both.  :func:`norm_kwargs` does that bookkeeping.
+    """
+    if st.gamma is None:
+        return None
+    from matplotlib.colors import PowerNorm
+
+    return PowerNorm(float(st.gamma), vmin=st.vmin, vmax=st.vmax)
+
+
+def norm_kwargs(st: VarStyle) -> dict:
+    """The colour-limit kwargs for a mappable: either ``norm`` or ``vmin``/``vmax``.
+
+    One helper because the choice is exclusive and getting it wrong is a
+    ``ValueError`` at render time, inside a per-figure try/except, on a compute
+    node -- i.e. a figure silently missing from a sweep.
+    """
+    norm = build_norm(st)
+    if norm is not None:
+        return {"norm": norm}
+    return {"vmin": st.vmin, "vmax": st.vmax}
 
 
 def resolve_style(

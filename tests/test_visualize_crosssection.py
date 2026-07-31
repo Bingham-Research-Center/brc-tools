@@ -96,3 +96,55 @@ def test_reflectivity_shade_is_refused_without_reflectivity(tmp_path, monkeypatc
     assert sec.refl2d is None
     with _pytest.raises(ValueError, match="carries no refl2d"):
         plot_wrf_curtain(sec, tmp_path / "x.png", shade="refl", title="t")
+
+
+# --------------------------------------------------------------------------- #
+# saying which wind, in which plane
+# --------------------------------------------------------------------------- #
+def test_every_shade_has_a_field_a_style_and_a_label():
+    """The three tables are keyed on the same names on purpose.  A shade with a
+    field but no style is how a theta curtain came out on a 0-15 m/s wind ramp:
+    the engine fell back to a fixed key rather than failing."""
+    from brc_tools.visualize import wrf_curtain as wc
+    from brc_tools.visualize.style import VAR_STYLES
+
+    assert set(wc.SHADE_FIELD) == set(wc.SHADE_STYLE) == set(wc.SHADE_LABEL)
+    for shade, key in wc.SHADE_STYLE.items():
+        assert key in VAR_STYLES, f"shade {shade!r} maps to unknown style {key!r}"
+
+
+def test_shade_style_keys_are_distinct_for_distinct_quantities():
+    """Wind speed, theta and reflectivity must not share a scale -- that shared
+    fallback is exactly what made a curtain lie about its own units."""
+    from brc_tools.visualize.wrf_curtain import shade_style_key
+
+    keys = {shade: shade_style_key(shade) for shade in ("speed", "theta", "refl", "w")}
+    assert len(set(keys.values())) == 4
+
+
+def test_wind_shade_labels_state_magnitude_or_component():
+    from brc_tools.visualize.wrf_curtain import SHADE_LABEL
+
+    assert "magnitude" in SHADE_LABEL["speed"]
+    assert "into page" in SHADE_LABEL["normal"]
+    assert "toward B" in SHADE_LABEL["along"]
+
+
+def test_orientation_note_names_the_bearing_and_the_into_page_direction():
+    """A signed fill is uninterpretable without knowing which way the viewer
+    faces, so the stamp must resolve 'into the page' to a compass direction."""
+    import types
+
+    import numpy as np
+
+    from brc_tools.visualize.wrf_curtain import orientation_note
+
+    west_to_east = types.SimpleNamespace(
+        lat_line=np.array([40.2, 40.2]), lon_line=np.array([-110.0, -109.5]))
+    note = orientation_note(west_to_east)
+    assert "090" in note
+    assert note.endswith("into page = N")
+
+    south_to_north = types.SimpleNamespace(
+        lat_line=np.array([40.0, 40.5]), lon_line=np.array([-110.0, -110.0]))
+    assert orientation_note(south_to_north).endswith("into page = W")

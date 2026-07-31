@@ -469,3 +469,43 @@ class TestFigureLedger:
         (tmp_path / "manifest_bad.json").write_text("{not json")
         assert we.read_manifests(tmp_path) == []
         assert "unreadable manifest" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# figure provenance
+# --------------------------------------------------------------------------- #
+class TestComposeTitle:
+    """Whether a figure is model output or a measurement is not a detail of the
+    caption -- on a beam comparison it is the entire claim, and until now only
+    the observed panel said which it was."""
+
+    def test_source_leads_and_empty_parts_are_dropped(self):
+        got = we.compose_title(we.SOURCE_WRF, "d02 0.6 km", "", "valid 02:20Z")
+        assert got == "WRF | d02 0.6 km | valid 02:20Z"
+
+    def test_model_and_observed_titles_are_distinguishable_at_a_glance(self):
+        model = we.compose_title(we.SOURCE_WRF, "d02 0.6 km", "KGJX 0.5 deg beam")
+        obs = we.compose_title(we.SOURCE_OBSERVED, "KGJX N0B 0.5 deg", "d02 0.6 km")
+        assert model.startswith("WRF")
+        assert obs.startswith("OBSERVED")
+        assert not obs.startswith(we.SOURCE_WRF)
+
+    def test_a_comparison_names_both(self):
+        assert we.compose_title(we.SOURCE_COMPARISON, "x").startswith("WRF vs OBS")
+
+
+class TestStyleGammaOverride:
+    def test_a_case_can_retune_gamma(self):
+        cfg = {"style": {"overrides": {"uphel_2to5km": {"gamma": 1.0, "vmax": 80.0}}}}
+        got = we.style_for(cfg, "uphel_2to5km")
+        assert got.gamma == 1.0 and got.vmax == 80.0
+        assert got.vmin == 5.0  # untouched keys fall through to the shared table
+
+    def test_gamma_zero_means_linear_not_a_broken_norm(self):
+        """PowerNorm(0) is not a scale; an explicit falsy value has to read as
+        'make this linear again' or a case silently produces a blank panel."""
+        cfg = {"style": {"overrides": {"uphel_2to5km": {"gamma": 0.0}}}}
+        assert we.style_for(cfg, "uphel_2to5km").gamma is None
+
+    def test_untouched_variables_keep_a_linear_scale(self):
+        assert we.style_for({}, "theta").gamma is None

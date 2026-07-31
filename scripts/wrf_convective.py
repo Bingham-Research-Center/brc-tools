@@ -47,7 +47,10 @@ from brc_tools.visualize.hodograph import plot_hodograph  # noqa: E402
 from brc_tools.visualize.nwp_maps import plot_nwp_surface_map  # noqa: E402
 from brc_tools.visualize.profile import plot_skewt, sounding_from_column  # noqa: E402
 from brc_tools.visualize.style import use_publication_style  # noqa: E402
-from brc_tools.visualize.wrf_curtain import plot_wrf_curtain  # noqa: E402
+from brc_tools.visualize.wrf_curtain import (  # noqa: E402
+    plot_wrf_curtain,
+    shade_style_key,
+)
 
 FAMILIES = ("surface", "aux", "section", "beam", "sounding", "verify", "track")
 
@@ -67,6 +70,9 @@ def _titles(cfg: dict, dom: dict, ds, valid: datetime, init: datetime):
     dx_km = float(ds.attrs["DX"]) / 1000.0
     lead = (valid - init).total_seconds() / 60.0
     stamp = f"{valid:%Y%m%d_%H%M}"
+    # Source-free on purpose: most figures here are model output, but the observed
+    # radar panel reuses `short` too.  Each render site prefixes its own source via
+    # we.compose_title, so a new family cannot inherit the wrong provenance.
     base = (f"{cfg['case']['label']} | {tag} {dx_km:g} km | "
             f"valid {valid:%Y-%m-%d %H:%MZ} (+{lead:.0f} min)")
     short = f"{tag} {dx_km:g} km | {valid:%H:%MZ} +{lead:.0f} min"
@@ -139,7 +145,7 @@ def render_surface(cfg, dom, ds, out_dir, ctx, args, ledger, *, extra=None,
                 style=style, waypoints=wps,
                 barb_stride=int(dom.get("barb_stride", 8)),
                 extent=extent, overlays=overlays, annotation=annotation,
-                title=f"{base} | {style.label}", dpi=args.dpi,
+                title=we.compose_title(we.SOURCE_WRF, base, style.label), dpi=args.dpi,
             ),
             sources=sources, family="surface", domain=number, var=var,
         )
@@ -252,8 +258,8 @@ def render_sections(cfg, dom, plane, out_dir, ctx, args, ledger, *, sources=()) 
             plot_wrf_curtain(
                 section, path,
                 shade=shade,
-                style=we.style_for(cfg, spec.get("style", _shade_style(shade))),
-                title=f"{short} | {spec.get('label', key)}",
+                style=we.style_for(cfg, spec.get("style", shade_style_key(shade))),
+                title=we.compose_title(we.SOURCE_WRF, short, spec.get("label", key)),
                 annotation=annotation, waypoints=wps,
                 waypoint_offset_km=float(spec.get("offset_km", 10.0)),
                 y_top_m=float(spec.get("y_top_m", 12000.0)),
@@ -278,10 +284,6 @@ def render_sections(cfg, dom, plane, out_dir, ctx, args, ledger, *, sources=()) 
     return made
 
 
-def _shade_style(shade: str) -> str:
-    return {"refl": "refl", "w": "w", "theta": "theta", "speed": "wind_speed_10m"}.get(
-        shade, "refl"
-    )
 
 
 def _observed_elevations(spec: dict) -> set[float] | None:
@@ -356,7 +358,8 @@ def render_beams(cfg, dom, ds, plane, out_dir, ctx, args, ledger, *, sources=())
                     extent=extent, overlays=overlays, annotation=note,
                     # Short title: the full case label clips at this width, and it
                     # is already in the annotation.
-                    title=f"{_short} | {site.id} {float(elev):g} deg beam surface",
+                    title=we.compose_title(we.SOURCE_WRF, _short,
+                                           f"{site.id} {float(elev):g} deg beam surface"),
                     dpi=args.dpi,
                 )
 
@@ -416,7 +419,8 @@ def _render_observed(cfg, spec, site, extent, wps, overlays, ctx, out_dir, args,
                 f"{annotation} | IEM RIDGE {product} | observed {field.valid_time:%H:%MZ} "
                 f"({lag:+.0f} min vs model) | elevation 1 = {field.elevation_deg:g} deg"
             ),
-            title=f"OBSERVED {site.id} {product} {field.elevation_deg:g} deg | {short}",
+            title=we.compose_title(we.SOURCE_OBSERVED,
+                                   f"{site.id} {product} {field.elevation_deg:g} deg", short),
             dpi=args.dpi,
         )
 
@@ -475,7 +479,8 @@ def render_soundings(cfg, dom, ds, out_dir, ctx, args, ledger, *, sources=()) ->
                 lambda path, sounding=sounding, spec=spec, key=key,
                 parcel=parcel, note=note: plot_skewt(
                     sounding, path,
-                    title=f"{short} | {spec.get('label', key)} | {parcel} parcel",
+                    title=we.compose_title(we.SOURCE_WRF, short, spec.get("label", key),
+                                           f"{parcel} parcel"),
                     annotation=note, parcel=parcel, mark_levels=True, shade_cape=True,
                     p_top_hpa=float(spec.get("p_top_hpa", 150.0)),
                     t_range=tuple(spec.get("t_range", (-50.0, 30.0))),
@@ -597,13 +602,21 @@ def render_verify(cfg, out_dir, args, ledger) -> int:
             drawn = sorted({s for s in obs if any(
                 st.get("stid") == s for st in entry["stations"])})
             print(f"  verify {key}: observations for {drawn or 'NONE (model only)'}")
+            # Say in the title whether an observation is even present.  A panel
+            # with no obs station resolved is a model trace on its own, and
+            # "verify" in the filename is the only thing that used to suggest
+            # otherwise -- the legend was the sole place model and obs differed.
+            source = we.SOURCE_COMPARISON if drawn else we.SOURCE_WRF
+            window_txt = " to ".join(window) if window else ""
             made += ledger.emit(
                 out_dir / f"verify_{key}_{variable}.png",
-                lambda path, series=series, styles=styles, entry=entry,
-                key=key, variable=variable: plot_scalar_timeseries(
+                lambda path, series=series, styles=styles, entry=entry, key=key,
+                variable=variable, source=source, window_txt=window_txt:
+                plot_scalar_timeseries(
                     series, path,
                     ylabel=_ts_label(cfg, variable),
-                    title=f"{cfg['case']['label']} | {entry.get('label', key)}",
+                    title=we.compose_title(source, cfg["case"]["label"],
+                                           entry.get("label", key), window_txt),
                     run_styles=styles, figsize=(10.0, 5.0), dpi=args.dpi,
                 ),
                 # The .TS traces grow while a run integrates, so no mtime
