@@ -100,9 +100,11 @@ run directory alone. Ask, then say back what you chose.
    against a still-writing run.
 
 9. **Promote the keepers and write the finding.** Copy the few worth keeping to
-   `$UB_WX_FIGS_KEEP` / group6, from the job or a DTN, not the login node. **No
-   figure images in git.** Put the finding, with its caveats, in the case's
-   `notes.md`.
+   persistent group storage, from the job or a DTN, not the login node — the
+   brc-tools default is `$BRC_TOOLS_OUTPUT_DIR` (`lawson-group6/jrlawson/brc-tools-output`);
+   a ub-wx case has its own `$UB_WX_FIGS_KEEP`, which is **unset outside that
+   repo**, so do not reach for it by default. **No figure images in git.** Put the
+   finding, with its caveats, in the case's `notes.md`.
 
 ## Reading a cross-section
 
