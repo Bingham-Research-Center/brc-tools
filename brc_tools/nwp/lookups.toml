@@ -192,6 +192,18 @@ ne = [40.55, -108.80]
 sw = [39.85, -109.70]
 ne = [41.15, -109.35]
 
+# The Green River trench, NNE->SSW: Flaming Gorge -> Red Canyon -> Browns Park ->
+# Canyon of Lodore -> Whirlpool -> Split Mountain -> Jensen. A band rather than a
+# line, because the river is not straight and a single transect either follows the
+# water and leaves the basins, or spans the basins and leaves the water.
+#
+# THIS IS A VIEW, NOT A CLAIM ABOUT WHERE ANYTHING IS -- it says which slab of
+# atmosphere to section, and every place-name inside it still comes from [waypoints].
+# Pairs with [waypoint_groups] green_river_corridor.
+[regions.uinta_basin_xsection_green_river]
+sw = [40.35, -109.75]
+ne = [41.05, -108.85]
+
 [regions.utah]
 sw = [36.9, -114.2]
 ne = [42.1, -108.9]
@@ -341,6 +353,11 @@ elevation_m = 1706
 lat = 40.992
 lon = -109.721
 elevation_m = 1941
+# UCC25 sits 0.95 km away at 40.98347/-109.72754, 6375 ft = 1943 m -- the same place
+# to within the label's precision, and it reported through 21-22 Nov 2025. Added as a
+# stid so the orientation landmark doubles as an obs site; the coordinates are left
+# as found because existing waypoint_groups reference them.
+reference_stid = "UCC25"
 
 [waypoints.dutch_john]
 lat = 40.930
@@ -356,6 +373,74 @@ elevation_m = 1843          # crest elevation
 lat = 40.711
 lon = -109.828
 elevation_m = 3718          # highest summit of the eastern Uintas
+
+# ---------------------------------------------------------------------------
+# GREEN RIVER CORRIDOR. Added 2026-07-30 for ub-wx
+# experiments/20251121-green-river-cold-reservoir (gate A0). Every entry below is a
+# WORKING OBSERVATION SITE, not a map label: each returned wind and temperature
+# through the night of 21-22 Nov 2025. Coordinates and elevations are Synoptic's --
+# elevations are reported in FEET there and converted here, cross-checked against the
+# 3-arc-second DEM (Manila 6375 ft -> 1943 m against a 1944 m DEM sample).
+#
+# WHAT IS DELIBERATELY ABSENT, and why: Browns Park, the Canyon of Lodore, Echo Park,
+# Deerlodge Park, Jones Hole, Red Canyon, Diamond Mountain and Blue Mountain are all
+# named in that experiment's prose and are NOT here. There is no station at any of
+# them -- the easternmost corridor site is kings_point at -109.103 -- so their
+# coordinates would be recollection rather than a source, and sampling the DEM at
+# guessed positions put several of them on the wrong landform (a "Red Canyon" guess
+# landed on a 2116 m rim above a 1841 m reservoir). Adding them needs a gazetteer
+# (USGS GNIS), which is a separate change with a citable source.
+# ---------------------------------------------------------------------------
+
+# The trench, north to south.
+[waypoints.cart_creek]
+lat = 40.88472
+lon = -109.41694
+elevation_m = 2126          # 6975 ft
+reference_stid = "CCRU1"
+
+# Easternmost corridor observation of any kind: the approach to Browns Park, and the
+# only station between Flaming Gorge and the Jensen cluster.
+[waypoints.kings_point]
+lat = 40.85975
+lon = -109.10344
+elevation_m = 1741          # 5713 ft
+reference_stid = "KPRU1"
+
+# On the Diamond Mountain plateau -- a candidate cold-air SOURCE region rather than a
+# receiving site, which is why it earns an entry despite being off the river.
+[waypoints.diamond_rim]
+lat = 40.61722
+lon = -109.24278
+elevation_m = 2356          # 7730 ft
+reference_stid = "DIAU1"
+
+# The UDOT US-191 / SR-44 chain crossing the Uinta north slope: four sites spanning
+# 2212-2551 m on the highest cold-air source feeding the trench. They are a
+# transect in their own right, which no single station can be.
+[waypoints.moose_pond]
+lat = 40.84185
+lon = -109.64705
+elevation_m = 2461          # 8076 ft
+reference_stid = "UTMOP"
+
+[waypoints.willie_spring]
+lat = 40.85390
+lon = -109.46205
+elevation_m = 2416          # 7927 ft
+reference_stid = "UTWIS"
+
+[waypoints.bassett_spring]
+lat = 40.72400
+lon = -109.46880
+elevation_m = 2551          # 8368 ft
+reference_stid = "UTBAS"
+
+[waypoints.windy_point]
+lat = 40.64125
+lon = -109.48590
+elevation_m = 2212          # 7258 ft
+reference_stid = "UTWPO"
 
 [waypoints.rangely]
 lat = 40.087
@@ -479,6 +564,37 @@ basin_landmarks = [
 # collide and the longer name wins the space for no extra context.
 basin_ns_landmarks = [
     "ouray", "vernal", "dutch_john", "manila",
+]
+
+# The Green River trench, north to south, in the order drainage air would reach them:
+# the reservoir arm at Manila -> the dam -> Cart Creek -> the Browns Park approach at
+# Kings Point -> the south exit at Split Mountain, Dinosaur NM and Jensen. Every one
+# is a station that reported through 21-22 Nov 2025 (ub-wx gate A0), so this group is
+# both a section label set and a verification pull.
+#
+# THE MIDDLE OF THE TRENCH IS MISSING AND THAT IS NOT AN OVERSIGHT: there is no
+# station in Browns Park proper, the Canyon of Lodore, Echo Park or the Yampa reach.
+# This group BRACKETS the trench; it does not sample it. Anything claimed about the
+# Lodore reach specifically is model-only.
+#
+# EVERY MEMBER CARRIES A reference_stid, and must. ObsSource._resolve_stids indexes
+# ["reference_stid"] without a default, so one label-only waypoint raises KeyError for
+# the whole group. flaming_gorge_dam is therefore NOT here -- it is a label, and its
+# nearest gauge (FLGU1) is hydrologic and returned no wind or temperature for
+# 21-22 Nov 2025. Use it to annotate a section, never to pull observations.
+green_river_corridor = [
+    "manila", "cart_creek", "kings_point",
+    "split_mountain", "dinosaur_nm", "jensen",
+]
+
+# The cold-air SOURCE regions feeding the trench, as opposed to the receiving sites
+# above: the Uinta north slope via the UDOT US-191/SR-44 chain (2212-2551 m), and the
+# Diamond Mountain plateau. Pairs with the tracer seeding in the same experiment.
+# marsh_peak is excluded for the same reason as flaming_gorge_dam above -- it is the
+# range's highest summit and a natural label, but it is not a station.
+green_river_sources = [
+    "moose_pond", "willie_spring", "bassett_spring", "windy_point",
+    "diamond_rim",
 ]
 
 # ── Airports (aviation exports) ────────────────────────────────────────────
