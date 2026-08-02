@@ -61,8 +61,10 @@ open is gap 5's cross-nest provenance half and gap 6, which needs no code.*
    their valid times**, so a root swept hourly and then at 15 minutes animates as
    though the whole night ran at one speed; `--require-even` refuses that rather
    than letting it pass silently.
-10. **Promote the keepers** to `$UB_WX_FIGS_KEEP`. Scratch is the mass output; no
-    figure images in git.
+10. **Promote the keepers** to persistent group storage — `$BRC_TOOLS_OUTPUT_DIR`
+    (`lawson-group6/jrlawson/brc-tools-output`), or a ub-wx case's own
+    `$UB_WX_FIGS_KEEP`, which is **unset outside that repo**. Scratch is the mass
+    output; no figure images in git.
 11. **Write the finding, with its caveats, into the case's `notes.md`.**
 
 ## Worked invocation — the Ashley suite
