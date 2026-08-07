@@ -58,6 +58,38 @@ def test_skill_teaches_the_flags_that_keep_a_sweep_honest(skill):
         assert flag in text, f"{skill} never mentions {flag}"
 
 
+def test_full_figures_names_every_family_its_engine_has():
+    """The one WRF skill the checks above do not cover, and it had drifted.
+
+    `/wrf-full-figures` is deliberately outside `DRIVEN_BY`: that set also asserts
+    `--dry-run`, `--report`, `--allow-errors` and three `(ask the user)` prompts,
+    none of which the publication engine has -- it predates the `FigureLedger`
+    workflow the two sweep engines share. Family coverage is the part that does
+    apply, and by the time this was written `deficitbulk_map` and `deficit_budget`
+    were in `FAMILIES` and named nowhere in the skill, so an agent following it
+    could not reach them.
+    """
+    from brc_tools.nwp.wrf_figures import FAMILIES
+
+    text = _skill("wrf-full-figures")
+    missing = [f for f in FAMILIES if f"`{f}`" not in text and f not in text]
+    assert not missing, f"wrf-full-figures does not name: {missing}"
+
+
+@pytest.mark.parametrize("skill", ["wrf-basin-winds", "wrf-convective"])
+def test_the_promote_target_is_not_only_a_ub_wx_variable(skill):
+    """`$UB_WX_FIGS_KEEP` is set by a sibling repo's `.env`.
+
+    Both skills named it as *the* place keepers go, so an agent working a case
+    that is not a ub-wx one -- a study in `latex-jrl-mjd-mdpiair-2026`, say -- was
+    told to copy figures to an unset variable. brc-tools has its own answer and
+    the skills must name it: the output root these engines already default to.
+    """
+    text = _skill(skill)
+    assert "BRC_TOOLS_OUTPUT_DIR" in text, \
+        "name the brc-tools output root, not only the ub-wx variable"
+
+
 @pytest.mark.parametrize("skill", DRIVEN_BY)
 def test_skill_says_to_read_the_err_not_just_the_out(skill):
     """Any failure exits non-zero and the `[tally]` line is printed last -- but

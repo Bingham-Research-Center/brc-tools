@@ -1,6 +1,6 @@
 ---
 name: wrf-full-figures
-description: Generate publication "full-figures" (300-DPI versions of the WRF quicklooks) for a Uinta Basin WRF case on CHPC SLURM, choosing a specific case/run. Use when asked to make full-figures / publication figures for a WRF run.
+description: Generate publication "full-figures" (300-DPI versions of the WRF quicklooks) on CHPC SLURM from whichever case TOML you name — the pelican2013 study is the default example, not the scope. Use when asked to make full-figures / publication figures for a WRF run.
 ---
 
 # WRF full-figures on SLURM
@@ -71,12 +71,20 @@ brc-tools. (The older `wrf-nudge-ozone-air2026` repo is frozen/read-only — do 
 - The slurm wrapper sets the `brc-tools-2026` python, `PYTHONPATH=~/gits/brc-tools`, and
   `MPLCONFIGDIR` on scratch; figures route out of every repo by default.
 - Redirect output with `--output-dir <path>` (nests `<case>/<family>/`).
-- Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz, heatdeficit, heatdeficit_map, deficitflux_map, deficitflux_div, deficitflux_transect, all`.
+- Families: `domains, section, upperair, surface, difference, profile, skewt, thetaz,
+  heatdeficit, heatdeficit_map, deficitflux_map, deficitflux_div, deficitflux_transect,
+  deficitbulk_map, deficit_budget, all`.
   `heatdeficit_map` renders the spatial cold-pool heat-deficit field (per case) + a diff map
   per `[[differences]]` pair; nest via `heatdeficit_domain` (pelican2013 = `d02`).
   The `deficitflux_*` trio renders cold-pool **advection**: flux quivers over the deficit
   (`deficitflux_map`), advective dH/dt (`deficitflux_div`), and canyon-gate export Φ(t)
   through `[[transects]]` lines (`deficitflux_transect`); nest via `deficitflux_domain`.
+  `deficitbulk_map` adds a three-panel **exploratory** diagnostic — active-layer depth,
+  deficit-weighted speed `|F|/H`, and a reduced-gravity bulk Froude proxy; **the Froude
+  panel is not a hydraulic-control diagnosis** and may not be captioned as one.
+  `deficit_budget` closes the books: area-mean `H`, interval storage, horizontal
+  convergence and the **unresolved remainder**, with a CSV of the exact interval values —
+  the remainder is the honest part, so quote it whenever you quote the budget.
 - The `upperair` family renders **two** maps per time: the crest-level θ/wind/T-adv map on
   the inner nest plus a synoptic **T-advection map on a pressure surface**
   (`upper_pressure_hpa`, default 600 hPa, computed on `upper_adv_domain` — the coarse

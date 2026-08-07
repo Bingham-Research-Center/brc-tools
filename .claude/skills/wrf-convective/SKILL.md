@@ -90,8 +90,11 @@ what the job costs and what it can claim. Ask, then say back what you chose.
    safe against a still-writing run.
 
 9. **Promote the keepers and write the finding.** Copy the few worth keeping to
-   `$UB_WX_FIGS_KEEP`, from the job or a DTN. **No figure images in git.** Put the
-   finding and its caveats in the case's `notes.md`.
+   persistent group storage, from the job or a DTN — the brc-tools default is
+   `$BRC_TOOLS_OUTPUT_DIR` (`lawson-group6/jrlawson/brc-tools-output`); a ub-wx case
+   has its own `$UB_WX_FIGS_KEEP`, which is **unset outside that repo**, so do not
+   reach for it by default. **No figure images in git.** Put the finding and its
+   caveats in the case's `notes.md`.
 
 ## Notes — what goes wrong first
 
