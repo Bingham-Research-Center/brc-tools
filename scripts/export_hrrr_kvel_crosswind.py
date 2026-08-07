@@ -20,7 +20,7 @@ LOG = logging.getLogger(__name__)
 
 DEFAULT_AIRPORT = "KVEL"
 DEFAULT_UPLOAD_BUCKET = "forecasts"
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "data" / "basinwx"
+DEFAULT_OUTPUT_DIR = Path.home() / ".cache" / "brc-tools" / "basinwx"
 
 
 def parse_args() -> argparse.Namespace:

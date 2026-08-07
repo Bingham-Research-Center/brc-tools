@@ -2,8 +2,10 @@
 import os
 import sys
 import datetime
+import time
 import pytz
 import json
+from pathlib import Path
 
 import numpy as np
 from scipy.signal import medfilt
@@ -21,9 +23,17 @@ from brc_tools.utils.util_funcs import get_current_datetime
 
 
 if __name__ == "__main__":
-    # Save to scratch or temp directory (works from any cwd)
-    data_root = os.path.expanduser("~/gits/brc-tools/data")
+    # Runtime output stays out of the repo checkout: the website holds the live
+    # copy, so local snapshots are a rolling cache, not a record.
+    data_root = os.path.expanduser("~/.cache/brc-tools/map_obs")
     os.makedirs(data_root, exist_ok=True)
+
+    # Without pruning this grows ~4.4 GB/yr at the 5-min cron cadence.
+    cutoff = time.time() - 90 * 86400
+    for old in Path(data_root).glob("map_obs*.json"):
+        if old.stat().st_mtime < cutoff:
+            old.unlink(missing_ok=True)
+
     map_datetime = get_current_datetime()
 
     print("Downloading metadata...")

@@ -19,7 +19,7 @@ _MIN_GRIB_SIZE = 1000
 _DEFAULT_CACHE_DIR = (
     Path(os.environ.get("BRC_TOOLS_HRRR_CACHE", ""))
     if os.environ.get("BRC_TOOLS_HRRR_CACHE")
-    else Path(__file__).resolve().parents[2] / "data" / "herbie_cache" / "hrrr"
+    else Path.home() / ".cache" / "brc-tools" / "herbie" / "hrrr"
 )
 
 

@@ -21,11 +21,11 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
-var/
+/var/
 wheels/
 *.egg-info/
 .installed.cfg
@@ -46,11 +46,9 @@ env/
 .env.local
 *.env
 
-# Data files (keep schema)
-data/*.json
-data/*.csv
-data/*.nc
-data/*.grib2
+# Runtime data — ignore everything under data/ except the committed schema.
+# (Per-extension rules were non-recursive: data/foo/x.json slipped through.)
+data/*
 !data/schema/
 !data/README.md
 
@@ -98,5 +96,10 @@ CLAUDE.local.md
 .coverage
 .pytest_cache/
 htmlcov/
+
+# Linter/type-checker caches; parquet caches (soundings/AQS)
+.ruff_cache/
+.mypy_cache/
+*.parquet
 # BasinWX export staging (legacy repo-local default; now ~/.cache/brc-tools/basinwx)
 data/basinwx/
