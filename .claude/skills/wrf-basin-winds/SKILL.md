@@ -19,14 +19,21 @@ Using the wrong one wastes a job and produces a misleading figure.
 
 ## Families
 
-`--figure` is repeatable; the default is all four.
+`--figure` is repeatable; the default is all five.
 
 | `--figure` | answers |
 |---|---|
-| `topdown` | what does the surface look like — wind, θ₂ₘ, PBLH, surface decoupling, snow, 10 m convergence |
+| `topdown` | what does the surface look like — wind, θ₂ₘ, PBLH, surface decoupling, snow, 10 m convergence, and the derived fog / cloud / surface-energy-budget fields |
 | `section` | what is the vertical structure along this line — terrain-filled curtain on native eta levels |
 | `profile` | how deep is the stable layer here, and is the air above it dry enough to mix down |
 | `view3d` | how far has the cold pool filled the basin |
+| `tracers` | **where did this air come from** — dominant-source curtains, per-source share curtains, a stacked source spectrum at a point, and an origin map. Needs a run seeded with `tracer_opt`; named-skipped otherwise |
+
+A sixth job, and a **separate engine** because it spans the whole run rather than
+one valid time: `scripts/wrf_timeheight.py` draws time–height sections at `tslist`
+stations from the per-station column profiles, at model-timestep cadence. That is
+the family that answers *when* — onset, deepening, break-up. Same TOML, its own
+`[[timeheight]]` entries, its own DTN wrapper (`wrf_timeheight.dtn.slurm`).
 
 ## Steps
 

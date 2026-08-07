@@ -72,7 +72,8 @@ class TestSharedFlags:
 
 class TestFamilies:
     def test_winds_families(self, winds):
-        assert winds.FAMILIES == ("topdown", "section", "profile", "view3d")
+        assert winds.FAMILIES == ("topdown", "section", "profile", "view3d",
+                                  "tracers")
 
     def test_convective_families_include_meso(self, convective):
         assert "meso" in convective.FAMILIES

@@ -34,6 +34,8 @@ def make_synthetic_wrf(
     lon0: float = -110.0,
     drop_vars: tuple[str, ...] = (),
     convective: bool = False,
+    moisture: bool = False,
+    tracers: int = 0,
 ):
     """Return a small in-memory ``xr.Dataset`` mimicking a wrfout file.
 
@@ -46,6 +48,21 @@ def make_synthetic_wrf(
     ``REFL_10CM`` is shaped to have a single unambiguous 40 dBZ top: it rises to a
     peak at the middle level and falls above, which is what makes an echo-top
     routine's "highest crossing" behaviour testable against "lowest crossing".
+
+    ``moisture=True`` adds what the derived fog / cloud / energy-budget
+    diagnostics need -- the hydrometeor mixing ratios, ``CLDFRA``, ``QKE`` and the
+    surface flux fields -- shaped so their answers are known exactly:
+
+    * ``QCLOUD`` is 0.5 g/kg in the bottom TWO levels of column ``i = 0`` only, so
+      ground-based fog is there and nowhere else, and its depth is the second
+      mass level's height AGL (150 m on this grid).
+    * column ``i = 1`` has cloud in level 2 with a CLEAR bottom level, which is
+      what separates a ceiling from a surface obscuration.
+    * the surface fluxes are chosen so ``Rn + G - H - LE`` is exactly zero.
+
+    ``tracers=N`` adds ``tr17_1..tr17_N``.  With the default N = 2 the west half
+    of the grid is 0.75/0.25 (a clear dominant source) and the east half is
+    identically zero (untagged), so both branches of the attribution are covered.
     """
     import xarray as xr
 
@@ -134,6 +151,43 @@ def make_synthetic_wrf(
                 "WSPD10MAX": (sfc, _t(np.full((ny, nx), 18.0))),
             }
         )
+    if moisture:
+        qc = np.zeros((nz, ny, nx))
+        qc[:2, :, 0] = 0.5e-3        # fog: bottom two levels of the west column
+        cldfra = np.zeros((nz, ny, nx))
+        cldfra[:2, :, 0] = 1.0       # ...which is a surface obscuration
+        cldfra[2, :, 1] = 1.0        # ...and this one is a ceiling at level 2
+        zero3 = np.zeros((nz, ny, nx))
+        # Rn = SWDOWN*(1-ALBEDO) + GLW - EMISS*sigma*TSK**4, TSK = 268 K, EMISS = 1
+        #    = 0 + 250 - 292.53 = -42.53 W/m2, and G - H - LE = -(-42.53) exactly.
+        sigma = 5.670374419e-8
+        rnet = 250.0 - sigma * 268.0 ** 4
+        hfx = -10.0
+        ds = ds.assign(
+            {
+                "QCLOUD": (xyz, _t(qc)),
+                "QRAIN": (xyz, _t(zero3)),
+                "QICE": (xyz, _t(zero3)),
+                "QSNOW": (xyz, _t(zero3)),
+                "CLDFRA": (xyz, _t(cldfra)),
+                "QKE": (xyz, _t(np.full((nz, ny, nx), 0.4))),  # = 2 x TKE
+                "SWDOWN": (sfc, _t(np.zeros((ny, nx)))),
+                "GLW": (sfc, _t(np.full((ny, nx), 250.0))),
+                "ALBEDO": (sfc, _t(np.full((ny, nx), 0.2))),
+                "EMISS": (sfc, _t(np.ones((ny, nx)))),
+                "HFX": (sfc, _t(np.full((ny, nx), hfx))),
+                "LH": (sfc, _t(np.zeros((ny, nx)))),
+                "GRDFLX": (sfc, _t(np.full((ny, nx), hfx - rnet))),
+                "UST": (sfc, _t(np.full((ny, nx), 0.1))),
+            }
+        )
+    if tracers:
+        half = max(nx // 2, 1)
+        for n in range(1, tracers + 1):
+            field = np.zeros((nz, ny, nx))
+            # Descending shares, normalised: tracer 1 gets the largest.
+            field[:, :, :half] = 1.0 / 2 ** n
+            ds = ds.assign({f"tr17_{n}": (xyz, _t(field))})
     if drop_vars:
         ds = ds.drop_vars([v for v in drop_vars if v in ds])
     return ds

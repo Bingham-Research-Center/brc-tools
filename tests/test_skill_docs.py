@@ -20,6 +20,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / ".claude" / "skills"
 DOCS = ROOT / "docs"
+README = ROOT / "README.md"
 
 #: skill -> the engine script whose families it must advertise
 DRIVEN_BY = {"wrf-basin-winds": "wrf_winds", "wrf-convective": "wrf_convective"}
@@ -36,6 +37,32 @@ def _engine(name: str):
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+class TestReadmeTeachesHowToInvoke:
+    """The skill table said which engine answers which question and never showed
+    anyone how to ask.  A reader who cannot see an example prompt reaches for the
+    engine's flags instead, which is the workflow the skills exist to replace."""
+
+    def test_the_section_exists(self):
+        assert "### How to use these skills" in README.read_text()
+
+    @pytest.mark.parametrize("skill", sorted(p.name for p in SKILLS.iterdir()
+                                             if (p / "SKILL.md").exists()))
+    def test_every_skill_that_exists_gets_an_example_prompt(self, skill):
+        """A skill added without an example here is one nobody finds."""
+        section = README.read_text().split("### How to use these skills", 1)[1]
+        section = section.split("### Which figure answers", 1)[0]
+        assert f"/{skill}" in section, f"no example prompt for /{skill}"
+
+    def test_it_names_the_convention_that_decides_the_engine(self):
+        """`wrf_output` matches one filename format; `wrf_section` accepts both.
+        A `nocolons = .true.` run therefore renders nothing under
+        /wrf-full-figures, which looks like a broken run rather than a wrong
+        engine -- so the README says so where the engine is chosen."""
+        section = README.read_text().split("### How to use these skills", 1)[1]
+        section = section.split("### Which figure answers", 1)[0]
+        assert "nocolons" in section
 
 
 @pytest.mark.parametrize("skill,engine", DRIVEN_BY.items())
