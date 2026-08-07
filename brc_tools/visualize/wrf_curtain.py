@@ -30,14 +30,20 @@ import numpy as np
 from brc_tools.visualize.nwp_maps import _draw_section_towns, _geo_locator_inset
 from brc_tools.visualize.style import get_style, norm_kwargs
 
-__all__ = ["curtain_mesh", "plot_wrf_curtain", "shade_style_key", "SHADE_FIELD"]
+__all__ = ["curtain_mesh", "plot_wrf_curtain", "shade_style_key", "SHADE_FIELD",
+           "SHADE_DERIVED", "shade_values", "theta_anomaly"]
 
 _ACCENT = "#c0392b"
 
 #: Shade name -> the :class:`~brc_tools.nwp.section.NWPSection` attribute it draws.
 SHADE_FIELD = {"speed": "speed2d", "theta": "theta2d", "temp": "temp2d",
                "along": "along2d", "normal": "normal2d", "w": "w2d",
-               "theta_e": "thetae2d", "refl": "refl2d"}
+               "theta_e": "thetae2d", "refl": "refl2d",
+               # Optional curtains, present only when the section was sampled
+               # with the matching load_plane(extras=...) -- see
+               # brc_tools.nwp.wrf_section.PLANE_EXTRAS.
+               "rh": "rh2d", "qv": "qv2d", "cloud": "cloud2d", "vis": "vis2d",
+               "tke": "tke2d", "theta_grad": "thetagrad2d"}
 _SHADE_FIELD = SHADE_FIELD  # back-compat for existing importers
 
 #: Shade name -> the default ``VAR_STYLES`` key used to colour it.
@@ -50,7 +56,48 @@ _SHADE_FIELD = SHADE_FIELD  # back-compat for existing importers
 #: it, so a shade can no longer exist without a scale that means something.
 SHADE_STYLE = {"speed": "wind_speed_10m", "theta": "theta", "temp": "temp_2m",
                "along": "wind_along", "normal": "wind_normal", "w": "w",
-               "theta_e": "theta", "refl": "refl"}
+               "theta_e": "theta", "refl": "refl",
+               "rh": "rh", "qv": "qvapor", "cloud": "cloud_water",
+               "vis": "visibility", "tke": "tke", "theta_grad": "theta_grad",
+               "theta_anom": "theta_anom"}
+
+
+def theta_anomaly(section) -> np.ndarray:
+    """``theta`` minus the value in the bottom cell of the lowest-terrain column.
+
+    A fixed *absolute* theta scale cannot serve a sweep across a night: the floor
+    itself cools several kelvin, so every frame's structure slides down the
+    colour bar and the panels stop being comparable.  Subtracting the section's
+    own floor value takes that bulk cooling out and leaves the stratification --
+    how many kelvin of warming there are between the coldest air in the cut and
+    each cell above it -- which is the quantity that is actually being compared.
+
+    The reference is a single number per section, so this is a pure offset: it
+    changes what the colours *mean*, not the shape of anything.
+    """
+    theta = np.asarray(section.theta2d, dtype=float)
+    terrain = np.asarray(section.terrain1d, dtype=float)
+    floor = int(np.nanargmin(terrain))
+    return theta - theta[0, floor]
+
+
+#: Shade names that are computed from a section rather than read off it.
+SHADE_DERIVED = {"theta_anom": theta_anomaly}
+
+
+def shade_values(section, shade: str) -> np.ndarray:
+    """The 2-D field a shade draws, whether stored on the section or derived."""
+    if shade in SHADE_DERIVED:
+        return SHADE_DERIVED[shade](section)
+    if shade not in SHADE_FIELD:
+        raise ValueError(f"shade must be one of {sorted(set(SHADE_FIELD) | set(SHADE_DERIVED))}, "
+                         f"got {shade!r}")
+    field = getattr(section, SHADE_FIELD[shade], None)
+    if field is None:
+        raise ValueError(
+            f"section carries no {SHADE_FIELD[shade]} for shade={shade!r}; "
+            f"sample it with wrf_section.load_plane(extras=...)")
+    return np.asarray(field, dtype=float)
 
 
 def shade_style_key(shade: str) -> str:
@@ -76,6 +123,14 @@ SHADE_LABEL = {
     "theta_e": r"$\theta_e$ (K)",
     "temp": r"$T$ (K)",
     "refl": "reflectivity (dBZ)",
+    "rh": r"relative humidity (\%), over liquid water",
+    "qv": r"water vapour mixing ratio (g kg$^{-1}$)",
+    "cloud": r"suspended cloud water $+$ ice (g kg$^{-1}$)",
+    "vis": r"visibility (km) -- hydrometeors only, capped at 20 km",
+    "tke": r"turbulent kinetic energy (m$^2$ s$^{-2}$)",
+    "theta_grad": r"$\partial\theta/\partial z$ (K per 100 m) -- $+$ is stable",
+    "theta_anom": r"$\theta-\theta_{\mathrm{floor}}$ (K), floor = bottom cell of "
+                  r"the lowest-terrain column",
 }
 
 _COMPASS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
@@ -146,6 +201,7 @@ def plot_wrf_curtain(
     out_path,
     *,
     shade: str = "speed",
+    values=None,
     style=None,
     cbar_label: str | None = None,
     title: str,
@@ -157,6 +213,7 @@ def plot_wrf_curtain(
     quiver_stride: tuple[int, int] = (4, 10),
     y_top_m: float = 3000.0,
     y_bottom_m: float | None = None,
+    vertical: str = "asl",
     waypoints: dict | None = None,
     waypoint_offset_km: float = 15.0,
     locator: dict | None = None,
@@ -188,22 +245,48 @@ def plot_wrf_curtain(
 
     ``w_exaggeration`` scales the vertical component of the in-plane vectors and is
     a property of the *regime*, not the plot geometry — see ``docs/WRF-WINDS.md``.
+
+    ``vertical`` chooses the height axis, and the two answer different questions:
+
+    * ``"asl"`` (default) — geometric height above sea level. The terrain is a
+      staircase across the bottom and a level surface is a horizontal line, so
+      this is the view that shows whether cold air is **ponding** — filling a
+      basin to a level, independent of the ground.
+    * ``"agl"`` — height above the local ground, i.e. the terrain flattened out.
+      A layer of constant depth becomes a horizontal band, so this is the view
+      that shows whether the layer is **terrain-following** — a drainage skin
+      running down a slope rather than a pool sitting in it.
+
+    The same night can look like a pool in one and a skin in the other, which is
+    exactly why both are offered; ``y_top_m``/``y_bottom_m`` are read in whichever
+    frame is selected.
     """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    if shade not in _SHADE_FIELD:
-        raise ValueError(f"shade must be one of {sorted(_SHADE_FIELD)}, got {shade!r}")
-    field = getattr(section, _SHADE_FIELD[shade], None)
-    if field is None:
-        raise ValueError(f"section carries no {_SHADE_FIELD[shade]} for shade={shade!r}")
+    if vertical not in ("asl", "agl"):
+        raise ValueError(f"vertical must be 'asl' or 'agl', got {vertical!r}")
+    # An explicit `values` array draws any (nz, n) field the caller has computed
+    # -- a single tracer's share, say -- with all of this figure's furniture:
+    # native cells, terrain staircase, in-plane vectors, towns, locator inset.
+    # The caller then owns the meaning, so it must pass `style` and `cbar_label`.
+    field = (shade_values(section, shade) if values is None
+             else np.asarray(values, dtype=float))
 
     st = style if style is not None else get_style(shade_style_key(shade))
     dist = np.asarray(section.distance_km, dtype=float)
     terrain = np.asarray(section.terrain1d, dtype=float)
     zm = np.asarray(section.height2d, dtype=float)
     X, Y = curtain_mesh(section)
+
+    if vertical == "agl":
+        # Flatten the terrain out of every height: cell corners use the terrain
+        # interpolated to the same corners the mesh uses, so the ground stays at
+        # exactly zero rather than wobbling by half a cell.
+        Y = Y - _edges1d(terrain)[None, :]
+        zm = zm - terrain[None, :]
+        terrain = np.zeros_like(terrain)
 
     y_bottom = (y_bottom_m if y_bottom_m is not None
                 else float(np.floor(np.nanmin(terrain) / 100.0) * 100.0 - 50.0))
@@ -250,7 +333,8 @@ def plot_wrf_curtain(
     ax.set_ylim(y_bottom, y_top_m)
     ax.set_xlim(float(dist.min()), float(dist.max()))
     ax.set_xlabel("distance along transect (km)")
-    ax.set_ylabel("height (m ASL)")
+    ax.set_ylabel("height (m ASL)" if vertical == "asl"
+                  else "height above ground (m) -- terrain flattened")
     ax.set_title(title)
 
     tkw = dict(color=_ACCENT, fontsize=11, fontweight="bold", transform=ax.transAxes)

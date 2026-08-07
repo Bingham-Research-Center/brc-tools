@@ -39,10 +39,11 @@ import numpy as np
 from brc_tools.nwp import wrf_output as wo
 from brc_tools.nwp.section import NWPSection
 
-__all__ = ["WRFPlane", "load_plane", "plan_dataset", "plan_extent",
-           "section_from_plane", "extract_wrf_section", "section_coverage",
-           "SectionCoverage", "grid_spacing_km",
-           "list_valid_times", "wrfout_path", "init_time"]
+__all__ = ["WRFPlane", "load_plane", "plan_dataset", "plan_diagnostics",
+           "plan_extent", "section_from_plane", "extract_wrf_section",
+           "section_coverage", "SectionCoverage", "grid_spacing_km",
+           "nearest_column",
+           "PLANE_EXTRAS", "list_valid_times", "wrfout_path", "init_time"]
 
 _KM_PER_DEG_LAT = 110.574
 _KM_PER_DEG_LON = 111.320
@@ -176,6 +177,32 @@ def plan_dataset(ds, *, extra: dict | None = None):
     )
 
 
+def plan_diagnostics(ds, keys, *, params: dict | None = None) -> dict[str, np.ndarray]:
+    """Derived 2-D fields for ``extra=`` in :func:`plan_dataset`, by style key.
+
+    Wraps :func:`brc_tools.nwp.wrf_derived.surface_diagnostic` so that a key this
+    run cannot supply is **omitted** rather than raised.  That is what makes the
+    engines' existing "not written by this run" path do the right thing for a
+    derived field too: the variable simply is not in the plan dataset, and the
+    figure is recorded as absent instead of taking the sweep down.
+
+    ``params`` is ``{key: {kwarg: value}}`` for the few case-dependent knobs --
+    ``heat_deficit`` needs a crest height, ``theta_grad_sfc`` a layer depth.
+    """
+    from brc_tools.nwp import wrf_derived as wd
+
+    params = params or {}
+    out: dict[str, np.ndarray] = {}
+    for key in keys:
+        if key not in wd.SURFACE_REQUIRES:
+            continue
+        try:
+            out[key] = wd.surface_diagnostic(ds, key, **params.get(key, {}))
+        except KeyError:
+            continue
+    return out
+
+
 def plan_extent(ds, *, pad_deg: float = 0.0) -> tuple[float, float, float, float]:
     """``(lon0, lon1, lat0, lat1)`` covering the domain, inset by ``pad_deg``.
 
@@ -215,29 +242,89 @@ class WRFPlane:
     # (nz, ny, nx) dBZ from REFL_10CM, or None when the run did not write it
     # (do_radar_ref = 0). Optional so drainage and convective cases share a type.
     refl: np.ndarray | None = None
+    # --- optional extras, each a further (nz, ny, nx) read ---------------------
+    # Requested by name through load_plane(extras=...) and None otherwise.  They
+    # are opt-in because a 600 m nest at 99 levels is ~140 MB per 3-D field: a
+    # plain wind sweep that loaded all of these would pay about a gigabyte per
+    # time for curtains nobody asked for.
+    rh: np.ndarray | None = None  # %
+    qv: np.ndarray | None = None  # g/kg
+    cloud: np.ndarray | None = None  # suspended condensate, g/kg
+    vis: np.ndarray | None = None  # km
+    tke: np.ndarray | None = None  # m2/s2
+    theta_grad: np.ndarray | None = None  # K per 100 m
+    tracers: np.ndarray | None = None  # (n_tracers, nz, ny, nx)
+    tracer_names: tuple[str, ...] = ()
 
 
-def load_plane(ds) -> WRFPlane:
+#: Names accepted by ``load_plane(extras=...)``, each mapping to the matching
+#: optional :class:`WRFPlane` field and, downstream, an ``NWPSection`` curtain.
+PLANE_EXTRAS = ("rh", "qv", "cloud", "vis", "tke", "theta_grad", "tracers")
+
+
+def load_plane(ds, *, extras: tuple[str, ...] = ()) -> WRFPlane:
     """Read the 3-D fields for :func:`section_from_plane` from an open ``wrfout``.
 
     Reflectivity is picked up when the run wrote ``REFL_10CM``, so a convective
     case gets reflectivity curtains from the same single expensive read.
+
+    ``extras`` names further 3-D diagnostics to derive in the same pass -- see
+    :data:`PLANE_EXTRAS`.  Each is genuinely optional: an extra whose ingredients
+    this run did not write is left as ``None`` rather than raising, so one config
+    can ask for a fog curtain and still work against a run with no microphysics
+    output.
     """
+    from brc_tools.nwp import wrf_derived as wd
+
+    unknown = [e for e in extras if e not in PLANE_EXTRAS]
+    if unknown:
+        raise ValueError(f"unknown plane extras {unknown}; choose from {list(PLANE_EXTRAS)}")
+
     ue, ve = wo.earth_relative_winds(ds)
-    return WRFPlane(
+    theta = wo.potential_temperature(ds)
+    height = wo.geopotential_height_mass(ds)
+    plane = WRFPlane(
         refl=wo.reflectivity(ds) if "REFL_10CM" in ds else None,
         lat2d=wo.surface_field(ds, "XLAT"),
         lon2d=_lon180(wo.surface_field(ds, "XLONG")),
         terrain=wo.surface_field(ds, "HGT"),
-        height=wo.geopotential_height_mass(ds),
+        height=height,
         height_w=wo.geopotential_height_w(ds),
-        theta=wo.potential_temperature(ds),
+        theta=theta,
         temp=wo.temperature_k(ds),
         ue=ue,
         ve=ve,
         w=wo.vertical_velocity(ds),
         pressure_hpa=wo.pressure_pa(ds).mean(axis=(1, 2)) / 100.0,
     )
+    if not extras:
+        return plane
+
+    # Density is shared by the visibility calculation and nothing else, so it is
+    # built once here rather than inside each derivation.
+    rho = wd.air_density(ds) if "vis" in extras else None
+    builders = {
+        "rh": lambda: wd.relative_humidity(ds),
+        "qv": lambda: wo.qvapor(ds) * 1000.0,
+        "cloud": lambda: wd.cloud_condensate_gkg(ds),
+        "vis": lambda: wd.visibility_km(ds, rho=rho),
+        "tke": lambda: wd.turbulent_kinetic_energy(ds),
+        "theta_grad": lambda: wd.theta_gradient_k_per_100m(theta, height),
+    }
+    for name in extras:
+        if name == "tracers":
+            from brc_tools.nwp import wrf_tracers as wt
+
+            names = wt.tracer_variables(ds)
+            if names:
+                plane.tracers = wt.tracer_stack(ds, names)
+                plane.tracer_names = tuple(names)
+            continue
+        try:
+            setattr(plane, name, builders[name]())
+        except KeyError as exc:  # a variable this run did not write
+            print(f"[SKIP] section extra {name!r}: {exc}")
+    return plane
 
 
 def _sample_line(start, end, n):
@@ -273,6 +360,18 @@ def grid_spacing_km(lat2d, lon2d) -> float:
     if not steps:
         raise ValueError("grid must have at least two columns in one direction")
     return float(np.median(np.concatenate(steps)))
+
+
+def nearest_column(plane: WRFPlane, lat: float, lon: float) -> tuple[int, int]:
+    """``(j, i)`` of the plane column nearest ``(lat, lon)``.
+
+    The :class:`WRFPlane` counterpart of
+    :func:`brc_tools.nwp.wrf_output.nearest_column_index`, so a caller holding a
+    loaded plane can sample a point without reopening the file it came from.
+    """
+    jj, ii, _ = _nearest_columns(plane.lat2d, plane.lon2d,
+                                 np.array([float(lat)]), np.array([float(lon)]))
+    return int(jj[0]), int(ii[0])
 
 
 @dataclass
@@ -458,6 +557,11 @@ def section_from_plane(
     e_nrm, n_nrm = -n_hat, e_hat
     ue = plane.ue[:, jj, ii]
     ve = plane.ve[:, jj, ii]
+
+    def _extra(field):
+        """Sample an optional (nz, ny, nx) extra along the line, or pass None on."""
+        return None if field is None else _blank(field[:, jj, ii])
+
     return NWPSection(
         distance_km=dist,
         lon_line=lon_line,
@@ -474,8 +578,19 @@ def section_from_plane(
         termini=termini,
         orientation=orientation,
         height_w2d=plane.height_w[:, jj, ii],
-        refl2d=None if plane.refl is None else _blank(plane.refl[:, jj, ii]),
+        refl2d=_extra(plane.refl),
         offgrid1d=offgrid,
+        rh2d=_extra(plane.rh),
+        qv2d=_extra(plane.qv),
+        cloud2d=_extra(plane.cloud),
+        vis2d=_extra(plane.vis),
+        tke2d=_extra(plane.tke),
+        thetagrad2d=_extra(plane.theta_grad),
+        # (n_tracers, nz, n): the leading axis is the source, so the blanking
+        # has to reach the last axis for every tracer at once.
+        tracers2d=(None if plane.tracers is None
+                   else _blank(plane.tracers[:, :, jj, ii])),
+        tracer_names=plane.tracer_names,
     )
 
 

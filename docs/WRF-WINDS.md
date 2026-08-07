@@ -9,6 +9,11 @@ with `--figure` (repeatable; default is all of them):
 | `section` | **cross-sections** — terrain-filled curtains on native eta levels along named A→B lines, with θ contours, in-plane vectors, along-line town markers and a locator inset |
 | `profile` | **vertical profiles** — θ and humidity against height at named waypoints, with a wind-speed panel and height-paced barbs |
 | `view3d` | **3-D cold-pool views** — hillshaded terrain with the θ = θ_iso surface floating above it as a lid coloured by the depth of air it caps |
+| `tracers` | **air-mass origin** — dominant passive-tracer source as a curtain and a plan view, per-source share curtains, and a stacked source spectrum at a point. Needs a run seeded with `tracer_opt`; named-skipped otherwise |
+
+A fifth product lives in a **separate engine** because it spans the whole run
+rather than one valid time: `scripts/wrf_timeheight.py` draws **time–height
+sections** at `tslist` stations. See "Time–height sections" below.
 
 Plan views use the same renderer as the HRRR path (`brc_tools.visualize.nwp_maps`),
 so the two are directly comparable. The vertical is where they part company.
@@ -29,10 +34,14 @@ mass points, and draws the terrain as the staircase the model actually feels.
 | piece | lives in |
 |---|---|
 | adapter (`wrfout` → plan `Dataset` / `NWPSection`) | `brc_tools/nwp/wrf_section.py` |
+| derived diagnostics (fog, cloud, radiation, stability, TKE) | `brc_tools/nwp/wrf_derived.py` |
+| passive-tracer source attribution | `brc_tools/nwp/wrf_tracers.py` |
 | native-grid curtain renderer | `brc_tools/visualize/wrf_curtain.py` |
 | 3-D cold-pool renderer | `brc_tools/visualize/coldpool3d.py` |
-| engine + CLI | `scripts/wrf_winds.py` |
-| SLURM wrapper | `scripts/wrf_winds.dtn.slurm` |
+| tracer-origin renderers | `brc_tools/visualize/tracer_origin.py` |
+| time–height renderer | `brc_tools/visualize/timeheight.py` |
+| engine + CLI | `scripts/wrf_winds.py`, `scripts/wrf_timeheight.py` |
+| SLURM wrappers | `scripts/wrf_winds.dtn.slurm`, `scripts/wrf_timeheight.dtn.slurm` |
 | **per-case config** | a TOML in the repo that owns the case |
 
 No case-specific code lives in brc-tools — a new case is a new TOML.
@@ -129,6 +138,19 @@ states = true; counties = true; roads = true; rivers = true; lakes = true
 vmin = 306.0                      # the shared table is tuned for winter cold pools
 vmax = 322.0
 
+[diagnostics.heat_deficit]        # case knobs for the derived surface fields
+crest_m = 2400.0
+[diagnostics.theta_grad_sfc]
+depth_m = 100.0
+[diagnostics.tke_max]
+below_m = 1000.0
+
+[tracers]                         # only for a run seeded with tracer_opt
+names  = ["source 1", "..."]      # in tr17_1..tr17_N order
+floor  = 1.0e-3                   # below this total, a cell is "untagged"
+level  = 0                        # model level for the origin map
+shares = [2, 7]                   # 1-based: also draw these sources' share curtains
+
 [[domains]]                       # one per VIEW, not per nest
 domain = 2                        # nest number
 tag = "d02_ashley"                # names the output dir; lets one nest have several views
@@ -139,6 +161,7 @@ waypoint_group = "basin_landmarks"   # a group in nwp/lookups.toml
 surface_vars = ["wind_speed_10m", "theta_2m", "pblh"]
 sections = ["we", "dryfork"]      # keys into [[sections]]
 views3d = ["ashley_pool"]         # keys into [[views3d]]
+tracer_map = true                 # plan view of the dominant tracer source
 
 [[sections]]
 key = "dryfork"
@@ -148,14 +171,18 @@ b = [lat, lon]                    # terminus B
 termini = ["NW", "SE"]
 waypoint_group = "us40_dense"
 offset_km = 12.0                  # label towns within this distance of the line
-y_top_m = 4200.0                  # must clear the highest terrain on the line
+y_top_m = 4200.0                  # must clear the highest terrain -- unless tight-z
+y_bottom_m = 1400.0               # optional; default is just below the lowest terrain
+vertical = "asl"                  # "asl" (default) | "agl" -- see below
 w_exag = 8.0
 n_points = 200                    # samples along the line (nearest column each)
-shade = "speed"                   # speed | theta | temp | along | w | theta_e
+shade = "speed"                   # see the shade table below
+style = "wind_speed"              # optional: override the shade's default colour scale
 theta_interval = 1.0              # K between theta contours
 quiver_stride = [5, 10]           # (vertical, horizontal), in MODEL LEVELS
 loc_extent = [lon0, lon1, lat0, lat1]   # locator inset map window
 loc_rect = [x, y, w, h]                 # inset placement, axes fraction
+tracers = true                    # also draw the air-mass-origin curtain on this cut
 
 [[profiles]]                      # keys referenced by [[domains]].profiles
 key = "vernal"
@@ -166,6 +193,17 @@ crest_m = 3300.0                  # optional reference line
 humidity = "rh"                   # "rh" | "q" | omit for none  (default "rh")
 wind_bars = true                  # speed bars + barbs at the tips (default true)
 barb_interval_m = 250.0           # barbs every N metres of HEIGHT (default 250)
+tracers = true                    # also draw the stacked source spectrum here
+tracer_top_m = 2000.0             # m AGL for that spectrum (default: y_top_m)
+
+[[timeheight]]                    # read by scripts/wrf_timeheight.py, not wrf_winds
+key = "vernal_airport"
+label = "Vernal airport"
+station = "KVEL"                  # a tslist PREFIX, i.e. the .TS filename stem
+domain = 2
+fields = ["theta", "theta_change", "theta_grad", "speed"]
+y_top_m = 1500.0                  # m AGL
+stride_min = 5.0                  # minutes between drawn columns
 
 [[views3d]]
 key = "ashley_pool"
@@ -197,6 +235,37 @@ variable name. A variable the run did not write is named-skipped, never fatal:
 | `snow_depth` | `SNOWH` | the albedo/emissivity control on that whole process |
 | `conv_10m` | `U10`/`V10` | 10 m convergence, diverging about zero; same map-factor operator as the convective `meso` family and the deficit transport |
 
+Plus the **derived** fields in `brc_tools/nwp/wrf_derived.py`, which WRF carries the
+ingredients for and never writes. They cost a further read, so only the keys a view
+actually names are computed; a key whose ingredients the run lacks is named-skipped:
+
+| key | needs | what it is for |
+|---|---|---|
+| `visibility_sfc` | `QCLOUD` | Stoelinga–Warner visual range in the lowest level, capped at 20 km |
+| `fog_depth` | `QCLOUD` | depth of the **ground-based** layer below 1 km visibility. NaN where there is none, so clear ground is unpainted rather than drawn as shallow fog everywhere |
+| `condensate_max` | `QCLOUD` | column-maximum suspended cloud water + ice |
+| `cloud_low` / `cloud_mid` / `cloud_high` | `CLDFRA` | layer cloud amount on the ISCCP pressure bands |
+| `cloud_base` | `CLDFRA` | lowest cloudy level, m AGL |
+| `ceiling` | `CLDFRA` | lowest **broken-or-worse** layer that is *not* on the ground; a 5 m base is a surface obscuration and belongs to `fog_depth`, not here |
+| `rh_2m`, `lcl_agl` | `Q2`/`T2`/`PSFC` | how close the near-surface air is to fogging |
+| `rnet_sfc`, `hfx`, `lh`, `grdflx` | the flux fields | the surface energy budget that **builds** a radiative pool |
+| `energy_residual` | as above | `Rn + G − H − LE`, on a deliberately tight ±10 W m⁻² scale, so the panel shows the budget *closing* |
+| `lw_down`, `sw_down` | `GLW`, `SWDOWN` | the radiative forcing |
+| `theta_grad_sfc` | `T` | bulk 0–100 m ∂θ/∂z: where the cold air is **trapped**, which is not where it is cold |
+| `tke_max` | `QKE` | column-max TKE below 1 km — the decoupling diagnostic |
+| `ust`, `tsk` | `UST`, `TSK` | friction velocity, skin temperature |
+| `heat_deficit` | `T` | Whiteman valley heat deficit below `[diagnostics.heat_deficit].crest_m` |
+
+**`GRDFLX`'s sign is measured, not assumed.** Against the Noah
+(`sf_surface_physics = 2`) run this was built on, `Rn + G − H − LE` closes to a
+median −0.4 W m⁻² and the opposite sign leaves ~120 W m⁻², so there `GRDFLX` is
+positive **upward**. A large `energy_residual` means the run's land-surface scheme
+uses the other convention — not that the budget is open.
+
+**`TKE_PBL` is identically zero in an MYNN run**, so plotting it gives a blank panel
+that looks like a result; `wrf_derived.turbulent_kinetic_energy` reads `QKE` (which
+is *twice* the TKE) and halves it.
+
 ### Map context
 
 `[map]` switches, all default **false**: `states`, `counties`, `roads` (Natural-Earth
@@ -219,12 +288,30 @@ they used to quote 5, 8–15, 10 and 100 for the same knob.
 The rule:
 
 ```
-w_exag  ≈  typical |u|  ÷  typical |w|      (both along the transect, in the layer you care about)
+w_exag  ≈  median |along|  ÷  median |w|     (in the layer you care about, ON THIS TRANSECT)
 ```
 
 That puts the typical vector at **45°**, which is where a two-component vector is
 most readable — flatter and the vertical motion is invisible, steeper and the
 along-transect flow is.
+
+**`|along|`, not `|V|`** — and the difference is not academic. The arrow's
+horizontal component *is* `along2d`, so `|V|` only gives the right answer when the
+flow happens to run along the cut. Measured on the green-river 600 m run, over the
+lowest few hundred metres:
+
+| transect | \|along\| as a fraction of \|V\| | `w_exag` from \|V\| | from \|along\| |
+|---|---|---|---|
+| Little Mtn → Split Mtn (flow crosses it) | 34–52 % | 57–108 | **29–36** |
+| Ouray basin floor (flow crosses it) | 37–40 % | 93–109 | **37–41** |
+| Wyoming Green R. basin (flow follows it) | 75–88 % | 102–149 | **90–112** |
+
+A cut made deliberately *across* a valley is exactly the case where the two
+disagree, so the older `|V|` form over-exaggerates by 2–3× on precisely the
+sections it matters most for — and the symptom is a curtain of near-vertical
+arrows that looks like vigorous overturning and is nothing of the sort. Values in
+existing case TOMLs that were measured with the `|V|` form are high by about that
+factor on their cross-valley cuts.
 
 It is **not** the plot aspect, and the renderer's older docstring was wrong to
 suggest it. The quiver is drawn with matplotlib's default `angles="uv"`, where the
@@ -236,7 +323,7 @@ numbers.
 The rule reproduces every value previously in circulation, which is why they
 disagreed — they are different regimes, not different opinions:
 
-| regime | typical \|u\| | typical \|w\| | `w_exag` |
+| regime | typical \|along\| | typical \|w\| | `w_exag` |
 |---|---|---|---|
 | deep convective core, 600 m mesh | ~10 m s⁻¹ | ~2 m s⁻¹ | **~5** |
 | convective afternoon boundary layer | ~10 m s⁻¹ | ~1 m s⁻¹ | **~10** |
@@ -262,6 +349,8 @@ and the figure now says which:
 | `normal` | the flow **crossing** the section, **+ into the page** | diverging scale; for a W→E transect this is the north–south component |
 | `w` | vertical velocity | |
 | `theta`, `theta_e`, `temp`, `refl` | the scalar named | |
+| `theta_anom` | θ **minus the bottom cell of the lowest-terrain column** | derived, not stored. A fixed absolute θ scale cannot serve a sweep across a night — the floor itself cools several kelvin, sliding every frame's structure down the bar. This takes the bulk cooling out and leaves the stratification. A pure offset: it changes what the colours mean, not the shape of anything |
+| `rh`, `qv`, `cloud`, `vis`, `tke`, `theta_grad` | humidity, vapour, suspended condensate, visual range, TKE, ∂θ/∂z | each needs its 3-D field sampled — see `load_plane(extras=...)`. A section asking for one that the run cannot supply is named-skipped |
 
 Two things are drawn on every curtain because a signed field is uninterpretable
 without them:
@@ -272,6 +361,87 @@ without them:
 
 For a west-to-east cut, `shade = "normal"` is the one that shows cross-valley
 exchange; `speed` cannot, because it has no sign.
+
+### `vertical = "asl"` vs `"agl"` — ponding or a skin
+
+The two frames answer different questions and the same night can look like one in
+each, which is why both are offered rather than one being the right choice:
+
+- **`asl`** (default) — height above sea level, terrain as a staircase across the
+  bottom. A level surface is a horizontal line, so this shows whether cold air is
+  **ponding**: filling a basin to a level, independent of the ground.
+- **`agl`** — the terrain flattened out. A layer of constant *depth* becomes a
+  horizontal band, so this shows whether the layer is **terrain-following**: a
+  drainage skin running down a slope rather than a pool sitting in it.
+
+`y_top_m` / `y_bottom_m` are read in whichever frame is selected. Put the locator
+inset somewhere else on an `agl` panel — flattening the terrain removes the wedge
+the inset normally hides in.
+
+### The tight-z pattern
+
+A section whose subject is a 250 m inversion under a 1100 m terrain drop is
+unreadable on the axis that makes the *regional* sections comparable. The fix is a
+**second `[[sections]]` entry over the same A→B line** with a cut-down
+`y_bottom_m`/`y_top_m` and a finer `theta_interval` (0.25 K rather than 1 K), not a
+compromise axis that serves neither. On the tight panel the high end of the line is
+simply inside the terrain fill — that is the trade, made deliberately, because the
+mountain is not the subject.
+
+### Passive tracers — `--figure tracers`
+
+For a run seeded with `tracer_opt` (WRF's `tracer_test1` package gives `tr17_1`
+..`tr17_8`). The figures are all about the **share**, never the absolute
+concentration: source patches differ in area by large factors, so a concentration
+says more about patch size than about transport, while the share of the tagged air
+at a point is what a layering question is asking.
+
+Four products, from `tracers = true` on a `[[sections]]` or `[[profiles]]` entry and
+`tracer_map = true` on a `[[domains]]` entry:
+
+| product | reads |
+|---|---|
+| origin curtain | which source dominates, on the model's own cells. A stratified pool draws as horizontal bands of different hue; a well-mixed one as a single colour from the ground up |
+| share curtain | one named source's fraction, for the sources in `[tracers].shares` |
+| source spectrum | the stacked share against height at a waypoint, with θ on a twin axis so a band boundary can be tied to a stable layer |
+| origin map | the dominant source in one model level, with barbs — the drainage pathways |
+
+**Opacity carries the confidence.** An argmax over eight tracers is a
+confident-looking statement even when the winner holds 13 % against a runner-up's
+12 %, so every panel fades a cell toward the background as the dominant share falls:
+vivid is air from one place, pale is a mixture that happens to have a largest term.
+Air below `[tracers].floor` carries no tag at all and is drawn grey **and hatched** —
+because a thoroughly mixed cell of any hue also fades to pale grey, and "mixed" and
+"untagged" are different findings.
+
+Without a floor the normalisation divides noise by noise and paints a crisp,
+entirely spurious attribution over every part of the domain the plume never reached.
+
+## Time–height sections
+
+`scripts/wrf_timeheight.py` — a separate engine sharing the same case TOML, because
+its product spans the whole run rather than one valid time.
+
+```
+sbatch scripts/wrf_timeheight.dtn.slurm --config <case.toml> [--run-dir <run>] \
+       [--station KEY] [--start ...] [--end ...] [--stride-min 5] [--dpi 200]
+```
+
+Every other vertical figure here is a snapshot. A cold pool is a *process* — it
+starts, deepens, sometimes gets scoured, and breaks up at a particular hour — and
+the one question a sweep of snapshots cannot answer is **when**.
+
+The data costs nothing. A run with a `tslist` writes per-station column profiles at
+**model-timestep cadence**: on the run this was built for, 33 601 rows over 28 hours
+(one column every 3 s) in a 24 MB text file per variable per station, against 900 MB
+per hourly `wrfout` frame. `--stride-min` decides how many of those rows are drawn;
+the raw axis has far more columns than a 12-inch figure has pixels.
+
+Fields: `theta`, `theta_change` (against the first time in the window, at fixed
+height — the cooling), `theta_grad`, `speed`, `u`, `v`, `w`, `qv`. Set
+`[case].local_offset_h` to get a second time axis in local time — a diurnal figure
+whose only axis is UTC makes the reader do the arithmetic that decides whether a
+feature is before or after sunset.
 
 ### Choosing `theta_iso`
 

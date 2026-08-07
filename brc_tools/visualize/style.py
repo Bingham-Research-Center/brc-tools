@@ -205,6 +205,116 @@ VAR_STYLES: dict[str, VarStyle] = {
     "tornado_mask":   VarStyle("Greys", "AFWA tornado mask", 0.0, 1.0, extend="neither"),
     "llws":           VarStyle("YlGnBu", r"0-2 km low-level wind shear (m s$^{-1}$)",
                                 0.0, 25.0, extend="max"),
+    # --- Obscuration, cloud, near-surface moisture -----------------------------
+    # Limits MEASURED on the green-river 600 m run (d02, 02Z and 13Z 22 Nov 2025),
+    # which is a radiation-fog night: surface visibility reaches 36 m and the fog
+    # is 5-170 m deep.  See brc_tools.nwp.wrf_derived.
+    #
+    # Visibility runs 0-20 km because that is where surface observations stop
+    # reporting a number (VISIBILITY_MAX_KM), and gamma = 0.4 because the whole
+    # signal lives in the bottom kilometre of a 20 km scale -- a linear ramp
+    # renders dense fog and thin mist as the same dark pixel.  BuPu_r puts clear
+    # air at white, so an obscuration map shows obscuration rather than painting
+    # the 96 % of the domain where you can see fine.
+    "visibility_sfc": VarStyle("BuPu_r", r"surface visibility (km)",
+                                0.0, 20.0, extend="neither", gamma=0.4),
+    "visibility":     VarStyle("BuPu_r", r"visibility (km)",
+                                0.0, 20.0, extend="neither", gamma=0.4),
+    # NaN where there is no fog (see wrf_derived.fog_depth_m), so the colour
+    # scale never has to represent "none" -- it would otherwise paint the whole
+    # basin the bottom colour and read as shallow fog everywhere.
+    "fog_depth":      VarStyle("BuPu", "ground-based fog depth (m AGL)",
+                                0.0, 150.0, extend="max"),
+    "condensate_max": VarStyle("Purples", r"column max cloud condensate (g kg$^{-1}$)",
+                                0.0, 0.6, extend="max", gamma=0.6),
+    "cloud_water":    VarStyle("Purples", r"cloud water + ice (g kg$^{-1}$)",
+                                0.0, 0.6, extend="max", gamma=0.6),
+    "cloud_low":      VarStyle("Blues", "low cloud fraction (p > 680 hPa)",
+                                0.0, 1.0, extend="neither"),
+    "cloud_mid":      VarStyle("Blues", "mid cloud fraction (440-680 hPa)",
+                                0.0, 1.0, extend="neither"),
+    "cloud_high":     VarStyle("Blues", "high cloud fraction (p < 440 hPa)",
+                                0.0, 1.0, extend="neither"),
+    # Both bases run from the ground because in this regime they ARE on the
+    # ground; gamma keeps a 5 m fog base distinguishable from a 300 m stratus
+    # base on a scale that still has room for a 1.5 km deck.
+    "cloud_base":     VarStyle("viridis", "cloud base (m AGL)",
+                                0.0, 1500.0, extend="max", gamma=0.5),
+    "ceiling":        VarStyle("viridis", "ceiling, lowest broken layer (m AGL)",
+                                0.0, 3000.0, extend="max", gamma=0.5),
+    "rh":             VarStyle("YlGnBu", r"relative humidity (%)", 20.0, 100.0),
+    "rh_2m":          VarStyle("YlGnBu", r"2 m relative humidity (%)", 20.0, 100.0),
+    "lcl_agl":        VarStyle("YlGnBu_r", "LCL of the 2 m air (m AGL)",
+                                0.0, 1500.0, extend="max"),
+    "qvapor":         VarStyle("YlGn", r"water vapour (g kg$^{-1}$)",
+                                0.0, 6.0, extend="max"),
+    # --- Surface energy budget -------------------------------------------------
+    # The budget that MAKES a radiative cold pool, every term of which WRF
+    # already writes.  All diverging about zero because the sign is the content:
+    # positive downward for radiation, and see wrf_derived.surface_energy_balance
+    # for the measured GRDFLX convention (positive upward, soil -> surface).
+    # Measured overnight: Rn -152..+6, H -101..+42, LE -37..+70, G 0..120.
+    "rnet_sfc":       VarStyle("RdBu_r", r"net radiation $R_n$ (W m$^{-2}$, $+$ down)",
+                                -160.0, 160.0, diverging=True),
+    "hfx":            VarStyle("RdBu_r", r"sensible heat flux $H$ (W m$^{-2}$)",
+                                -120.0, 120.0, diverging=True),
+    "lh":             VarStyle("RdBu_r", r"latent heat flux $LE$ (W m$^{-2}$)",
+                                -80.0, 80.0, diverging=True),
+    "grdflx":         VarStyle("RdBu_r", r"ground heat flux $G$ (W m$^{-2}$, $+$ up)",
+                                -120.0, 120.0, diverging=True),
+    # Deliberately tight: this panel exists to show the budget CLOSES, and on a
+    # +-120 scale a 1 W/m2 residual and a 100 W/m2 one look identically blank.
+    "energy_residual": VarStyle("PuOr", r"$R_n + G - H - LE$ (W m$^{-2}$)",
+                                 -10.0, 10.0, diverging=True),
+    "lw_down":        VarStyle("inferno", r"downwelling longwave (W m$^{-2}$)",
+                                150.0, 350.0),
+    "sw_down":        VarStyle("inferno", r"downwelling shortwave (W m$^{-2}$)",
+                                0.0, 900.0, extend="max"),
+    # --- Stability and turbulence ----------------------------------------------
+    # An inversion's strength is a GRADIENT, not a temperature: theta_2m says
+    # where the cold air is, this says where it is trapped, and a cold well-mixed
+    # slope is not a pool.  K per 100 m because that is the unit a forecaster
+    # already has intuition for.  Measured: bulk 0-100 m gradient p50 1.9-2.2,
+    # p99 5.2-6.1; on model levels the sharpest cells reach ~28.
+    "theta_grad":     VarStyle("magma", r"$\partial\theta/\partial z$ (K per 100 m)",
+                                0.0, 10.0, extend="max"),
+    "theta_grad_sfc": VarStyle("magma", r"0-100 m $\partial\theta/\partial z$ (K per 100 m)",
+                                0.0, 8.0, extend="max"),
+    # theta MINUS the section's own floor value, so a fixed scale survives a
+    # sweep: absolute theta on the trench floor falls ~6 K between evening and
+    # dawn, which moves every frame's structure off a fixed absolute ramp while
+    # the structure itself barely changes.  See wrf_curtain.SHADE_DERIVED.
+    # vmin is below zero, not at it: the floor cell is the bottom of the
+    # LOWEST-TERRAIN column, which on a real transect is not always the coldest
+    # air on the plane, and clipping the couple of kelvin that come out negative
+    # would hide exactly the cells that say so.
+    "theta_anom":     VarStyle("RdYlBu_r", r"$\theta - \theta_{\mathrm{floor}}$ (K)",
+                                -2.0, 15.0, extend="both"),
+    # theta at a fixed HEIGHT minus its value at the start of the window -- the
+    # time-height family's cooling/warming field.  +-6 K, measured: a Basin
+    # night's near-surface column swings about 5 K either side of a 12Z start,
+    # and the +-3 K of `temp_adv` (which this used to borrow, along with a label
+    # in the wrong units) saturates the whole nocturnal layer.
+    "theta_change":   VarStyle("RdBu_r", r"$\Delta\theta$ (K)", -6.0, 6.0,
+                                diverging=True),
+    # TKE spans four orders of magnitude in a night like this (median 1.6e-4,
+    # cores near 2), so gamma is doing the real work.  MYNN's QKE is twice the
+    # TKE -- see wrf_derived.turbulent_kinetic_energy, which is also why
+    # TKE_PBL plots blank from an MYNN run.
+    "tke":            VarStyle("YlOrRd", r"TKE (m$^2$ s$^{-2}$)",
+                                0.0, 0.5, extend="max", gamma=0.4),
+    "tke_max":        VarStyle("YlOrRd", r"max TKE below 1 km (m$^2$ s$^{-2}$)",
+                                0.0, 1.0, extend="max", gamma=0.4),
+    "ust":            VarStyle("YlGnBu", r"friction velocity $u_*$ (m s$^{-1}$)",
+                                0.0, 0.6, extend="max"),
+    "tsk":            VarStyle("RdYlBu_r", r"skin temperature (K)", 240.0, 285.0),
+    # --- Passive-tracer source attribution -------------------------------------
+    # A share, so 0-1 always, and never autoscaled: half the point is that two
+    # sections drawn on the same scale can be compared.
+    "tracer_share":   VarStyle("viridis", "share of tagged air", 0.0, 1.0,
+                                extend="neither"),
+    "tracer_total":   VarStyle("cividis", "total tagged tracer",
+                                0.0, 0.2, extend="max", gamma=0.5),
 }
 
 # Symmetric diverging limits for difference figures (case A minus case B).

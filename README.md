@@ -70,6 +70,94 @@ Plus one non-WRF renderer:
   montage (250 hPa jet → 500 hPa flow → 600 hPa moisture/LLJ → surface analysis) for an
   analysis time. Doc: [`docs/FORECAST-FUNNEL.md`](docs/FORECAST-FUNNEL.md).
 
+### How to use these skills — example prompts
+
+A skill is a **prompt, not a command line**. Type `/wrf-basin-winds`, or just describe
+the job, and the skill asks back for the three things it refuses to guess — the case,
+the families, and the times — because each one changes what the job costs and what it
+answers. You do not need to know the flags. You do need to know which run you mean.
+
+**Have the case TOML ready first.** The engines are case-agnostic, so every case needs a
+declarative recipe — transects, profile points, colour limits — and it lives in the repo
+that owns the case, never here. A case with no TOML starts by writing one; the schema and
+a worked example are in [`docs/WRF-WINDS.md`](docs/WRF-WINDS.md).
+
+#### A drainage run, plotted every hour
+
+The thread below is the ordinary shape of this work: write the recipe, smoke-test one
+time, then sweep. Substitute your own case and run.
+
+**1 — the recipe, if the case has none yet.**
+
+```
+/wrf-basin-winds — new case. <experiment dir> has no figures.toml. Write one,
+modelled on the ashley-drainage-600m file: d01 for context, d02 for the valley,
+transects along and across the drainage, profiles at the source / floor / exit,
+and a view3d for the cold pool. Run dir is <run>/wrf_run. It is a November night,
+so retune the theta_2m / temp_2m / pblh scales off the September values. Show me
+the TOML before rendering anything.
+```
+
+**2 — one time, every family, before committing to a sweep.** A family that was never
+smoke-tested is how a whole submitted job has been lost before.
+
+```
+/wrf-basin-winds — smoke-test <case>: one valid time, all four families, both
+nests. Use the deepest night hour. Dry-run first and tell me the figure count,
+then submit on the DTN and tell me which files to open.
+```
+
+**3 — the hourly sweep.** `--hourly` is `--every 60`; when the run writes hourly history
+it is also `--all`. Say the window explicitly — without `--start`/`--end` a fine cadence
+over a long run is a figure count nobody intended.
+
+```
+/wrf-basin-winds — sweep <case> hourly across the whole window, <init> to <end>.
+Dry-run for the count first; I want a go/no-go before it queues. Use
+--skip-existing so the smoke-test figures are not re-rendered, and set --w-exag
+for a drainage night rather than the afternoon value in the TOML.
+```
+
+**4 — narrow once you know what the sweep showed.** Cheaper and more legible than
+re-running everything.
+
+```
+/wrf-basin-winds — just the night, please: sections and profiles only, d02 only,
+23Z through 15Z, hourly.
+```
+
+**5 — coverage, which `find` cannot answer.** It cannot tell a figure that failed from
+one never asked for; `--report` reads the manifests and can.
+
+```
+/wrf-basin-winds — do we actually have every figure for <case>? Report coverage
+from the manifests in the output root, then re-render anything that failed.
+```
+
+A sweep can also run **against a job that is still writing**: with no time flag the
+engine renders the latest time present on every requested domain, and `--skip-existing`
+regenerates any figure older than the files it derives from, so re-running as the run
+advances is safe and cheap.
+
+#### The other three
+
+```
+/wrf-convective — did the simulated cell verify? Composite reflectivity and the
+0.5° beam view beside the observed KGJX scan, plus tslist at the nearest station.
+```
+```
+/wrf-full-figures — publication set for <study case>, difference maps included.
+```
+```
+/basin-forecast-funnel — NAM synoptic funnel for the 12Z analysis on <date>.
+```
+
+**One trap worth knowing before you pick.** `/wrf-full-figures` reads only the
+colon-separated `wrfout` filename convention, so on a run built with `nocolons = .true.`
+(`wrfout_d02_2025-11-21_12_00_00`) it reports "no wrfout" and renders nothing. The two
+sweep engines accept either convention. That alone decides the engine for some runs,
+regardless of which question you were asking.
+
 ### Which figure answers which question
 
 The two sweep engines pick families with `--figure` (repeatable):

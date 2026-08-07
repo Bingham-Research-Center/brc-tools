@@ -102,13 +102,22 @@ def test_reflectivity_shade_is_refused_without_reflectivity(tmp_path, monkeypatc
 # saying which wind, in which plane
 # --------------------------------------------------------------------------- #
 def test_every_shade_has_a_field_a_style_and_a_label():
-    """The three tables are keyed on the same names on purpose.  A shade with a
-    field but no style is how a theta curtain came out on a 0-15 m/s wind ramp:
-    the engine fell back to a fixed key rather than failing."""
+    """The tables are keyed on the same names on purpose.  A shade with a field
+    but no style is how a theta curtain came out on a 0-15 m/s wind ramp: the
+    engine fell back to a fixed key rather than failing.
+
+    A shade is sourced either from a stored section attribute (``SHADE_FIELD``)
+    or computed from the section (``SHADE_DERIVED``); the union is what must
+    match the style and label tables.
+    """
     from brc_tools.visualize import wrf_curtain as wc
     from brc_tools.visualize.style import VAR_STYLES
 
-    assert set(wc.SHADE_FIELD) == set(wc.SHADE_STYLE) == set(wc.SHADE_LABEL)
+    sourced = set(wc.SHADE_FIELD) | set(wc.SHADE_DERIVED)
+    assert sourced == set(wc.SHADE_STYLE) == set(wc.SHADE_LABEL)
+    # A shade must come from exactly one place: both would make which one wins a
+    # question about statement order in the renderer.
+    assert not (set(wc.SHADE_FIELD) & set(wc.SHADE_DERIVED))
     for shade, key in wc.SHADE_STYLE.items():
         assert key in VAR_STYLES, f"shade {shade!r} maps to unknown style {key!r}"
 

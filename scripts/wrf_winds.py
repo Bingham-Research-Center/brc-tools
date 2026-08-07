@@ -32,7 +32,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from brc_tools.nwp import wrf_engine as we  # noqa: E402
 from brc_tools.nwp import wrf_output as wo  # noqa: E402
 from brc_tools.nwp import wrf_section as ws  # noqa: E402
+from brc_tools.nwp import wrf_tracers as wt  # noqa: E402
 from brc_tools.visualize import coldpool3d as cp3  # noqa: E402
+from brc_tools.visualize import tracer_origin as tro  # noqa: E402
 from brc_tools.visualize.nwp_maps import plot_nwp_surface_map  # noqa: E402
 from brc_tools.visualize.profile import (  # noqa: E402
     plot_theta_wind_profile,
@@ -46,11 +48,14 @@ from brc_tools.visualize.wrf_curtain import (  # noqa: E402
 
 #: Selectable with ``--figure`` (repeatable); default is all of them.
 #:
-#: ``topdown``  surface plan views -- wind, theta, PBLH, convergence, snow.
+#: ``topdown``  surface plan views -- wind, theta, PBLH, convergence, snow,
+#:              and the derived fog / cloud / surface-energy diagnostics.
 #: ``section``  terrain-filled curtains on native eta levels along A->B lines.
 #: ``profile``  theta + humidity profiles with a wind panel at named points.
 #: ``view3d``   3-D isentrope lid over hillshaded terrain.
-FAMILIES = ("topdown", "section", "profile", "view3d")
+#: ``tracers``  passive-tracer source attribution: origin curtains, per-source
+#:              share curtains, stacked spectra at points, and origin maps.
+FAMILIES = ("topdown", "section", "profile", "view3d", "tracers")
 
 # Config, waypoints, colour scales and time selection are shared with the
 # convective engine so the two cannot drift; see brc_tools.nwp.wrf_engine.
@@ -74,6 +79,52 @@ def waypoints(group: str | None) -> dict:
 def style_for(cfg: dict, var: str):
     """Resolve a variable's :class:`VarStyle`, applying the case's overrides."""
     return we.style_for(cfg, var)
+
+
+def plane_extras(cfg: dict, dom: dict, families) -> tuple[str, ...]:
+    """Which optional 3-D fields this view's figures actually need.
+
+    Each extra is another ~140 MB read per time on a 600 m nest at 99 levels, so
+    they are derived from what the config *asks to draw* rather than loaded
+    speculatively: a plain wind sweep still pays for nothing.  The shade names
+    and the extra names coincide by construction -- see
+    :data:`brc_tools.nwp.wrf_section.PLANE_EXTRAS`.
+    """
+    wanted: set[str] = set()
+    if "section" in families:
+        for key in dom.get("sections", []):
+            spec = cfg["_sections"].get(key) or {}
+            shade = spec.get("shade", "speed")
+            if shade in ws.PLANE_EXTRAS:
+                wanted.add(shade)
+    if "tracers" in families and _tracer_targets(cfg, dom):
+        wanted.add("tracers")
+    return tuple(sorted(wanted))
+
+
+def _tracer_targets(cfg: dict, dom: dict) -> dict:
+    """The tracer figures this view asks for: sections, profiles, and the map."""
+    sections = [k for k in dom.get("sections", [])
+                if (cfg["_sections"].get(k) or {}).get("tracers")]
+    profiles = [k for k in dom.get("profiles", [])
+                if (cfg["_profiles"].get(k) or {}).get("tracers")]
+    return {"sections": sections, "profiles": profiles,
+            "map": bool(dom.get("tracer_map"))} if (
+        sections or profiles or dom.get("tracer_map")) else {}
+
+
+def tracer_labels(cfg: dict, n: int) -> list[str]:
+    """Source names for the tracer legend, from ``[tracers].names``.
+
+    Falls back to ``tr17_1`` ... when the case has not named them.  A tracer
+    figure with unnamed sources is still readable as *layering* -- which is the
+    falsifiable claim -- and only the attribution needs the names, so an unnamed
+    case is degraded rather than refused.
+    """
+    names = list(cfg.get("tracers", {}).get("names", []))
+    if len(names) < n:
+        names += [f"tr17_{i + 1}" for i in range(len(names), n)]
+    return names[:n]
 
 
 # --------------------------------------------------------------------------- #
@@ -123,10 +174,16 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
         # -- plan views -----------------------------------------------------
         pad = float(dom.get("pad_deg", 0.0))
         extent = tuple(dom["extent"]) if dom.get("extent") else ws.plan_extent(ds, pad_deg=pad)
-        pds = ws.plan_dataset(ds)
+        surface_vars = (dom.get("surface_vars", ["wind_speed_10m"])
+                        if "topdown" in families else [])
+        # Derived plan-view fields (fog, cloud, the surface energy budget, ...)
+        # ride the same `extra=` hook the convective engine uses, and only the
+        # ones this view actually names are computed -- visibility alone is a
+        # full-depth read of every hydrometeor species.
+        pds = ws.plan_dataset(ds, extra=ws.plan_diagnostics(
+            ds, surface_vars, params=cfg.get("diagnostics", {})))
         map_wps = waypoints(dom.get("waypoint_group"))
-        for var in (dom.get("surface_vars", ["wind_speed_10m"])
-                    if "topdown" in families else []):
+        for var in surface_vars:
             if var not in pds:
                 print(f"[SKIP] {tag} {var}: not written by this run")
                 ledger.note(we.ABSENT, "not written by this run",
@@ -148,8 +205,12 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
         # -- cross-sections + 3-D cold-pool views ----------------------------
         keys = dom.get("sections", []) if "section" in families else []
         v3d = dom.get("views3d", []) if "view3d" in families else []
-        if keys or v3d:
-            plane = ws.load_plane(ds)   # the expensive read; shared by both families
+        tracer_jobs = _tracer_targets(cfg, dom) if "tracers" in families else {}
+        want_profiles = "profile" in families and dom.get("profiles")
+        if keys or v3d or tracer_jobs:
+            extras = plane_extras(cfg, dom, families)
+            # The expensive read; shared by every family that needs 3-D state.
+            plane = ws.load_plane(ds, extras=extras)
             loc = dict(lon2d=plane.lon2d, lat2d=plane.lat2d, terrain2d=plane.terrain)
             for key in keys:
                 s = cfg["_sections"].get(key)
@@ -166,10 +227,7 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                 shade = s.get("shade", "speed")
 
                 def _draw(path, s=s, key=key, sec_wps=sec_wps, shade=shade):
-                    sec = ws.section_from_plane(
-                        plane, tuple(s["a"]), tuple(s["b"]),
-                        n_points=int(s.get("n_points", 240)),
-                        termini=tuple(s.get("termini", ("A", "B"))))
+                    sec = cut_section(plane, s)
                     plot_wrf_curtain(
                         sec, path,
                         shade=shade,
@@ -181,15 +239,12 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                                                s.get("label", key)),
                         annotation=an, waypoints=sec_wps,
                         waypoint_offset_km=float(s.get("offset_km", 15.0)),
-                        y_top_m=float(s.get("y_top_m", 3000.0)),
+                        **curtain_axes(s),
                         w_exaggeration=(args.w_exag if args.w_exag is not None
                                         else float(s.get("w_exag", 10.0))),
                         theta_interval=float(s.get("theta_interval", 1.0)),
                         quiver_stride=tuple(s.get("quiver_stride", (4, 10))),
-                        locator={**loc,
-                                 "extent": tuple(s["loc_extent"]) if s.get("loc_extent") else None,
-                                 "rect": list(s["loc_rect"]) if s.get("loc_rect") else None,
-                                 "waypoints": sec_wps},
+                        locator=section_locator(loc, s, sec_wps),
                         dpi=args.dpi)
 
                 made += ledger.emit(
@@ -198,14 +253,164 @@ def render_domain(cfg: dict, dom: dict, valid: datetime, init: datetime,
                 )
             made += render_views3d(cfg, v3d, plane, tag, stamp, sec_base, an,
                                    out_dir, args, ledger, domain=d, sources=src)
+            if tracer_jobs:
+                made += render_tracers(cfg, dom, plane, tracer_jobs, tag, stamp,
+                                       sec_base, an, out_dir, args, ledger,
+                                       domain=d, sources=src, loc=loc,
+                                       extent=extent, overlays=overlays)
 
-        if "profile" in families:
+        if want_profiles:
             made += render_profiles(cfg, dom, ds, tag, stamp, sec_base, an, out_dir,
                                     args, ledger, domain=d, sources=src)
         print(f"  {tag}: {made} figures -> {out_dir}")
         return made
     finally:
         ds.close()
+
+
+def cut_section(plane, spec: dict):
+    """Cut one ``[[sections]]`` transect from an already-loaded plane."""
+    return ws.section_from_plane(
+        plane, tuple(spec["a"]), tuple(spec["b"]),
+        n_points=int(spec.get("n_points", 240)),
+        termini=tuple(spec.get("termini", ("A", "B"))))
+
+
+def curtain_axes(spec: dict) -> dict:
+    """The vertical-axis kwargs a ``[[sections]]`` entry sets.
+
+    ``y_bottom_m`` and ``vertical`` are together the tight-z knob: a section
+    whose whole subject is a 250 m inversion under a 1100 m terrain drop is
+    unreadable on the 3400 m axis that makes the *regional* sections comparable,
+    and the fix is a second entry over the same line rather than a compromise
+    that serves neither.
+    """
+    axes = {"y_top_m": float(spec.get("y_top_m", 3000.0)),
+            "vertical": str(spec.get("vertical", "asl"))}
+    if spec.get("y_bottom_m") is not None:
+        axes["y_bottom_m"] = float(spec["y_bottom_m"])
+    return axes
+
+
+def section_locator(loc: dict, spec: dict, waypoints_: dict) -> dict:
+    """The locator-inset kwargs for one section."""
+    return {**loc,
+            "extent": tuple(spec["loc_extent"]) if spec.get("loc_extent") else None,
+            "rect": list(spec["loc_rect"]) if spec.get("loc_rect") else None,
+            "waypoints": waypoints_}
+
+
+def render_tracers(cfg, dom, plane, jobs, tag, stamp, sec_base, an, out_dir, args,
+                   ledger, *, domain=None, sources=(), loc=None, extent=None,
+                   overlays=None) -> int:
+    """Origin curtains, per-source share curtains, spectra and the origin map.
+
+    Attached to the existing ``[[sections]]`` / ``[[profiles]]`` / ``[[domains]]``
+    entries by a ``tracers = true`` switch rather than given their own config
+    block: a tracer figure wants exactly the transect, extent, waypoint group and
+    locator the case has already chosen, and a parallel set of definitions would
+    drift from them.
+    """
+    if plane.tracers is None:
+        print(f"[SKIP] {tag}: this run wrote no tr17_* tracers")
+        ledger.note(we.ABSENT, "no tr17_* tracers in this run",
+                    family="tracers", domain=domain)
+        return 0
+    tcfg = cfg.get("tracers", {})
+    floor = float(tcfg.get("floor", wt.DEFAULT_TOTAL_FLOOR))
+    labels = tracer_labels(cfg, plane.tracers.shape[0])
+    # 1-based in the config because the tracers are named tr17_1..tr17_8, and a
+    # config that says `shares = [7, 8]` should mean those two.
+    shares = [int(i) - 1 for i in tcfg.get("shares", [])]
+    made = 0
+
+    for key in jobs.get("sections", []):
+        s = cfg["_sections"][key]
+        sec_wps = waypoints(s.get("waypoint_group"))
+        common = dict(annotation=an, waypoints=sec_wps,
+                      waypoint_offset_km=float(s.get("offset_km", 15.0)),
+                      locator=section_locator(loc or {}, s, sec_wps),
+                      theta_interval=float(s.get("theta_interval", 1.0)),
+                      dpi=args.dpi, **curtain_axes(s))
+
+        # The cut happens inside each closure, so a --dry-run or a --skip-existing
+        # pass costs nothing beyond the plane that was loaded anyway.
+        def _origin(path, s=s, key=key, common=common):
+            tro.plot_origin_curtain(
+                cut_section(plane, s), path, labels=labels, floor=floor,
+                title=we.compose_title(we.SOURCE_WRF, sec_base,
+                                       s.get("label", key), "air-mass origin"),
+                **common)
+
+        made += ledger.emit(out_dir / f"origin_{key}_{tag}_{stamp}.png",
+                            _origin, sources=sources, family="tracers",
+                            domain=domain, var=f"origin_{key}")
+
+        for i in shares:
+            if i < 0 or i >= plane.tracers.shape[0]:
+                continue
+
+            def _share(path, i=i, s=s, key=key, common=common):
+                sec = cut_section(plane, s)
+                share_i, _total = wt.tracer_shares(sec.tracers2d, floor=floor)
+                plot_wrf_curtain(
+                    sec, path, values=share_i[i],
+                    style=style_for(cfg, "tracer_share"),
+                    cbar_label=f"share of the tagged air from {labels[i]}",
+                    title=we.compose_title(we.SOURCE_WRF, sec_base,
+                                           s.get("label", key),
+                                           f"from {labels[i]}"),
+                    w_exaggeration=(args.w_exag if args.w_exag is not None
+                                    else float(s.get("w_exag", 10.0))),
+                    quiver_stride=tuple(s.get("quiver_stride", (4, 10))),
+                    **common)
+
+            made += ledger.emit(
+                out_dir / f"share_tr{i + 1}_{key}_{tag}_{stamp}.png",
+                _share, sources=sources, family="tracers", domain=domain,
+                var=f"share{i + 1}_{key}")
+
+    for key in jobs.get("profiles", []):
+        spec = cfg["_profiles"][key]
+        wp = we.waypoint(spec["waypoint"])
+        j, i = ws.nearest_column(plane, float(wp["lat"]), float(wp["lon"]))
+
+        def _spectrum(path, spec=spec, key=key, j=j, i=i):
+            tro.plot_tracer_spectrum(
+                plane.tracers[:, :, j, i],
+                plane.height[:, j, i] - plane.terrain[j, i],
+                path, labels=labels, floor=floor,
+                theta_col=plane.theta[:, j, i],
+                top_m=float(spec.get("tracer_top_m", spec.get("y_top_m", 2000.0))),
+                title=we.compose_title(we.SOURCE_WRF, sec_base,
+                                       spec.get("label", key),
+                                       "where the air came from"),
+                annotation=an, dpi=args.dpi)
+
+        made += ledger.emit(out_dir / f"spectrum_{key}_{tag}_{stamp}.png",
+                            _spectrum, sources=sources, family="tracers",
+                            domain=domain, var=f"spectrum_{key}")
+
+    if jobs.get("map"):
+        level = int(tcfg.get("level", 0))
+        map_wps = waypoints(dom.get("waypoint_group"))
+
+        def _map(path):
+            tro.plot_origin_map(
+                plane.lon2d, plane.lat2d, plane.terrain,
+                plane.tracers[:, level], path, labels=labels, floor=floor,
+                extent=extent, overlays=overlays, waypoints=map_wps,
+                wind=(plane.ue[level], plane.ve[level]),
+                barb_stride=int(dom.get("barb_stride", 6)),
+                title=we.compose_title(
+                    we.SOURCE_WRF, sec_base,
+                    f"air-mass origin, model level {level}"),
+                annotation=an, dpi=args.dpi)
+
+        made += ledger.emit(out_dir / f"origin_map_{tag}_{stamp}.png",
+                            _map, sources=sources, family="tracers",
+                            domain=domain, var="origin_map")
+    return made
 
 
 def render_profiles(cfg, dom, ds, tag, stamp, sec_base, an, out_dir, args, ledger,

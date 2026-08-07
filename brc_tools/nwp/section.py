@@ -65,6 +65,21 @@ class NWPSection:
     # were blanked rather than filled from the nearest edge column.  None when
     # the sampler did not check.  See wrf_section.section_from_plane.
     offgrid1d: np.ndarray | None = None
+    # --- optional derived curtains -------------------------------------------
+    # All (nz, n) and all None unless the sampler was asked for them, because
+    # each is a further full-depth read of a ~900 MB file and a plain wind
+    # section needs none of them.  See wrf_section.load_plane(extras=...).
+    rh2d: np.ndarray | None = None  # relative humidity over liquid, %
+    qv2d: np.ndarray | None = None  # water-vapour mixing ratio, g/kg
+    cloud2d: np.ndarray | None = None  # suspended condensate (cloud+ice), g/kg
+    vis2d: np.ndarray | None = None  # visual range, km
+    tke2d: np.ndarray | None = None  # turbulent kinetic energy, m2/s2
+    thetagrad2d: np.ndarray | None = None  # d(theta)/dz, K per 100 m
+    # (n_tracers, nz, n) passive-tracer concentrations, with the source names in
+    # the same order.  A tuple rather than a dict so the array axis and the
+    # labels cannot get out of step.
+    tracers2d: np.ndarray | None = None
+    tracer_names: tuple[str, ...] = ()
 
 
 def _lon180(lon) -> np.ndarray:
