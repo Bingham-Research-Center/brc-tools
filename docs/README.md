@@ -13,8 +13,7 @@ Project documentation. Topical files only — agent context lives in
 - **ENVIRONMENT-SETUP.md** — venv/conda setup for new team members.
 - **MODIS-CONTEXT-RENDERER.md** — host-neutral NASA CMR/GIBS MODIS timing,
   rendering, caching, and provenance workflow.
-- **WRF-INPUT-STAGING.md** — WRF/WPS GRIB staging reference: status, proof evidence, and microtasks (the playbook is the handoff).
-- **WRF-STAGING-STATE-PLAYBOOK.md** — the single WRF cold-start handoff + state packet (start here for the WRF lane).
+- **WRF-STAGING-STATE-PLAYBOOK.md** — the single WRF cold-start handoff + state packet **and** the full staging detail/proof reference (start here for the WRF lane; absorbed the former WRF-INPUT-STAGING.md).
 - **WRF-GEFS-NAM-FIELD-MAP.md** — DRAFT GEFS/NAM two-stream field-map (parked, not proven).
 - **WRF-FIGURE-ENGINE.md** — dataset-agnostic WRF figure engine + `scripts/wrf_figures.py --config <case.toml>` CLI (TOML schema, domain-awareness, named-skip preflight). Per-study cases live in the study repo.
 - **WRF-WINDS.md** — basin-winds-style plan views + arbitrary-transect cross-sections straight from `wrfout` (native eta levels), `scripts/wrf_winds.py --config <case.toml>` + `/wrf-basin-winds` skill. Works against a run that is still writing.
@@ -27,4 +26,4 @@ Project documentation. Topical files only — agent context lives in
   gaps still open. Read before a first sweep on a new case.
 - **FORECAST-FUNNEL.md** — NAM "forecast funnel" synoptic montage (250/500/600 hPa + surface analysis) + `/basin-forecast-funnel` skill and `scripts/forecast_funnel.py` CLI.
 - **nwp/NWP-SOURCE-MATRIX.md** — per-source download matrix (Herbie vs direct) + Herbie currency.
-- **nwp/** — HRRR/RRFS roadmap (current operational focus).
+- **nwp/ROADMAP.md** — HRRR/RRFS → BasinWX strategy/status (GH #10 lane).

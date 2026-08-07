@@ -52,7 +52,7 @@ Continue there (paths are from the repo root, both repos checked out as siblings
 - `../brc-wrf/brc-docs/BRC-WRF-USAGE.md` — WRF/WPS usage + the run wrapper
 - `../brc-wrf/brc-docs/BRC-WRF-STATE-PLAYBOOK.md` — what's proven / next
 
-Full brc-tools-side detail: [../WRF-INPUT-STAGING.md](../WRF-INPUT-STAGING.md) ·
-state: [../WRF-STAGING-STATE-PLAYBOOK.md](../WRF-STAGING-STATE-PLAYBOOK.md).
+Full brc-tools-side state + detail:
+[../WRF-STAGING-STATE-PLAYBOOK.md](../WRF-STAGING-STATE-PLAYBOOK.md).
 
 **See also:** terms (GRIB, WPS, DTN, scratch, reforecast) → [GLOSSARY.md](GLOSSARY.md)

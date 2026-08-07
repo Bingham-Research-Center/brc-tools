@@ -2,7 +2,7 @@
 
 > **DRAFT — the GEFS+NAM two-stream path is NOT proven through WPS / `real.exe`.**
 > Only the NAM-only single-stream path is validated (see
-> [WRF-INPUT-STAGING.md](WRF-INPUT-STAGING.md)). This page is a design aid for the
+> [WRF-STAGING-STATE-PLAYBOOK.md](WRF-STAGING-STATE-PLAYBOOK.md)). This page is a design aid for the
 > *future* two-stream work, owned on the WPS side by `brc-wrf`.
 >
 > **Token source of truth:** `brc_tools/nwp/lookups.toml`
@@ -45,4 +45,4 @@ Building `Vtable.GEFS` and proving `real.exe` with two streams is **brc-wrf**
 work. From the brc-tools side, staging is driven from the checkout by
 `conda run -n brc-tools-2026 python -m brc_tools.nwp.wrf_staging --source gefs_reforecast,nam_analysis` (see
 [walkthroughs/wrf-staging.md](walkthroughs/wrf-staging.md) and
-[WRF-INPUT-STAGING.md](WRF-INPUT-STAGING.md) §3).
+[WRF-STAGING-STATE-PLAYBOOK.md](WRF-STAGING-STATE-PLAYBOOK.md) §3).

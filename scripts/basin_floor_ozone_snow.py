@@ -13,7 +13,7 @@ Data are fetched via ``brc_tools.obs.ObsSource`` (SynopticPy) month-by-month and
 cached to parquet so styling can be re-iterated off-internet with ``--no-fetch``.
 
 Run it as a CHPC **DTN** batch job (Synoptic is outbound HTTPS; compute nodes may
-lack internet -- see docs/WRF-INPUT-STAGING.md §5a):
+lack internet -- see docs/WRF-STAGING-STATE-PLAYBOOK.md §5a):
 
     sbatch scripts/basin_floor_ozone_snow.dtn.slurm
 

@@ -200,6 +200,29 @@ and interpretation contracts.
 
 ---
 
+## WRF & figure-engine modules (index)
+
+One-line map of the WRF-era modules; each row's owning doc carries the detail.
+
+| module | what it is | owning doc |
+|---|---|---|
+| `nwp.wrf_staging` | GRIB → scratch staging (manifest/contract sidecars) for brc-wrf | WRF-STAGING-STATE-PLAYBOOK.md |
+| `nwp.wrf_section` | wrfout → plan/arbitrary-transect adapter (native eta) | WRF-WINDS.md |
+| `nwp.wrf_derived` | fog/visibility/cloud/surface-energy/stability/TKE diagnostics WRF never writes | WRF-WINDS.md |
+| `nwp.wrf_tracers` | passive `tr17_*` air-mass source attribution | WRF-WINDS.md |
+| `nwp.wrf_convective` | auxhist stream + convective diagnostics | WRF-CONVECTIVE.md |
+| `nwp.convective_env` | MetPy parcel/shear/SRH environment | WRF-CONVECTIVE.md |
+| `nwp.wrf_tslist` | `.TS` traces + level profiles | WRF-CONVECTIVE.md |
+| `nwp.wrf_engine` | shared TOML/time plumbing + FigureLedger for the engines | WRF-WINDS.md |
+| `nwp.wrf_output` / `nwp.wrf_figures` | publication figure engine (pelican2013 — frozen) | WRF-FIGURE-ENGINE.md |
+| `nwp.forecast_funnel` | NAM synoptic-montage data | FORECAST-FUNNEL.md |
+| `visualize.grid` | field/section plots — **brc-wrf import seam** | WRF-FIGURE-ENGINE.md |
+| `visualize.wrf_curtain` | native-eta curtains (ASL or terrain-flattened) | WRF-WINDS.md |
+| `visualize.tracer_origin` | tracer curtains/spectra/origin maps | WRF-WINDS.md |
+| `visualize.timeheight` | tslist time–height sections | WRF-WINDS.md |
+| `visualize.coldpool3d` / `visualize.profile` / `visualize.hodograph` | 3-D isentrope views / θ+humidity+wind profiles / hodographs | WRF-WINDS.md, WRF-CONVECTIVE.md |
+| `radar.iem` / `radar.nexrad` | observed Level-III (IEM RIDGE) / Level-II (MetPy) + 4/3-Earth beam geometry | WRF-CONVECTIVE.md |
+
 ## Configuration: lookups.toml
 
 Central registry at `brc_tools/nwp/lookups.toml`. Defines:

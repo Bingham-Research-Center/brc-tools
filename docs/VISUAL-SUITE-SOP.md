@@ -152,6 +152,28 @@ the ones that made a figure lie rather than the ones that made a sweep tedious.
 9. ~~**Tables live in the script, not the package.**~~ **Closed** — error 14 above.
 10. ~~**`REFD_COM` and `REFD_MAX` share a style.**~~ **Closed** — error 13 above.
 
+## House style — every figure, every engine
+
+- **Font**: a Helvetica-first sans-serif stack — `["Helvetica", "Nimbus Sans",
+  "Arial", "Liberation Sans", "DejaVu Sans"]`. Helvetica is proprietary and
+  absent on CHPC, so **Nimbus Sans**, its URW metric-clone, renders it
+  identically there. Reference impl: `scripts/basin_floor_ozone_snow.py`
+  (`_apply_style`).
+- **Output location**: generated images land **outside** the checkout —
+  default CHPC group storage `/uufs/.../lawson-group6/jrlawson/brc-tools-output`,
+  override `BRC_TOOLS_OUTPUT_DIR` (`DEFAULT_OUTPUT_ROOT` in the same script).
+- **Quantity, not just variable**: data fields are drawn with `pcolormesh`,
+  never `contourf` (the three `contourf` calls in the repo are all terrain
+  relief and stay). Every model figure's title leads with `WRF`, every
+  observed one with `OBSERVED` (`wrf_engine.compose_title`). A cross-section
+  fill says whether it is a magnitude, the along-transect component, or the
+  flow crossing the plane — three different numbers that look identical once
+  painted.
+- **Limits live in one place**: colour limits and masking floors sit in
+  `visualize/style.py` + `nwp/wrf_convective.MASK_AT_OR_BELOW`, never in a
+  renderer. Where a limit carries a comment justifying its value, that
+  comment is load-bearing.
+
 ## The rule that has earned its place
 
 Every one of errors 5–9 above produced a figure that *looked* right. The only
