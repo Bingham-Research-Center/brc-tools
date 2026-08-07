@@ -22,37 +22,56 @@ logger = logging.getLogger(__name__)
 # Scalar metrics (numpy)
 # ---------------------------------------------------------------------------
 
-def bias(forecast: np.ndarray, observed: np.ndarray) -> float:
-    """Mean error (forecast - observed).  Positive = warm/high bias."""
+def _wrap180(d: np.ndarray) -> np.ndarray:
+    """Wrap angular differences (deg) into [-180, 180] for circular variables."""
+    return (d + 180.0) % 360.0 - 180.0
+
+
+def bias(forecast: np.ndarray, observed: np.ndarray, *, circular: bool = False) -> float:
+    """Mean error (forecast - observed).  Positive = warm/high bias.
+
+    ``circular=True`` wraps the error into [-180, 180] for direction variables
+    (degrees), so 010 vs 350 counts as +20, not -340.
+    """
     fc, ob = _clean_pair(forecast, observed)
     if len(fc) == 0:
         return np.nan
-    return float(np.mean(fc - ob))
+    d = _wrap180(fc - ob) if circular else (fc - ob)
+    return float(np.mean(d))
 
 
-def mae(forecast: np.ndarray, observed: np.ndarray) -> float:
-    """Mean absolute error."""
+def mae(forecast: np.ndarray, observed: np.ndarray, *, circular: bool = False) -> float:
+    """Mean absolute error (circular-aware for direction variables)."""
     fc, ob = _clean_pair(forecast, observed)
     if len(fc) == 0:
         return np.nan
-    return float(np.mean(np.abs(fc - ob)))
+    d = _wrap180(fc - ob) if circular else (fc - ob)
+    return float(np.mean(np.abs(d)))
 
 
-def rmse(forecast: np.ndarray, observed: np.ndarray) -> float:
-    """Root mean square error."""
+def rmse(forecast: np.ndarray, observed: np.ndarray, *, circular: bool = False) -> float:
+    """Root mean square error (circular-aware for direction variables)."""
     fc, ob = _clean_pair(forecast, observed)
     if len(fc) == 0:
         return np.nan
-    return float(np.sqrt(np.mean((fc - ob) ** 2)))
+    d = _wrap180(fc - ob) if circular else (fc - ob)
+    return float(np.sqrt(np.mean(d ** 2)))
 
 
-def correlation(forecast: np.ndarray, observed: np.ndarray) -> float:
-    """Pearson correlation coefficient.  Returns NaN if < 3 pairs."""
+def correlation(forecast: np.ndarray, observed: np.ndarray, *, circular: bool = False) -> float:
+    """Pearson correlation, or the Jammalamadaka-Sarma circular correlation when
+    ``circular=True`` (direction variables).  Returns NaN if < 3 pairs."""
     fc, ob = _clean_pair(forecast, observed)
     if len(fc) < 3:
         return np.nan
-    cc = np.corrcoef(fc, ob)
-    return float(cc[0, 1])
+    if circular:
+        a, b = np.deg2rad(fc), np.deg2rad(ob)
+        am = np.arctan2(np.sin(a).mean(), np.cos(a).mean())
+        bm = np.arctan2(np.sin(b).mean(), np.cos(b).mean())
+        sa, sb = np.sin(a - am), np.sin(b - bm)
+        den = np.sqrt(np.sum(sa ** 2) * np.sum(sb ** 2))
+        return float(np.sum(sa * sb) / den) if den > 0 else np.nan
+    return float(np.corrcoef(fc, ob)[0, 1])
 
 
 # ---------------------------------------------------------------------------
@@ -112,15 +131,16 @@ def paired_scores(
 
             fc = wp_data[nwp_col].to_numpy().astype(float)
             ob = wp_data[obs_col].to_numpy().astype(float)
+            circ = _is_direction(var)
 
             rows.append({
                 "waypoint": wp,
                 "variable": var,
                 "n_obs": int(np.sum(np.isfinite(fc) & np.isfinite(ob))),
-                "bias": bias(fc, ob),
-                "mae": mae(fc, ob),
-                "rmse": rmse(fc, ob),
-                "correlation": correlation(fc, ob),
+                "bias": bias(fc, ob, circular=circ),
+                "mae": mae(fc, ob, circular=circ),
+                "rmse": rmse(fc, ob, circular=circ),
+                "correlation": correlation(fc, ob, circular=circ),
             })
 
     return pl.DataFrame(rows)
@@ -129,6 +149,11 @@ def paired_scores(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _is_direction(variable: str) -> bool:
+    """True for circular direction variables (degrees), e.g. wind_dir_10m."""
+    return "dir" in variable.lower()
+
 
 def _clean_pair(
     forecast: np.ndarray,
