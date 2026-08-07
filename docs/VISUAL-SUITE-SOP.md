@@ -52,9 +52,20 @@ open is gap 5's cross-nest provenance half and gap 6, which needs no code.*
    as every file it derives from is kept; a `wrfout` rewritten by a later run is
    newer than its figure, so that figure regenerates. Safe against a still-writing
    job.
-9. **Promote the keepers** to `$UB_WX_FIGS_KEEP`. Scratch is the mass output; no
-   figure images in git.
-10. **Write the finding, with its caveats, into the case's `notes.md`.**
+9. **Animate what only moves.** `python scripts/animate_figures.py --root <root>
+   [--config <case.toml> --domain 2] [--kind <substr>]` gathers each *kind* — one
+   panel type for one view — across the time directories and writes
+   `<root>/animations/<kind>.gif`. `--dry-run` lists them first. Some findings are
+   only visible in motion (a pool filling, a boundary crossing), and some are only
+   visible in a still. **A GIF paces frames evenly in wall-clock time regardless of
+   their valid times**, so a root swept hourly and then at 15 minutes animates as
+   though the whole night ran at one speed; `--require-even` refuses that rather
+   than letting it pass silently.
+10. **Promote the keepers** to persistent group storage — `$BRC_TOOLS_OUTPUT_DIR`
+    (`lawson-group6/jrlawson/brc-tools-output`), or a ub-wx case's own
+    `$UB_WX_FIGS_KEEP`, which is **unset outside that repo**. Scratch is the mass
+    output; no figure images in git.
+11. **Write the finding, with its caveats, into the case's `notes.md`.**
 
 ## Worked invocation — the Ashley suite
 
