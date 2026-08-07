@@ -220,25 +220,6 @@ and make source-vs-generated files harder to reason about.
 | Use `/tmp` / `tempfile.gettempdir()` for short-lived temp files and lock files. | Do **not** leave scratch, temp, cache, or lock artifacts in tracked source directories. |
 | Use relative repo paths only for committed assets such as docs, schemas, and test fixtures. | Do **not** write generated JSON, GRIB, logs, or cache files into the repo unless they are intentional fixtures/examples. |
 
-Examples:
-
-```bash
-# DO: large staged data on scratch
-/scratch/general/vast/$USER/wrf_inputs/jan2013_basin_gefs/
-
-# DO: user-local cache outside the repo
-export BRC_TOOLS_HERBIE_CACHE="$HOME/.cache/brc-tools/herbie"
-
-# DO: short-lived temp output
-/tmp/brc-tools-upload.json
-
-# DON'T: repo-local runtime output
-~/gits/brc-tools/data/map_obs_20251127_0400Z.json
-
-# DON'T: user-specific hard-coded path in docs or defaults
-/uufs/chpc.utah.edu/common/home/u0737349/gits/brc-tools/data/herbie_cache/
-```
-
 ### Upload destinations (fan-out)
 
 Uploads can target one or more servers (e.g. production + dev). Resolution
@@ -251,14 +232,7 @@ order used by `load_config_urls()` in `brc_tools/download/push_data.py`:
 3. `~/.config/ubair-website/website_url` — legacy single-URL file, preserved
    for back-compat.
 
-Example:
-
-```bash
-export BASINWX_API_URLS="https://basinwx.com,https://basinwx.dev"
-```
-
-Use this for dual-site pushes from CHPC. For one-shot dev uploads, the
-HRRR export CLI also accepts `--server-url` as a single-URL override.
+Full endpoint/auth/schema contract: [`docs/WEBSITE-INTEGRATION.md`](docs/WEBSITE-INTEGRATION.md).
 
 ### Why `send_json_to_server` is preserved
 

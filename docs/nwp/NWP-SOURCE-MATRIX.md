@@ -4,7 +4,7 @@ How brc-tools obtains each NWP source, the per-source idiosyncrasies, and where 
 use **Herbie** vs. a **hand-rolled fetch** (and why). This is the answer to the
 recurring "are we reinventing the wheel?" question. Machine-readable companion:
 `brc_tools/nwp/lookups.toml` (the model registry); staging detail in
-`docs/WRF-INPUT-STAGING.md`.
+`docs/WRF-STAGING-STATE-PLAYBOOK.md`.
 
 Herbie version evaluated for current WRF-staging work: **2026.3.0** (env
 `brc-tools-2026`). Do not run this lane from an inherited shell env; force:

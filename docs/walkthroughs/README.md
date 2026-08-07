@@ -23,7 +23,7 @@ GRIB for WRF, stopping at the `brc-wrf` boundary.
 | New dev, not a meteorologist | [GLOSSARY](GLOSSARY.md) → [obs](obs.md) → [nwp-download](nwp-download.md) |
 | Running the operational website push | [upload](upload.md) (+ [contract](../WEBSITE-INTEGRATION.md)) |
 | Investigating a weather event | [case-study](case-study.md) → [../CASE-STUDY-GUIDE.md](../CASE-STUDY-GUIDE.md) |
-| Staging WRF inputs | [wrf-staging](wrf-staging.md) → [../WRF-INPUT-STAGING.md](../WRF-INPUT-STAGING.md) |
+| Staging WRF inputs | [wrf-staging](wrf-staging.md) → [../WRF-STAGING-STATE-PLAYBOOK.md](../WRF-STAGING-STATE-PLAYBOOK.md) |
 
 ## Suggested reading order
 
@@ -41,12 +41,12 @@ as needed.
 - [upload.md](upload.md) — push JSON to the BasinWX website
 - [case-study.md](case-study.md) — combine the above for one event
 - [aviation.md](aviation.md) — FlightAware flight data
+- [aqs.md](aqs.md) — EPA AQS AirData bulk observations (the citable AQ record)
 - [wrf-staging.md](wrf-staging.md) — stage WRF inputs, then hand off to `brc-wrf`
 - [GLOSSARY.md](GLOSSARY.md) — shared term list
 
 ## Not covered here (experimental / stub, by design)
 
 No walk-throughs exist for these because they aren't ready — don't go hunting:
-`verify/infogain` (empty stub), the FlightRadar24 / Perplexity / Mistral API
-clients (stubs / paid-only), and the unexported `visualize/crosssection` +
-`visualize/profile` helpers.
+`verify/infogain` (empty stub) and the FlightRadar24 / Perplexity / Mistral API
+clients (stubs / paid-only).
