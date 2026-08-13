@@ -8,7 +8,7 @@
 #
 # Install on notchpeak1:
 #   45 0,6,12,18 * * * ~/gits/brc-tools/scripts/cron/run_hrrr_surface_push.sh
-set -euo pipefail
+set -eo pipefail
 
 CONDA_ENV="${CONDA_ENV:-brc-tools-2026}"
 REPO_DIR="${REPO_DIR:-$HOME/gits/brc-tools}"
@@ -17,10 +17,16 @@ LOG_FILE="${LOG_FILE:-${LOG_DIR}/hrrr_surface.log}"
 
 mkdir -p "${LOG_DIR}"
 
-# Ensure DATA_UPLOAD_API_KEY is exported by the user's shell profile.
-# shellcheck disable=SC1090
-source "${HOME}/.bashrc"
+# Bootstrap the cron environment. Do NOT source ~/.bashrc here: it bails
+# in non-interactive shells, and /etc/bashrc trips `set -u` (unbound
+# BASHRCSOURCED). Mirror the proven obs-cron line instead: the
+# cron-specific env file (exports DATA_UPLOAD_API_KEY) plus the conda
+# hook, with -u deferred until the sourcing is done.
+# shellcheck disable=SC1090,SC1091
+source "${HOME}/.bashrc_basinwx"
+source "${HOME}/software/pkg/miniforge3/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
+set -u
 
 cd "${REPO_DIR}"
 
