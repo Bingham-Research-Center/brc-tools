@@ -54,7 +54,7 @@ When editing a topic, edit its canonical doc above; do not duplicate into CLAUDE
 ## Key data-flow anchor (load-bearing — verify before changing)
 `brc_tools.download.push_data.send_json_to_server(server_address, fpath, file_data, API_KEY)`
 POSTs `multipart/form-data` to `{server_address}/api/upload/{file_data}`
-with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
+with headers `x-api-key` (32–128-char hex from `DATA_UPLOAD_API_KEY`) and
 `x-client-hostname` (must end `.chpc.utah.edu`). Server URL resolves
 `BASINWX_API_URLS` (env, comma-sep for fan-out) → `~/.config/ubair-website/website_urls`
 → `website_url` (legacy). Health: `/api/health`.

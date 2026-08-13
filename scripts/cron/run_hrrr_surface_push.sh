@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
-# Stage A cron wrapper: export HRRR surface layers and upload to basinwx.dev.
+# Stage A cron wrapper: export HRRR surface layers and upload to BasinWX.
 #
-# Until PR #176 (ubair-website HRRR display) lands on the ops branch, this
-# wrapper pins BASINWX_API_URLS to the dev site so .com is not polluted with
-# files it cannot render. After ops catches up, unset BASINWX_API_URLS here
-# (or delete the line) so load_config_urls() falls back to
-# ~/.config/ubair-website/website_urls and fans out to both sites.
+# No BASINWX_API_URLS pin: website v1.5.0 (2026-08-13) promoted the HRRR
+# display (PR #176) to ops, so load_config_urls() falls back to
+# ~/.config/ubair-website/website_urls and fans out (.com primary,
+# .dev best-effort mirror).
 #
 # Install on notchpeak1:
 #   45 0,6,12,18 * * * ~/gits/brc-tools/scripts/cron/run_hrrr_surface_push.sh
 set -euo pipefail
-
-export BASINWX_API_URLS="https://basinwx.dev"
 
 CONDA_ENV="${CONDA_ENV:-brc-tools-2026}"
 REPO_DIR="${REPO_DIR:-$HOME/gits/brc-tools}"

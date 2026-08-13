@@ -143,6 +143,10 @@ a dataType `ops` does not list returns 400.
 Unpinned wrappers fall through to `~/.config/ubair-website/website_urls`, which
 already reads `https://basinwx.com,https://basinwx.dev`.
 
+As of 2026-08-13 (website v1.5.0 promoted every pending consumer to `ops`)
+**no wrapper carries a pin**. The rule above still governs any future
+ahead-of-production dataType.
+
 ## Status
 
 This page is the **contract reference**, folded from the 2026-04-27 and

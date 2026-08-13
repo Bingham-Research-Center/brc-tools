@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Stage C cron wrapper: export HRRR KVEL cross-wind forecast and upload to basinwx.dev.
+# Stage C cron wrapper: export HRRR KVEL cross-wind forecast and upload to BasinWX.
 #
-# BLOCKED on ubair-website consumer: aviation.html is a scaffold with no JSON
-# reader. Do NOT enable this cron until the website PR that renders this
-# payload has landed on .dev. Once it does, install on notchpeak1 with:
+# BLOCKED on the KVEL runway redesignation (FAA: 16/34 -> 17/35, ~2022).
+# The producer's [160, 340] headings and crosswind_kt_160-style keys are
+# stale. Do NOT enable this cron until: (1) the brc-tools heading-rename PR
+# is merged and released, (2) the website ships the matching MAJOR
+# DATA_MANIFEST bump + aviation.js label fix. Then install on notchpeak1:
 #   55 * * * * ~/gits/brc-tools/scripts/cron/run_hrrr_kvel_crosswind_push.sh
 set -euo pipefail
-
-export BASINWX_API_URLS="https://basinwx.dev"
 
 CONDA_ENV="${CONDA_ENV:-brc-tools-2026}"
 REPO_DIR="${REPO_DIR:-$HOME/gits/brc-tools}"
