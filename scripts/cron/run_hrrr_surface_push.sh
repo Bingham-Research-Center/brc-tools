@@ -13,7 +13,7 @@ set -euo pipefail
 
 export BASINWX_API_URLS="https://basinwx.dev"
 
-CONDA_ENV="${CONDA_ENV:-brc-tools}"
+CONDA_ENV="${CONDA_ENV:-brc-tools-2026}"
 REPO_DIR="${REPO_DIR:-$HOME/gits/brc-tools}"
 LOG_DIR="${LOG_DIR:-$HOME/logs}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/hrrr_surface.log}"
