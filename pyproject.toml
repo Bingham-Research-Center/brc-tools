@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brc-tools"
-version = "0.1.0"
+version = "0.1.1"
 description = "Bingham Research Center Python Tools for atmospheric data operations"
 readme = "README.md"
 authors = [
