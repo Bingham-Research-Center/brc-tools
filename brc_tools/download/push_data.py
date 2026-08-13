@@ -2,6 +2,7 @@
 
 John Lawson, July 2025
 """
+import mimetypes
 import socket
 import os
 import re
@@ -35,7 +36,11 @@ def save_json(df, fpath, orient='records'):
 
 
 def _post_json_to_url(server_address, fpath, file_data, api_key, *, role="PRIMARY"):
-    """Upload one JSON file to one server. Return True on HTTP 200."""
+    """Upload one file to one server. Return True on HTTP 200.
+
+    Named for its original JSON-only life; it now also carries the outlook
+    .md files, so the MIME type follows the file extension.
+    """
     endpoint = f"{server_address}/api/upload/{file_data}"
     hostname = socket.getfqdn()
     headers = {'x-api-key': api_key, 'x-client-hostname': hostname}
@@ -50,8 +55,9 @@ def _post_json_to_url(server_address, fpath, file_data, api_key, *, role="PRIMAR
 
     print(f"{prefix} uploading {os.path.basename(fpath)} to {endpoint}")
     try:
+        mime = mimetypes.guess_type(str(fpath))[0] or 'application/octet-stream'
         with open(fpath, 'rb') as f:
-            files = {'file': (os.path.basename(fpath), f, 'application/json')}
+            files = {'file': (os.path.basename(fpath), f, mime)}
             response = requests.post(endpoint, files=files, headers=headers, timeout=30)
         if response.status_code == 200:
             print(f"{prefix} ✅ uploaded {os.path.basename(fpath)}")
