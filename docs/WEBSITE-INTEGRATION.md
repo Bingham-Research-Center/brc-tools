@@ -69,13 +69,13 @@ output on 2026-08-13.
 { "product": "aviation_crosswind",   // literal; else the <h2> falls back to "hrrr"
   "model": "hrrr_subh",              // shown in the header when product matches
   "init_time": "Z",                  // rendered verbatim as a string
-  "runway_headings_deg": [160, 340], // TOP-LEVEL, degrees true; drives every column pair
+  "runway_headings_deg": [179, 359], // TOP-LEVEL, degrees true; drives every column pair
   "valid_times": ["Z", ...],         // drives row count
   "series": {
     "wind_speed_kt": [..], "wind_dir_deg": [..],
     // key = "crosswind_kt_" + String(heading).padStart(3, '0')
-    "headwind_kt_160": [..], "crosswind_kt_160": [..],
-    "headwind_kt_340": [..], "crosswind_kt_340": [..] } }
+    "headwind_kt_179": [..], "crosswind_kt_179": [..],
+    "headwind_kt_359": [..], "crosswind_kt_359": [..] } }
 ```
 > ⚠️ Earlier revisions of this page (inherited from the 2026-04-27 handoff)
 > specified `crosswind_kt_rwy16` and `metadata.runway_headings_deg_true`. Both are
@@ -84,8 +84,16 @@ output on 2026-08-13.
 
 **Every `series` array must be index-aligned with `valid_times`.** Short or
 missing arrays render as `—` rather than erroring, so a misalignment looks like
-partial data, not a failure. Column headers derive as `Rwy` + `round(heading/10)`,
-so `160` → `Rwy16`.
+partial data, not a failure.
+
+> ⚠️ **Runway redesignation (2026-08-13).** FAA renamed KVEL 16/34 → 17/35
+> (magnetic 169/349, var 10E → true 179/359). The producer now emits
+> `runway_headings_deg: [179, 359]` and `*_kt_179`/`*_kt_359` keys. The website
+> derives series keys dynamically, but its column headers use
+> `Rwy + round(heading/10)`, which mislabels `179` as `Rwy18` — the coordinated
+> website release must switch to `Math.floor(heading/10)` (`179` → `Rwy17`,
+> `359` → `Rwy35`) alongside a **MAJOR `DATA_MANIFEST.json` bump**. Do not
+> install the kvel cron until both sides have shipped; brc-tools releases first.
 
 **`forecast_hrrr_surface_layers_*`** — `POST /api/upload/forecasts`,
 filename `forecast_hrrr_surface_layers_<YYYYMMDD_HHMMZ>.json`. **Schema already
