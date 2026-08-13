@@ -53,15 +53,29 @@ export DATA_UPLOAD_API_KEY="<32-char-hex>"   # required for BasinWX uploads
 `~/.bashrc`, `~/gits/`, `~/logs/` are CHPC-side paths in the lines below.
 
 ```bash
-# Observations — every 10 min. Must run from notchpeak1 (login node);
+# Observations — every 5 min. Must run from notchpeak1 (login node);
 # compute nodes can't reach external APIs. See [[ops_cron_host]] memory.
-*/10 * * * * source ~/.bashrc && conda activate brc-tools && \
-  python ~/gits/brc-tools/brc_tools/download/get_map_obs.py >> ~/logs/obs.log 2>&1
+# Env is clyfar-nov2025 (NOT brc-tools-2026) — test changes to the obs
+# path in BOTH envs before committing to the production checkout.
+*/5 * * * * /bin/bash -c 'source ~/.bashrc_basinwx && source ~/software/pkg/miniforge3/etc/profile.d/conda.sh && conda activate clyfar-nov2025 && python ~/gits/brc-tools/brc_tools/download/get_map_obs.py >> ~/logs/obs.log 2>&1'
 
-# Clyfar forecasts — 4× daily via Slurm (3 h after each GEFS run)
-30 3,9,15,21 * * * cd ~/gits/clyfar && ./scripts/submit_clyfar.sh \
-  >> ~/logs/clyfar_submit.log 2>&1
+# HRRR road forecast — hourly (website hard-rejects init_time > 3 h)
+20 * * * * ~/gits/brc-tools/scripts/cron/run_road_forecast_push.sh
+
+# HRRR surface layers — 4× daily
+45 0,6,12,18 * * * ~/gits/brc-tools/scripts/cron/run_hrrr_surface_push.sh
+
+# Clyfar forecasts — SEASONAL, disabled ~end of March, re-enable ~October
+# 15 3,9,15,21 * * * cd ~/gits/clyfar && sbatch scripts/submit_clyfar.sh
+
+# Deliberately absent: run_hrrr_kvel_crosswind_push.sh (blocked on the
+# KVEL 16/34→17/35 runway rename, cross-repo) and
+# run_hrrr_waypoint_push.sh (no install requested).
 ```
+
+The repo checkout `~/gits/brc-tools` **is production** for these jobs — the
+obs cron imports from the working tree. Keep it on `main`, never dirty;
+do feature work in a worktree.
 
 ## HRRR surface layer export (BasinWX)
 

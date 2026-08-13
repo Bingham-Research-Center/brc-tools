@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Stage B cron wrapper: export HRRR waypoint-forecast JSON and upload to basinwx.dev.
+# Stage B cron wrapper: export HRRR waypoint-forecast JSON and upload to BasinWX.
 #
-# Pin to .dev until the ubair-website waypoint consumer lands on ops. After
-# that, drop BASINWX_API_URLS so fan-out is driven by website_urls.
+# No BASINWX_API_URLS pin: website v1.5.0 (2026-08-13) promoted the dev
+# consumers to ops, so fan-out is driven by
+# ~/.config/ubair-website/website_urls (.com primary, .dev mirror).
 #
 # Install on notchpeak1:
 #   50 * * * * ~/gits/brc-tools/scripts/cron/run_hrrr_waypoint_push.sh
 set -euo pipefail
 
-export BASINWX_API_URLS="https://basinwx.dev"
-
-CONDA_ENV="${CONDA_ENV:-brc-tools}"
+CONDA_ENV="${CONDA_ENV:-brc-tools-2026}"
 REPO_DIR="${REPO_DIR:-$HOME/gits/brc-tools}"
 LOG_DIR="${LOG_DIR:-$HOME/logs}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/hrrr_waypoints.log}"

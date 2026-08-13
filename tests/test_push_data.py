@@ -49,7 +49,27 @@ class TestLoadConfigUrls:
 
     def test_wrong_length_key_raises(self, monkeypatch):
         monkeypatch.setenv("DATA_UPLOAD_API_KEY", "short")
-        with pytest.raises(ValueError, match="32 characters"):
+        with pytest.raises(ValueError, match="32-128 hex"):
+            push_data.load_config_urls()
+
+    def test_rotated_64_hex_key_accepted(self, monkeypatch):
+        # 2026-08-13 rotation issued a 64-hex key; the old len==32 assert
+        # stalled every upload tick until relaxed.
+        monkeypatch.setenv("DATA_UPLOAD_API_KEY", "ab12" * 16)
+        monkeypatch.setenv("BASINWX_API_URLS", "https://a.example")
+        api_key, _ = push_data.load_config_urls()
+        assert api_key == "ab12" * 16
+
+    def test_key_whitespace_stripped(self, monkeypatch):
+        monkeypatch.setenv("DATA_UPLOAD_API_KEY", f"  {'c' * 32}\n")
+        monkeypatch.setenv("BASINWX_API_URLS", "https://a.example")
+        api_key, _ = push_data.load_config_urls()
+        assert api_key == "c" * 32
+
+    @pytest.mark.parametrize("bad", ["g" * 32, "a" * 31, "a" * 129])
+    def test_non_hex_or_out_of_range_rejected(self, monkeypatch, bad):
+        monkeypatch.setenv("DATA_UPLOAD_API_KEY", bad)
+        with pytest.raises(ValueError, match="32-128 hex"):
             push_data.load_config_urls()
 
     def test_no_source_raises(self, env_clear, tmp_path, monkeypatch):

@@ -7,7 +7,6 @@ import datetime as dt
 import json
 import logging
 import math
-import os
 from pathlib import Path
 
 import numpy as np
@@ -28,6 +27,11 @@ from brc_tools.download.hrrr_config import (
 from brc_tools.utils.util_funcs import get_current_datetime
 
 LOG = logging.getLogger(__name__)
+
+# Runtime output belongs outside the checkout — see 76f8d67, which moved the
+# other producers out after the obs cron grew data/ to 3.7 GB. Matches
+# DEFAULT_OUTPUT_DIR in nwp/basinwx.py and the export_hrrr_* scripts.
+DEFAULT_OUTPUT_DIR = Path("~/.cache/brc-tools/basinwx").expanduser()
 
 
 def derive_road_fields(raw: dict[str, float]) -> dict[str, float | str | None]:
@@ -202,8 +206,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--data-dir",
-        default=os.path.expanduser("~/gits/brc-tools/data"),
-        help="Directory for output JSON files",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help=f"Directory for output JSON files (default: {DEFAULT_OUTPUT_DIR})",
     )
     parser.add_argument(
         "--dry-run",
@@ -285,7 +289,15 @@ def main() -> int:
 def _parse_or_find_init(init_time: str | None, *, product: str) -> dt.datetime:
     if init_time:
         return dt.datetime.strptime(init_time, "%Y%m%d%H")
-    return get_latest_hrrr_init(product=product)
+    # start_lag_hours=1, not the shared default of 2. The website rejects the
+    # whole file once init_time is over 3 h old, and the default skipped the
+    # newest available run without testing it: at 09:32Z it picked 07Z (2.55 h
+    # old, 27 min of life left) while 08Z was already published. Starting one
+    # hour later costs a single extra availability probe when the newest run is
+    # not up yet — get_latest_hrrr_init falls back through lookback_hours — and
+    # otherwise buys a full hour of headroom, which is what makes an hourly
+    # cron viable rather than leaving half of each hour uncovered.
+    return get_latest_hrrr_init(product=product, start_lag_hours=1)
 
 
 def _derive_precip_type(raw: dict[str, float]) -> str | None:
