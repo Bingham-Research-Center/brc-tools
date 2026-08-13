@@ -604,7 +604,11 @@ name = "Vernal Regional Airport"
 lat = 40.4408
 lon = -109.5104
 elevation_m = 1609
-runway_headings_deg = [160, 340]  # true, not magnetic
+# FAA redesignated 16/34 -> 17/35 (~2022). Magnetic 169/349, var 10E
+# (AirNav/SkyVector, checked 2026-08-13). True headings drive the
+# cross/headwind math against HRRR's true-north winds; the Rwy labels
+# floor(heading/10) to 17/35.
+runway_headings_deg = [179, 359]  # true, not magnetic
 
 # ── Aliases: surface / near-surface ─────────────────────────────────────────
 

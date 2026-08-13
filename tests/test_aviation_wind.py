@@ -57,15 +57,16 @@ class TestCrosswindMath:
         assert hw == pytest.approx(10.0 * KT_PER_MS, rel=1e-6)
         assert cw == pytest.approx(0.0, abs=1e-9)
 
-    def test_kvel_runway_16_quartering(self):
-        # KVEL runway 16 heading = 160° true. 45° right of heading = 205°.
-        # Wind FROM 205° at 10 m/s (u, v from wind_components):
-        #   u = -10 sin(205°), v = -10 cos(205°).
+    def test_kvel_runway_17_quartering(self):
+        # KVEL runway 17 heading = 179° true (FAA redesignation 16/34 ->
+        # 17/35). 45° right of heading = 224°.
+        # Wind FROM 224° at 10 m/s (u, v from wind_components):
+        #   u = -10 sin(224°), v = -10 cos(224°).
         from brc_tools.nwp.derived import wind_components
 
-        u, v = wind_components(10.0, 205.0)
-        hw = headwind_kt(u, v, 160)
-        cw = crosswind_kt(u, v, 160)
+        u, v = wind_components(10.0, 224.0)
+        hw = headwind_kt(u, v, 179)
+        cw = crosswind_kt(u, v, 179)
         # 45° quartering headwind from the right: hw = cw = 10/sqrt(2).
         expected = 10.0 / np.sqrt(2.0) * KT_PER_MS
         assert hw == pytest.approx(expected, rel=1e-6)
@@ -121,28 +122,30 @@ class TestAviationPayload:
         )
         assert payload["model"] == "hrrr_subh"
         assert payload["airport"] == "KVEL"
-        assert payload["runway_headings_deg"] == [160, 340]
+        assert payload["runway_headings_deg"] == [179, 359]
         assert payload["forecast_minutes"] == [0, 15, 30]
         assert len(payload["valid_times"]) == 3
         for key in ("wind_speed_kt", "wind_dir_deg", "gust_kt",
-                    "crosswind_kt_160", "crosswind_kt_340",
-                    "headwind_kt_160", "headwind_kt_340"):
+                    "crosswind_kt_179", "crosswind_kt_359",
+                    "headwind_kt_179", "headwind_kt_359"):
             assert key in payload["variables"]
             assert key in payload["series"]
             assert len(payload["series"][key]) == 3
 
     def test_payload_values_southerly_wind(self, kvel_dataset):
         # u=0, v=+10: wind blows toward north, FROM south (180°).
-        # Runway 160 (SSE heading) faces the wind -> positive headwind;
-        # runway 340 (NNW heading) has wind from behind -> negative headwind.
+        # Runway 17 (heading 179°, nearly due south) faces the wind ->
+        # positive headwind; runway 35 (heading 359°) has wind from
+        # behind -> negative headwind. 359 - 179 = 180 exactly, so the
+        # two headwinds are antisymmetric.
         init = dt.datetime(2026, 4, 24, 12, 0)
         payload = build_airport_crosswind_payload(
             kvel_dataset, airport="KVEL", init_time=init
         )
         wind_speed = payload["series"]["wind_speed_kt"][0]
         assert wind_speed == pytest.approx(10.0 * KT_PER_MS, rel=1e-2)
-        hw_340 = payload["series"]["headwind_kt_340"][0]
-        hw_160 = payload["series"]["headwind_kt_160"][0]
-        assert hw_160 > 0
-        assert hw_340 < 0
-        assert hw_340 == pytest.approx(-hw_160, rel=1e-6)
+        hw_359 = payload["series"]["headwind_kt_359"][0]
+        hw_179 = payload["series"]["headwind_kt_179"][0]
+        assert hw_179 > 0
+        assert hw_359 < 0
+        assert hw_359 == pytest.approx(-hw_179, rel=1e-6)
