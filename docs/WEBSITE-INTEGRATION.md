@@ -164,7 +164,7 @@ This page is the **contract reference**, folded from the 2026-04-27 and
 Hard rules: temperatures in °C (not Kelvin); never invent dataTypes without a
 website-side PR; don't regress the observations channel.
 
-Known gap: `push_outlook.py` uses `load_config()`, which returns only the first
-URL, so outlooks reach `.com` alone. `clyfar/export/to_basinwx.py` reads the
-singular `BASINWX_API_URL` at four sites with the same effect. Both should move
-to `load_config_urls()`; neither is urgent while Clyfar is out of season.
+Known gap: `clyfar/export/to_basinwx.py` reads the singular `BASINWX_API_URL`
+at four sites, so forecasts/images/llm_outlooks reach `.com` alone — the clyfar
+fan-out PR must land **before ozone season (~Nov)**. (`push_outlook.py` was
+fixed 2026-08-13: it now fans out via `load_config_urls()`.)
