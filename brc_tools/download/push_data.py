@@ -4,6 +4,7 @@ John Lawson, July 2025
 """
 import socket
 import os
+import re
 import requests
 
 import numpy as np
@@ -114,11 +115,12 @@ def load_config_urls():
       3. ~/.config/ubair-website/website_url (legacy single URL → one-element list).
     API key is always read from DATA_UPLOAD_API_KEY.
     """
-    api_key = os.environ.get('DATA_UPLOAD_API_KEY')
+    api_key = os.environ.get('DATA_UPLOAD_API_KEY', '').strip()
     if not api_key:
         raise ValueError("DATA_UPLOAD_API_KEY environment variable not set")
-    if len(api_key) != 32:
-        raise ValueError(f"API key should be 32 characters (hex), got {len(api_key)}")
+    if not re.fullmatch(r'[0-9a-fA-F]{32,128}', api_key):
+        raise ValueError(
+            f"API key should be 32-128 hex characters, got {len(api_key)}")
 
     env_urls = os.environ.get('BASINWX_API_URLS', '').strip()
     if env_urls:
