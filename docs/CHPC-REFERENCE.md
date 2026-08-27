@@ -48,6 +48,41 @@ export POLARS_ALLOW_FORKING_THREAD=1
 export DATA_UPLOAD_API_KEY="<32-char-hex>"   # required for BasinWX uploads
 ```
 
+## Synoptic token rotation
+
+`brc_tools` never reads the Synoptic token itself — SynopticPy resolves it in
+this order: explicit `token=` argument → `SYNOPTIC_TOKEN` env var →
+`~/.config/SynopticPy/config.toml` (mode 0600). Nothing on CHPC exports
+`SYNOPTIC_TOKEN`, so that config file is the single CHPC-side store. No CI
+secret or repo `.env` carries it either (`clyfar/.env` and `ub-wx/.env.example`
+hold placeholders only).
+
+Rotating a public token touches four places. CHPC and the receivers hold
+**independent** copies — a CHPC-only rotation leaves the sites' own live charts
+broken:
+
+| Where | What |
+|-------|------|
+| CHPC `~/.config/SynopticPy/config.toml` | `token = "..."` — every CHPC pull: obs cron, `ObsSource`, case studies, `clyfar`, `ub-wx` |
+| `basinwx.com` → `/srv/ubair-website/.env` | `SYNOPTIC_API_TOKEN` (the server also accepts `SYNOPTIC_API_KEY`), then `pm2 restart` — backs the live `/api/synoptic/*` proxy |
+| `basinwx.dev` → `/srv/ubair-website/.env` | same var + restart |
+| live previews → `/srv/ubair-website-preview-<user>/.env` | same var + `scripts/manage-previews.sh update <user>` |
+
+Install on CHPC without exposing the token on a command line:
+`~/gits/latex-poss-verif-clyfar/scripts/install_rotated_synoptic_token.py`
+(getpass prompt, atomic 0600 write, zero network calls). Then verify:
+
+```bash
+cd /tmp && python -c "from synoptic.services import Metadata; print(Metadata(stid=['KVEL']).df().height)"
+tail -6 ~/logs/obs.log     # next */5 run should upload to PRIMARY and MIRROR
+```
+
+**SynopticPy prints the token verbatim in its auth-failure traceback**, so
+`~/logs/obs.log` holds the dead secret after any bad-token episode — scrub it
+and keep the log 0600. Never park a token in `~/.bashrc*`, commented out or
+otherwise: two mislabelled `DATA_UPLOAD_API_KEY` comments there held the
+Synoptic token until the 2026-08-26 rotation.
+
 ## Cron jobs (active production)
 
 `~/.bashrc`, `~/gits/`, `~/logs/` are CHPC-side paths in the lines below.
