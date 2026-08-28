@@ -5,6 +5,16 @@ observations (SynopticPy) and NWP model data (Herbie) on CHPC; pushes
 JSON to the BasinWX website. Package: **`brc_tools`** (underscore).
 Repo: **`brc-tools`** (hyphen).
 
+**Scope — this is the method library, not an operations repo.** brc-tools
+supplies the functions other repos call; BasinWX operations live in
+`ubair-website`, the pelican2013 study in `latex-jrl-mjd-mdpiair-2026`.
+BasinWX development leans on this repo heavily right now, and the CHPC obs
+cron imports this working tree directly — that is a deployment coupling to
+keep clean (stay on `main`, never dirty; feature work in a worktree), not a
+reason to treat brc-tools as BasinWX's operational folder. Operational
+config, secrets, deploys, and site behaviour belong to their own repos and
+hosts (`docs/CHPC-REFERENCE.md`, `docs/WEBSITE-INTEGRATION.md`).
+
 ## Current focus
 - **pelican2013 manuscript support** (final-draft push lives in `latex-jrl-mjd-mdpiair-2026`): figure engine + X8 deficit-transport diagnostics merged; the study's evidence packet pins an exact brc-tools SHA — treat `wrf_figures.py`/`wrf_output.py`/`visualize/*` as frozen unless the study repo asks.
 - HRRR/RRFS → BasinWX operational ingest (GH #10). Strategy/status: `docs/nwp/ROADMAP.md`.
@@ -36,7 +46,7 @@ figures/          generated output (gitignored)
 - `docs/README.md` — index of `docs/` (mirrors this map)
 - `docs/API-REFERENCE.md` / `docs/API-CLIENTS.md` — module reference / external API-client helpers
 - `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script
-- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload)
+- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload), Synoptic-token rotation surface
 - `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
 - `docs/ENVIRONMENT-SETUP.md` — conda/venv setup · `docs/CROSS-REPO-SYNC.md` — sibling-repo sync protocol
 - `docs/MODIS-CONTEXT-RENDERER.md` — portable NASA CMR/GIBS MODIS timing, rendering, cache, and provenance workflow
@@ -93,7 +103,7 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 |-----|---------|-----------|
 | `DATA_UPLOAD_API_KEY` | BasinWX upload auth | for uploads |
 | `BASINWX_API_URLS` | BasinWX upload URL(s), comma-sep fan-out; overrides `~/.config/ubair-website/website_url(s)` | optional |
-| `SYNOPTIC_TOKEN` | Synoptic obs (also via `~/.config/SynopticPy/config.toml`) | for obs |
+| `SYNOPTIC_TOKEN` | Synoptic obs. Unset on CHPC — the token lives in `~/.config/SynopticPy/config.toml` (0600); rotation surface in `docs/CHPC-REFERENCE.md` | for obs |
 | `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI (`api/` clients) | aviation only |
 | `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
@@ -114,7 +124,7 @@ Use the dedicated **`brc-tools-2026`** env — fresh setup and the CHPC pip flag
 with no editable install; the failure only surfaces later in `brc-wrf`/`clyfar`.
 
 ## Related repos
-- `ubair-website` — Node.js receiver for uploads (data contract).
+- `ubair-website` — **owns BasinWX operations** (site, deploys, its own Synoptic token); Node.js receiver for our uploads (data contract).
 - `clyfar` — ozone forecast; imports `brc_tools.download.push_data`.
 - `brc-wrf` — WRF runs; consumes brc-tools staging (`manifest`/`contract` sidecars) + imports `brc_tools.visualize.grid`.
 - `latex-jrl-mjd-mdpiair-2026` — **active** pelican2013 WRF study + manuscript; owns the case TOMLs (`verification/config/figures/`) + run/figure inventory (SSOT for run/figure locations), consumes the brc-tools figure engine.
