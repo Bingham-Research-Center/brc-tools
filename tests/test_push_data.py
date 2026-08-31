@@ -132,3 +132,105 @@ class TestLegacyCompat:
         with mock.patch.object(push_data, "_post_json_to_url", return_value=True) as m:
             push_data.send_json_to_server("https://a.example", str(fpath), "observations", VALID_KEY)
         m.assert_called_once()
+
+
+class TestFanoutSession:
+    """The bundle semantics that would have caught the 2026-04-27 .dev outage.
+
+    A mirror 413'd every ~1.5 MB run file and accepted the ~3 KB index that
+    followed, so the index advertised files the host did not have and the job
+    still exited 0. A session must (a) stop sending to a host after its first
+    failure and (b) make a mirror failure audible.
+    """
+
+    @staticmethod
+    def _files(tmp_path, n):
+        paths = []
+        for i in range(n):
+            p = tmp_path / f"run_{i}.json"
+            p.write_text("{}")
+            paths.append(str(p))
+        idx = tmp_path / "product_index.json"
+        idx.write_text("{}")
+        return paths, str(idx)
+
+    def test_failed_host_is_skipped_for_the_rest_of_the_bundle(self, tmp_path, capsys):
+        runs, index = self._files(tmp_path, 3)
+        # Mirror rejects the very first run file; primary takes everything.
+        def fake(url, fpath, file_data, api_key, *, role="PRIMARY"):
+            return role == "PRIMARY"
+
+        with mock.patch.object(push_data, "_post_json_to_url", side_effect=fake) as m:
+            session = push_data.FanoutSession(["https://primary", "https://mirror"], VALID_KEY)
+            for f in runs:
+                session.send(f, "forecasts")
+            session.send(index, "forecasts")
+            sent = session.finish()
+
+        # Primary got all four; mirror was abandoned after its first failure.
+        assert sent == {"https://primary": 4, "https://mirror": 0}
+        posted = [c.args[0] for c in m.call_args_list]
+        assert posted.count("https://mirror") == 1, "mirror retried after failing"
+        assert posted.count("https://primary") == 4
+
+    def test_index_never_reaches_a_host_that_failed_a_run_file(self, tmp_path):
+        runs, index = self._files(tmp_path, 2)
+
+        def fake(url, fpath, file_data, api_key, *, role="PRIMARY"):
+            return role == "PRIMARY"
+
+        with mock.patch.object(push_data, "_post_json_to_url", side_effect=fake) as m:
+            push_data.send_bundle_to_all(
+                ["https://primary", "https://mirror"], runs + [index], "forecasts", VALID_KEY
+            )
+
+        # basename only: pytest's tmp_path is named after the test, which
+        # itself contains "index".
+        mirror_files = [os.path.basename(c.args[1])
+                        for c in m.call_args_list if c.args[0] == "https://mirror"]
+        assert mirror_files == ["run_0.json"], mirror_files
+        assert not any("index" in f for f in mirror_files), (
+            "mirror received an index for run files it rejected -- this is the "
+            "exact shape of the four-month silent outage")
+
+    def test_mirror_only_failure_alerts_on_stderr_but_does_not_raise(self, tmp_path, capsys):
+        runs, index = self._files(tmp_path, 1)
+
+        def fake(url, fpath, file_data, api_key, *, role="PRIMARY"):
+            return role == "PRIMARY"
+
+        with mock.patch.object(push_data, "_post_json_to_url", side_effect=fake):
+            session = push_data.FanoutSession(["https://primary", "https://mirror"], VALID_KEY)
+            session.send(runs[0], "forecasts")
+            session.send(index, "forecasts")
+            session.finish()  # must not raise: the primary is complete
+
+        err = capsys.readouterr().err
+        assert push_data.FanoutSession.ALERT in err
+        assert "https://mirror" in err
+
+    def test_primary_failure_raises_upload_incomplete(self, tmp_path):
+        runs, index = self._files(tmp_path, 2)
+
+        def fake(url, fpath, file_data, api_key, *, role="PRIMARY"):
+            return role != "PRIMARY"
+
+        with mock.patch.object(push_data, "_post_json_to_url", side_effect=fake):
+            with pytest.raises(push_data.UploadIncomplete, match="bundle abandoned"):
+                push_data.send_bundle_to_all(
+                    ["https://primary", "https://mirror"], runs + [index],
+                    "forecasts", VALID_KEY
+                )
+
+    def test_all_healthy_sends_everything_everywhere(self, tmp_path, capsys):
+        runs, index = self._files(tmp_path, 3)
+        with mock.patch.object(push_data, "_post_json_to_url", return_value=True):
+            sent = push_data.send_bundle_to_all(
+                ["https://primary", "https://mirror"], runs + [index], "forecasts", VALID_KEY
+            )
+        assert sent == {"https://primary": 4, "https://mirror": 4}
+        assert push_data.FanoutSession.ALERT not in capsys.readouterr().err
+
+    def test_empty_urls_raise(self):
+        with pytest.raises(ValueError):
+            push_data.FanoutSession([], VALID_KEY)

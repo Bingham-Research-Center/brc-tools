@@ -6,6 +6,7 @@ import mimetypes
 import socket
 import os
 import re
+import sys
 import requests
 
 import numpy as np
@@ -96,6 +97,97 @@ def send_json_to_all(server_addresses, fpath, file_data, api_key):
     if not results[primary]:
         raise RuntimeError(f"Primary upload to {primary} failed for {fpath}")
     return results
+
+
+class UploadIncomplete(RuntimeError):
+    """The primary host did not receive every file in a bundle."""
+
+
+class FanoutSession:
+    """Fan-out uploader with a per-host memory across a whole bundle.
+
+    ``send_json_to_all`` judges one file at a time, so a host that rejected a
+    run file still receives the small ``*_index.json`` that follows it. That is
+    how basinwx.dev spent 2026-04-27 to 2026-08-25 serving an index advertising
+    ~1.5 MB run files nginx had 413'd: the index is ~3 KB, so it sailed through
+    every cycle and the job exited 0.
+
+    A session marks a host failed on its first bad response and skips it for the
+    rest of the bundle -- the index included. Upload the index last and a host
+    either gets a consistent set or keeps its previous, honest one.
+
+    Mirrors stay best-effort: only the primary can fail the job. But a mirror
+    failure is no longer silent -- ``finish`` prints an ALERT to stderr so the
+    cron wrapper can surface it and MAILTO fires.
+    """
+
+    ALERT = "ALERT_MIRROR_INCOMPLETE"
+
+    def __init__(self, server_addresses, api_key):
+        if not server_addresses:
+            raise ValueError("server_addresses is empty")
+        self.urls = list(server_addresses)
+        self.primary = self.urls[0]
+        self.api_key = api_key
+        self.failed = {}      # url -> filename of its first failure
+        self.skipped = {}     # url -> count of files not attempted after that
+        self.sent = {url: 0 for url in self.urls}
+
+    def send(self, fpath, file_data):
+        """Upload one file to every host still healthy. Returns {url: ok}."""
+        results = {}
+        name = os.path.basename(fpath)
+        for idx, url in enumerate(self.urls):
+            if url in self.failed:
+                self.skipped[url] = self.skipped.get(url, 0) + 1
+                print(f"[SKIP {url}] {name} -- host already failed on "
+                      f"{self.failed[url]}")
+                results[url] = False
+                continue
+            role = "PRIMARY" if idx == 0 else "MIRROR"
+            ok = _post_json_to_url(url, fpath, file_data, self.api_key, role=role)
+            results[url] = ok
+            if ok:
+                self.sent[url] += 1
+            else:
+                self.failed[url] = name
+        return results
+
+    def finish(self):
+        """Report the bundle. Raise if the primary is incomplete.
+
+        Returns the {url: files_sent} tally so callers can log it.
+        """
+        for url in self.urls:
+            if url not in self.failed:
+                continue
+            missed = self.skipped.get(url, 0)
+            role = "PRIMARY" if url == self.primary else "MIRROR"
+            print(f"[{role} {url}] incomplete: failed on {self.failed[url]}"
+                  f"{f', skipped {missed} later file(s)' if missed else ''}")
+
+        if self.primary in self.failed:
+            raise UploadIncomplete(
+                f"Primary upload to {self.primary} failed for "
+                f"{self.failed[self.primary]}; bundle abandoned")
+
+        mirror_failures = [u for u in self.urls[1:] if u in self.failed]
+        if mirror_failures:
+            # stderr, so the cron wrapper can spot it without parsing the log.
+            print(f"{self.ALERT} hosts={','.join(mirror_failures)} "
+                  f"primary={self.primary} ok", file=sys.stderr)
+        return dict(self.sent)
+
+
+def send_bundle_to_all(server_addresses, fpaths, file_data, api_key):
+    """Upload an ordered bundle, gating later files on earlier success.
+
+    Put the index last: any host that rejected a run file will not receive it.
+    """
+    session = FanoutSession(server_addresses, api_key)
+    for fpath in fpaths:
+        session.send(fpath, file_data)
+    return session.finish()
 
 
 def _read_url_file(path):
