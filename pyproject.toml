@@ -58,6 +58,14 @@ wrf = [
     "metpy>=1.6",     # skew-T + thermodynamics
     "siphon>=0.9",    # Wyoming upper-air sounding archive
 ]
+terrain = [
+    # brc_tools.terrain -- D8 catchments, basin floors and gate lines on USGS 3DEP DEMs.
+    # Imported lazily; the package imports without these. Deliberately NOT in
+    # brc-tools-2026 (GDAL): the terrain-2026 env carries them (environment-terrain.yml).
+    "rasterio>=1.3",   # GeoTIFF mosaic + warp (terrain.dem.mosaic_tiles)
+    "richdem>=2.3",    # priority-flood pit filling (terrain.d8.fill_depressions)
+    "pyproj>=3.4",     # NAD83 <-> UTM 12N (terrain.dem.Grid)
+]
 dev = [
     "pytest>=7.4.0",
     "ruff>=0.1.0",
