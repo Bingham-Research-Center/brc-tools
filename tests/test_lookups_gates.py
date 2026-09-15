@@ -44,9 +44,9 @@ def test_gate_names_are_snake_case_and_unique(table):
         assert re.fullmatch(r"[a-z][a-z0-9_]*", name), f"{name}: not snake_case"
 
 
-def test_every_gate_endpoint_and_mouth_inside_uinta_basin_wide(lookups, table):
-    bad = [n for n, g in gt.gates(lookups=lookups).items() if not gt.in_region(g, "uinta_basin_wide", lookups=lookups)]
-    assert not bad, f"gates outside uinta_basin_wide: {bad}"
+def test_every_gate_endpoint_and_mouth_inside_uinta_airshed(lookups, table):
+    bad = [n for n, g in gt.gates(lookups=lookups).items() if not gt.in_region(g, "uinta_airshed", lookups=lookups)]
+    assert not bad, f"gates outside uinta_airshed: {bad}"
 
 
 def test_gate_lines_are_1_to_30_km(lookups, table):

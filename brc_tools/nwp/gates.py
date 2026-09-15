@@ -101,7 +101,7 @@ def gate_lines(kind: str | None = None, *, lookups: dict | None = None) -> dict[
     return {n: g.line for n, g in gates(kind, lookups=lookups).items()}
 
 
-def in_region(g: Gate, region: str = "uinta_basin_wide", *, lookups: dict | None = None) -> bool:
+def in_region(g: Gate, region: str = "uinta_airshed", *, lookups: dict | None = None) -> bool:
     """Both endpoints (and the mouth, if any) inside a lookups.toml region box."""
     lu = lookups if lookups is not None else load_lookups()
     r = lu["regions"][region]
