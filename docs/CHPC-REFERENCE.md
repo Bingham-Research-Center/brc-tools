@@ -75,6 +75,7 @@ Install on CHPC without exposing the token on a command line:
 ```bash
 cd /tmp && python -c "from synoptic.services import Metadata; print(Metadata(stid=['KVEL']).df().height)"
 tail -6 ~/logs/obs.log     # next */5 run should upload to PRIMARY and MIRROR
+tail -3 ~/logs/basinwx/push_receipts.jsonl   # one JSON line per attempt: ts, role, url, file, status, verified
 ```
 
 **SynopticPy prints the token verbatim in its auth-failure traceback**, so
