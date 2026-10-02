@@ -27,6 +27,15 @@ Project documentation. Topical files only — agent context lives in
 - **FORECAST-FUNNEL.md** — NAM "forecast funnel" synoptic montage (250/500/600 hPa + surface analysis) + `/basin-forecast-funnel` skill and `scripts/forecast_funnel.py` CLI.
 - **TERRAIN-D8.md** — D8 catchments, basin floors and perpendicular gate lines on USGS 3DEP
   (`brc_tools.terrain`, optional extra `terrain`, env `terrain-2026`): method, caveats, knobs.
+- **TERRAIN-THROATS.md** — sills, throats and model grids: closed depressions, the lowest pass between two
+  basins, minimum-cut throat area, reach sections, `geo_em` on a `Grid`, the geogrid seam cell, slope
+  limiting and river carving (`brc_tools.terrain`, second half).
+- **DRAINAGE-THEORY.md** — `brc_tools.drainage`: surface cooling, slope flow, throat hydraulics and the
+  basin cascade, each with the closure it rests on and what is assumed rather than known.
+- **EVENT-DIAGNOSTICS.md** — reading a past night from stations, GOES land-surface temperature and the
+  sun (`brc_tools.obs.profiles`, `brc_tools.satellite.goes`, `brc_tools.utils.solar`).
+- **WRF-TRAJECTORIES.md** — offline back and forward trajectories from WRF output
+  (`brc_tools.nwp.wrf_trajectories`).
 - **DEFICIT-REFERENCE.md** — the sunset-profile reference temperature for heat-deficit budgets
   (`brc_tools.nwp.wrf_deficit_reference`), the two-datum error bar and the `theta_ref_*.json` sidecar.
 - **nwp/NWP-SOURCE-MATRIX.md** — per-source download matrix (Herbie vs direct) + Herbie currency.

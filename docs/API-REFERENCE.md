@@ -213,6 +213,12 @@ One-line map of the WRF-era modules; each row's owning doc carries the detail.
 | `nwp.wrf_deficit_reference` | fixed / sunset-profile reference for the heat deficit, two-datum error bar, per-catchment budget terms, the `theta_ref_*.json` sidecar | DEFICIT-REFERENCE.md |
 | `nwp.gates` | reader for the lookups.toml `[gates.*]` table (rim / floor / port flux planes) | TERRAIN-D8.md |
 | `terrain.dem` / `terrain.d8` / `terrain.catchments` / `terrain.gates` / `terrain.validate` | 3DEP mosaics, D8 routing, basin floors and rim crossings, perpendicular gate lines, NWIS/WBD/NHD checks (optional extra `terrain`) | TERRAIN-D8.md |
+| `terrain.depressions` / `terrain.throat` / `terrain.profiles` | closed-depression inventory, the sill between two basins, volume against stage; minimum-cut throat area and clearance width; long profiles and reach-averaged valley sections | TERRAIN-THROATS.md |
+| `terrain.wrfgrid` / `terrain.conditioning` / `terrain.skyview` | a WRF `geo_em` on a `Grid`, `HGT_M` against its source (crater detector), WPS tile coverage; slope limiting and channel breaching; sky-view factor | TERRAIN-THROATS.md |
+| `drainage.cooling` / `drainage.slopeflow` / `drainage.hydraulics` / `drainage.cascade` | idealised theory on that geometry: clear-night surface energy balance, Prandtl and bulk slope flow, Froude numbers and pool tilt, reduced-gravity throat capacity (critical, drowned, friction-limited), fill-and-spill of linked basins. numpy only | DRAINAGE-THEORY.md |
+| `drainage.sinks` | `tomllib`-only reader for the lookups.toml `[sinks.*]` table (basins, exits, throats), waypoints and regions -- usable where `brc_tools.nwp` cannot be imported | DRAINAGE-THEORY.md |
+| `nwp.wrf_trajectories` | offline forward/backward kinematic trajectories from any WRF stream carrying `U, V, W, PH, PHB`, integrated in model-index space | WRF-TRAJECTORIES.md |
+| `obs.profiles` / `satellite.goes` / `utils.solar` | stations read as theta-against-height profiles, heat deficit and drainage metrics; GOES ABI L2 listing, download and parallax-corrected resampling (`requests`, no S3 client); sun position, sunrise/sunset and one-night-long night windows | EVENT-DIAGNOSTICS.md |
 | `nwp.wrf_convective` | auxhist stream + convective diagnostics | WRF-CONVECTIVE.md |
 | `nwp.convective_env` | MetPy parcel/shear/SRH environment | WRF-CONVECTIVE.md |
 | `nwp.wrf_tslist` | `.TS` traces + level profiles | WRF-CONVECTIVE.md |
