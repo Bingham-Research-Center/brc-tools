@@ -25,5 +25,9 @@ Project documentation. Topical files only — agent context lives in
   visuals across all three engines, plus the method errors already found and the
   gaps still open. Read before a first sweep on a new case.
 - **FORECAST-FUNNEL.md** — NAM "forecast funnel" synoptic montage (250/500/600 hPa + surface analysis) + `/basin-forecast-funnel` skill and `scripts/forecast_funnel.py` CLI.
+- **TERRAIN-D8.md** — D8 catchments, basin floors and perpendicular gate lines on USGS 3DEP
+  (`brc_tools.terrain`, optional extra `terrain`, env `terrain-2026`): method, caveats, knobs.
+- **DEFICIT-REFERENCE.md** — the sunset-profile reference temperature for heat-deficit budgets
+  (`brc_tools.nwp.wrf_deficit_reference`), the two-datum error bar and the `theta_ref_*.json` sidecar.
 - **nwp/NWP-SOURCE-MATRIX.md** — per-source download matrix (Herbie vs direct) + Herbie currency.
 - **nwp/ROADMAP.md** — HRRR/RRFS → BasinWX strategy/status (GH #10 lane).

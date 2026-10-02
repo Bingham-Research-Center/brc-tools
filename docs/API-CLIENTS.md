@@ -15,6 +15,7 @@ credential-holding class.
 | Mistral | `brc_tools.api.mistral` | `MistralClient` | `MISTRAL_API_KEY` | Usage-based |
 | Radiosondes | `brc_tools.api.soundings` | `fetch_sounding()` | — (open) | IGRA2 (NCEI) + Univ. Wyoming; auth-free |
 | EPA AQS AirData | `brc_tools.api.aqs` | `download_airdata()` / `load_airdata()` | — (open) | bulk CSV zips, cached with provenance sidecars |
+| USGS hydrography (NWIS sites, WBD names, NHD flowlines) | `brc_tools.terrain.validate` | `nwis_sites()` / `wbd_name()` / `nhd_flowlines()` | — (open) | checks on D8 routing; not NWP, so Herbie does not apply |
 
 ## Install
 

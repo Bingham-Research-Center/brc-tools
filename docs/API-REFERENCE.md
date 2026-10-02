@@ -210,6 +210,9 @@ One-line map of the WRF-era modules; each row's owning doc carries the detail.
 | `nwp.wrf_section` | wrfout → plan/arbitrary-transect adapter (native eta) | WRF-WINDS.md |
 | `nwp.wrf_derived` | fog/visibility/cloud/surface-energy/stability/TKE diagnostics WRF never writes | WRF-WINDS.md |
 | `nwp.wrf_tracers` | passive `tr17_*` air-mass source attribution | WRF-WINDS.md |
+| `nwp.wrf_deficit_reference` | fixed / sunset-profile reference for the heat deficit, two-datum error bar, per-catchment budget terms, the `theta_ref_*.json` sidecar | DEFICIT-REFERENCE.md |
+| `nwp.gates` | reader for the lookups.toml `[gates.*]` table (rim / floor / port flux planes) | TERRAIN-D8.md |
+| `terrain.dem` / `terrain.d8` / `terrain.catchments` / `terrain.gates` / `terrain.validate` | 3DEP mosaics, D8 routing, basin floors and rim crossings, perpendicular gate lines, NWIS/WBD/NHD checks (optional extra `terrain`) | TERRAIN-D8.md |
 | `nwp.wrf_convective` | auxhist stream + convective diagnostics | WRF-CONVECTIVE.md |
 | `nwp.convective_env` | MetPy parcel/shear/SRH environment | WRF-CONVECTIVE.md |
 | `nwp.wrf_tslist` | `.TS` traces + level profiles | WRF-CONVECTIVE.md |
