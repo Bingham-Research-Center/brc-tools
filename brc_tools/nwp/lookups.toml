@@ -189,6 +189,14 @@ ne = [41.7, -107.8]
 sw = [39.05, -111.8]
 ne = [41.9, -107.4]
 
+# The Green River watershed above Desolation Canyon -- Wind River and Wyoming Ranges to the
+# Book Cliffs, Wasatch Plateau to the Park Range and Flat Tops -- with a margin: every
+# surface from which air could drain to the Uinta Basin. The extent a "divide to divide"
+# outer model domain should hold, and of the theory's widest terrain analysis (2026-10).
+[regions.green_river_above_desolation]
+sw = [38.95, -112.0]
+ne = [43.6, -106.4]
+
 [regions.uinta_basin_xsection_we]
 sw = [40.20, -111.50]
 ne = [40.55, -108.80]
@@ -1734,6 +1742,98 @@ huc10         = ""
 label         = "ashley bench exit: the floor gate the box budget closes on"
 source        = "D8 floor drainage on USGS 3DEP 1 as (30 m), ub-wx drainage-canyons-gigawatts 2026-09"
 
+# ── Sinks: the basins a cold pool fills, and the throat each leaves by ─────────────
+# The "Basin cold pool" is a chain of basins joined by throats (drainage-canyons-gigawatts,
+# Iteration 5). A sink is everything -- lowland and the canyons that feed it -- whose
+# drainage leaves through `exit`: the point where the basin's outlet channel enters its
+# throat (snapped to the largest-accumulation cell within `snap_m`). `throat_end` is
+# where that throat opens into the next basin, `downstream` the sink it feeds ("" =
+# leaves the system), `kind` "floor" for the Uinta Basin proper and "corridor" for the
+# Green / Yampa / White river basins outside it. Places are GNIS landmarks above where
+# one exists. Consumers: brc_tools.drainage.cascade nodes; the tracer regions; the
+# interior control-section gates that replace the boundary "ports".
+
+[sinks.flaming_gorge]
+kind       = "corridor"
+label      = "Flaming Gorge (reservoir basin above the dam)"
+exit       = [40.914, -109.421]          # flaming_gorge_dam: the foot of the dam, so the basin is the reservoir
+snap_m     = 300
+throat     = "Red Canyon"
+throat_end = [40.88024, -109.16346]      # browns_park
+downstream = "browns_park"
+
+[sinks.browns_park]
+kind       = "corridor"
+label      = "Browns Park"
+exit       = [40.7133, -108.89289]       # gates_of_lodore
+snap_m     = 1500
+throat     = "Canyon of Lodore"
+throat_end = [40.52052, -108.98678]      # echo_park
+downstream = "echo_park"
+
+[sinks.deerlodge]
+kind       = "corridor"
+label      = "Deerlodge Park / Lily Park (the Yampa above its canyon)"
+exit       = [40.44636, -108.51732]      # deerlodge_park
+snap_m     = 1500
+throat     = "Yampa Canyon"
+throat_end = [40.52052, -108.98678]      # echo_park
+downstream = "echo_park"
+
+[sinks.echo_park]
+kind       = "corridor"
+label      = "Echo Park (the Green-Yampa confluence)"
+exit       = [40.52052, -108.98678]      # echo_park: the most downstream cell within snap_m
+snap_m     = 1500
+throat     = "Whirlpool Canyon"
+throat_end = [40.51691, -109.14762]      # island_park
+downstream = "island_park"
+
+[sinks.island_park]
+kind       = "corridor"
+label      = "Island Park / Rainbow Park"
+exit       = [40.50469, -109.16513]      # rainbow_park
+snap_m     = 1500
+throat     = "Split Mountain Canyon"
+throat_end = [40.44497, -109.25153]      # split_mountain_canyon (GNIS valley point: its mouth)
+downstream = "ouray_sink"
+
+[sinks.rangely]
+kind       = "corridor"
+label      = "Rangely reach of the White River"
+exit       = [40.065, -108.985]          # where the valley closes in, west of Rangely (approximate)
+snap_m     = 6000                        # wide on purpose: the White is the only large channel here
+throat     = "White River canyon"
+throat_end = [40.06219, -109.6793]       # white_river_mouth: the canyon runs to the Ouray flats
+downstream = "ouray_sink"
+
+[sinks.ashley_bench]
+kind       = "floor"
+label      = "Ashley Valley (the bench above Jensen)"
+exit       = [40.37246, -109.40776]      # gates.ashley_bench_exit
+snap_m     = 600
+throat     = "Ashley Creek at Jensen (unconfined)"
+throat_end = [40.364, -109.346]          # jensen
+downstream = "ouray_sink"
+
+[sinks.duchesne_bench]
+kind       = "floor"
+label      = "Duchesne-Myton bench"
+exit       = [40.11016, -109.69866]      # gates.duchesne_bench_exit
+snap_m     = 800
+throat     = "Duchesne River above Ouray (unconfined)"
+throat_end = [40.08607, -109.68403]      # duchesne_river_mouth
+downstream = "ouray_sink"
+
+[sinks.ouray_sink]
+kind       = "floor"
+label      = "Ouray sink (the Green River floor)"
+exit       = [39.80, -109.923]           # gates.ouray_sink_exit: Sand Wash
+snap_m     = 1500
+throat     = "Desolation Canyon"
+throat_end = [39.35258, -110.02182]      # desolation_canyon
+downstream = ""
+
 # ── Airports (aviation exports) ────────────────────────────────────────────
 
 [airports.KVEL]
@@ -1985,6 +2085,96 @@ output_var  = "pbl_height"
 [aliases.pbl_height.search]
 hrrr = "HPBL:surface"
 rrfs = "HPBL:surface"
+
+# ── Aliases: surface state and surface energy balance (HRRR sfc) ────────────
+# For cold-pool work: what the ground is (skin temperature, snow, lake ice) and what
+# it exchanges with the air. Each search matches exactly one message at f00, f01,
+# f02, f24 and f48 of the 2025-01-26 18Z HRRR sfc inventory (checked 2026-10-02 for
+# ub-wx drainage-canyons-gigawatts, Iteration 5). WEASD is the trap: the pack on the
+# ground shares its name with up to three snowfall accumulation buckets
+# ("0-N hour acc", "N-1-N hour acc", "0-N day acc"), so the search pins the
+# instantaneous forecast-time token. The radiation names are level-qualified because
+# ULWRF and USWRF also exist at the top of the atmosphere. Fluxes are instantaneous
+# and carry the signs HRRR ships: SHTFL and LHTFL positive upward (surface to air).
+
+[aliases.temp_surface]
+description = "Surface (skin) temperature"
+units       = "K"
+output_var  = "temp_surface"
+[aliases.temp_surface.search]
+hrrr = "TMP:surface"
+
+[aliases.ice_cover]
+description = "Ice cover on water, lakes included (fraction, 0-1)"
+units       = "1"
+output_var  = "ice_cover"
+[aliases.ice_cover.search]
+hrrr = "ICEC:surface"
+
+[aliases.snow_cover]
+description = "Snow cover"
+units       = "%"
+output_var  = "snow_cover"
+[aliases.snow_cover.search]
+hrrr = "SNOWC:surface"
+
+[aliases.snow_water_equiv]
+description    = "Water equivalent of the snow pack on the ground (instantaneous; not the accumulated-snowfall buckets)"
+units          = "kg m-2"
+output_var     = "snow_water_equiv"
+synoptic_name  = "snow_water_equiv"
+synoptic_units = "mm"
+[aliases.snow_water_equiv.search]
+hrrr = 'WEASD:surface:(?:anl|\d+ hour fcst)'
+
+[aliases.shf]
+description = "Surface sensible heat flux (positive upward: surface to air)"
+units       = "W m-2"
+output_var  = "shf"
+[aliases.shf.search]
+hrrr = "SHTFL:surface"
+
+[aliases.lhf]
+description = "Surface latent heat flux (positive upward: surface to air)"
+units       = "W m-2"
+output_var  = "lhf"
+[aliases.lhf.search]
+hrrr = "LHTFL:surface"
+
+[aliases.ground_heat_flux]
+description = "Ground heat flux at the surface (sign as HRRR ships it)"
+units       = "W m-2"
+output_var  = "ground_heat_flux"
+[aliases.ground_heat_flux.search]
+hrrr = "GFLUX:surface"
+
+[aliases.lw_down]
+description = "Downward longwave radiation at the surface"
+units       = "W m-2"
+output_var  = "lw_down"
+[aliases.lw_down.search]
+hrrr = "DLWRF:surface"
+
+[aliases.lw_up]
+description = "Upward longwave radiation at the surface"
+units       = "W m-2"
+output_var  = "lw_up"
+[aliases.lw_up.search]
+hrrr = "ULWRF:surface"
+
+[aliases.sw_down]
+description = "Downward shortwave radiation at the surface"
+units       = "W m-2"
+output_var  = "sw_down"
+[aliases.sw_down.search]
+hrrr = "DSWRF:surface"
+
+[aliases.sw_up]
+description = "Upward (reflected) shortwave radiation at the surface"
+units       = "W m-2"
+output_var  = "sw_up"
+[aliases.sw_up.search]
+hrrr = "USWRF:surface"
 
 # ── Aliases: convective / thunderstorm diagnostics (HRRR sfc, RRFS prslev) ──
 # Confirmed against the live HRRR sfc inventory (170 messages, 2026-07-15 18Z).

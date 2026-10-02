@@ -167,6 +167,56 @@ def walk_upstream_main(rcv: np.ndarray, acc: np.ndarray, cell: int, nsteps: int,
     return int(cell)
 
 
+def trace_downstream(rcv: np.ndarray, start: int, *, stop=None, max_steps: int | None = None) -> np.ndarray:
+    """The flow path from ``start`` as flat indices, ending at a sink, at the first cell for
+    which ``stop`` is true (a flat bool mask; that cell is included) or after ``max_steps``."""
+    path = [int(start)]
+    limit = rcv.size if max_steps is None else int(max_steps)
+    cell = int(start)
+    for _ in range(limit):
+        if stop is not None and stop[cell]:
+            break
+        nxt = int(rcv[cell])
+        if nxt == cell:
+            break
+        path.append(nxt)
+        cell = nxt
+    return np.asarray(path, dtype=np.int64)
+
+
+def trace_upstream_main(rcv: np.ndarray, acc: np.ndarray, start: int, nx: int, *, min_acc: float = 0.0,
+                        max_steps: int | None = None) -> np.ndarray:
+    """The main stem above ``start`` as flat indices (``start`` first): at each cell follow
+    the donor with the largest accumulation, until none has at least ``min_acc`` cells."""
+    n = rcv.size
+    path = [int(start)]
+    cell = int(start)
+    limit = n if max_steps is None else int(max_steps)
+    for _ in range(limit):
+        j, i = divmod(cell, nx)
+        best, best_acc = -1, 0
+        for dj, di in NEIGHBORS:
+            jj, ii = j + dj, i + di
+            if 0 <= ii < nx:
+                cc = jj * nx + ii
+                if 0 <= cc < n and rcv[cc] == cell and cc != cell and acc[cc] > best_acc:
+                    best, best_acc = cc, acc[cc]
+        if best < 0 or best_acc < min_acc:
+            break
+        path.append(int(best))
+        cell = int(best)
+    return np.asarray(path, dtype=np.int64)
+
+
+def fill_depth(dem: np.ndarray, grid) -> np.ndarray:
+    """Depth of every cell below its depression's spill level (m, >= 0; NaN where nodata):
+    a priority-flood fill WITHOUT the epsilon gradient, minus the terrain.  On a real
+    DEM this is ponds and lake basins; on a model grid it is also the storage that
+    coarsening put behind canyons it could no longer resolve."""
+    flat = fill_depressions(dem, grid, epsilon=False)
+    return np.maximum(flat - dem, 0.0).astype(np.float32)
+
+
 def slope_deg(dem: np.ndarray, res: float) -> np.ndarray:
     """Terrain slope (degrees) from central differences; NaN filled with the mean first."""
     gy, gx = np.gradient(np.where(np.isnan(dem), np.nanmean(dem), dem), res, res)

@@ -123,3 +123,18 @@ def test_line_max_acc_cell_finds_the_river():
     lon1, lat1 = grid.lonlat_xy(x, grid.y1 - (ny - 2) * grid.res)
     c = ct.line_max_acc_cell(grid, acc, (lat0, lon0, lat1, lon1))
     assert c // nx == ny // 2 and c % nx == 18
+
+
+def test_point_max_acc_cell_takes_the_most_downstream_channel_cell_in_reach():
+    z, grid = bowl_with_outlet()
+    ny, nx = z.shape
+    rcv = d8.d8_receivers(z, grid.res)
+    acc = d8.flow_accumulation(rcv).acc
+    # a point on the wall two cells north of the river, at column 17: within 300 m the river
+    # cells 15..19 are in reach, and accumulation grows downstream, so the answer is column 19
+    lon, lat = grid.lonlat(ny // 2 - 2, 17)
+    c = ct.point_max_acc_cell(grid, acc, float(lat), float(lon), 300.0)
+    assert divmod(c, nx) == (ny // 2, 19)
+    # the same answer from the (ny, nx) raster, and a radius of zero is the cell itself
+    assert ct.point_max_acc_cell(grid, acc.reshape(ny, nx), float(lat), float(lon), 300.0) == c
+    assert ct.point_max_acc_cell(grid, acc, float(lat), float(lon), 0.0) == (ny // 2 - 2) * nx + 17

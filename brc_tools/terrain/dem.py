@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import warnings
 from dataclasses import asdict, dataclass
 from functools import cached_property
 from pathlib import Path
@@ -234,6 +235,95 @@ def load_cached_dem(path: str | Path) -> tuple[np.ndarray, Grid]:
     z = np.load(path)
     dem = z["dem"]
     return dem, Grid(float(z["x0"]), float(z["y1"]), float(z["res"]), *dem.shape)
+
+
+def warp_tiles(tifs, grid: Grid, *, resampling: str = "average", src_crs=None, pad_deg: float = 0.05,
+               num_threads: int = 8) -> np.ndarray:
+    """Resample DEM GeoTIFFs onto ANY ``Grid`` (its ``crs`` may be a model projection, e.g.
+    the Lambert grid of a WRF domain) and return float32 ``(ny, nx)`` metres, NaN where the
+    tiles have no data.
+
+    ``resampling`` is a ``rasterio.enums.Resampling`` name: ``"average"`` is the area mean
+    geogrid's ``average_gcell`` takes when the grid is coarser than the source, ``"bilinear"``
+    its ``four_pt`` when it is not.  ``src_crs`` overrides the tiles' CRS: pass the grid's own
+    ``geo_crs`` (a sphere) to reproduce WPS, which reads source lat/lon as if they were on the
+    model sphere and applies no datum shift.
+    """
+    rasterio = require("rasterio")
+    from rasterio.enums import Resampling
+    from rasterio.merge import merge
+    from rasterio.transform import from_origin
+    from rasterio.warp import reproject
+
+    lon0, lon1, lat0, lat1 = _edge_extent_lonlat(grid)
+    srcs = [rasterio.open(p) for p in tifs]
+    try:
+        keep = [s for s in srcs if s.bounds.right > lon0 - pad_deg and s.bounds.left < lon1 + pad_deg
+                and s.bounds.top > lat0 - pad_deg and s.bounds.bottom < lat1 + pad_deg]
+        if not keep:
+            raise FileNotFoundError(f"no source tile intersects the grid ({lon0:.2f}..{lon1:.2f}, {lat0:.2f}..{lat1:.2f})")
+        merged, src_transform = merge(keep, bounds=(lon0 - pad_deg, lat0 - pad_deg, lon1 + pad_deg, lat1 + pad_deg),
+                                      nodata=NODATA, dtype="float32")
+        crs = src_crs or keep[0].crs
+    finally:
+        for s in srcs:
+            s.close()
+    dst = np.full((grid.ny, grid.nx), NODATA, dtype=np.float32)
+    reproject(merged[0], dst, src_transform=src_transform, src_crs=crs, src_nodata=NODATA,
+              dst_transform=from_origin(grid.x0, grid.y1, grid.res, grid.res), dst_crs=grid.crs,
+              dst_nodata=NODATA, resampling=getattr(Resampling, resampling), num_threads=num_threads)
+    dst[dst <= -1000] = np.nan
+    return dst
+
+
+def _edge_extent_lonlat(grid: Grid, n: int = 64) -> tuple[float, float, float, float]:
+    """(lon_w, lon_e, lat_s, lat_n) from points along all four edges: on a conic grid the
+    extreme latitude sits mid-edge, not at a corner."""
+    xs = np.linspace(grid.x0, grid.x0 + grid.nx * grid.res, n)
+    ys = np.linspace(grid.y1 - grid.ny * grid.res, grid.y1, n)
+    ex = np.concatenate([xs, xs, np.full(n, xs[0]), np.full(n, xs[-1])])
+    ey = np.concatenate([np.full(n, ys[0]), np.full(n, ys[-1]), ys, ys])
+    lon, lat = grid.lonlat_xy(ex, ey)
+    return float(lon.min()), float(lon.max()), float(lat.min()), float(lat.max())
+
+
+def block_reduce(a: np.ndarray, factor: int, how: str = "mean") -> np.ndarray:
+    """Reduce a 2-D array by an integer ``factor`` over ``factor x factor`` blocks with a
+    NaN-aware ``mean``, ``min``, ``max`` or ``sum``.  Rows and columns that do not fill a
+    block are dropped; a block of all NaN is NaN."""
+    fn = {"mean": np.nanmean, "min": np.nanmin, "max": np.nanmax, "sum": np.nansum}[how]
+    f = int(factor)
+    if f < 1:
+        raise ValueError("factor must be a positive integer")
+    ny, nx = a.shape[0] // f * f, a.shape[1] // f * f
+    blocks = a[:ny, :nx].reshape(ny // f, f, nx // f, f)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)      # "mean of empty slice" on an all-NaN block
+        return fn(blocks, axis=(1, 3))
+
+
+def coarsen_grid(grid: Grid, factor: int) -> Grid:
+    """The ``Grid`` of a ``block_reduce`` by ``factor`` (same north-west corner)."""
+    f = int(factor)
+    return Grid(grid.x0, grid.y1, grid.res * f, grid.ny // f, grid.nx // f, grid.crs, grid.geo_crs)
+
+
+def regrid_nearest(a: np.ndarray, src: Grid, dst: Grid, *, fill=-1) -> np.ndarray:
+    """Sample ``a`` (on ``src``) at the cell centres of ``dst`` by nearest cell.  Both grids
+    must share a CRS (two spacings of one mosaic): the lookup is pure index arithmetic, so a
+    coarse label raster can be laid over a 1e8-cell reference grid without a projection call."""
+    if src.crs != dst.crs:
+        raise ValueError("regrid_nearest needs both grids in one CRS")
+    x = dst.x0 + (np.arange(dst.nx) + 0.5) * dst.res
+    y = dst.y1 - (np.arange(dst.ny) + 0.5) * dst.res
+    i = np.floor((x - src.x0) / src.res).astype(np.int64)
+    j = np.floor((src.y1 - y) / src.res).astype(np.int64)
+    ok_i, ok_j = (i >= 0) & (i < src.nx), (j >= 0) & (j < src.ny)
+    out = np.full((dst.ny, dst.nx), fill, dtype=a.dtype)
+    sub = a[np.clip(j, 0, src.ny - 1)[:, None], np.clip(i, 0, src.nx - 1)[None, :]]
+    m = ok_j[:, None] & ok_i[None, :]
+    out[m] = sub[m]
+    return out
 
 
 # --------------------------------------------------------------------------- #
