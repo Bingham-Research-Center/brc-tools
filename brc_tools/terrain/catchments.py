@@ -25,6 +25,23 @@ def line_max_acc_cell(grid, acc: np.ndarray, line) -> int:
     return int(cells[np.argmax(acc[cells])])
 
 
+def point_max_acc_cell(grid, acc: np.ndarray, lat: float, lon: float, radius_m: float) -> int:
+    """The cell of largest accumulation within ``radius_m`` of a point (flat index): the
+    main channel at a named place, and -- since accumulation grows downstream -- its most
+    downstream cell inside the radius.  ``acc`` may be flat or ``(ny, nx)``."""
+    a = acc.reshape(grid.ny, grid.nx)
+    j0, i0 = (int(v) for v in grid.ji(lat, lon))
+    r = max(int(np.ceil(radius_m / grid.res)), 0)
+    ja, jb = max(j0 - r, 0), min(j0 + r + 1, grid.ny)
+    ia, ib = max(i0 - r, 0), min(i0 + r + 1, grid.nx)
+    if ja >= jb or ia >= ib:
+        raise ValueError(f"({lat}, {lon}) is outside the grid")
+    jj, ii = np.mgrid[ja:jb, ia:ib]
+    win = np.where((jj - j0) ** 2 + (ii - i0) ** 2 <= r * r, a[ja:jb, ia:ib], 0)
+    k = int(np.argmax(win))
+    return int((ja + k // (ib - ia)) * grid.nx + ia + k % (ib - ia))
+
+
 def hydro_mask(rcv, order, starts, outlet_cell: int, cut_cells: dict[str, int]) -> np.ndarray:
     """Cells upstream of the outlet and of no cut, as a flat bool vector."""
     roots = np.array([outlet_cell] + list(cut_cells.values()), dtype=np.int32)
@@ -119,6 +136,89 @@ def floor_leak_fraction(lab: np.ndarray, floor: np.ndarray, nlab: int, cell_area
     canyon; callers drop labels above a small threshold (1 % in the ub-wx prototype)."""
     lf = lab[floor.ravel()]
     return np.bincount(lf[lf >= 0], minlength=nlab) * cell_area / np.maximum(area_m2, cell_area)
+
+
+def match_labels(lab_ref: np.ndarray, n_ref: int, lab_other: np.ndarray, n_other: int) -> dict[str, np.ndarray]:
+    """Match catchments of one labelling to another on the SAME grid by overlap.
+
+    ``lab_ref`` and ``lab_other`` are label rasters (or flat vectors) with -1 for "no
+    catchment"; put a coarser labelling on the reference grid first with
+    ``dem.regrid_nearest``.  For every reference label the best partner is the one sharing
+    the most cells.  Returns, per reference label: ``partner`` (-1 if none), ``iou``
+    (intersection over union), ``covered`` (fraction of the reference catchment inside
+    its partner) and ``area_ratio`` (partner cells / reference cells).
+
+    Counting how many mouths a coarse grid "finds" says little: two crossings a kilometre
+    apart are one mouth or two depending on the rim contour.  Overlap says whether the
+    catchment behind a known mouth still exists as one unit.
+    """
+    a, b = np.asarray(lab_ref).ravel(), np.asarray(lab_other).ravel()
+    both = (a >= 0) & (b >= 0)
+    pair = a[both].astype(np.int64) * n_other + b[both]
+    cnt = np.bincount(pair, minlength=n_ref * n_other).reshape(n_ref, n_other)
+    size_a = np.bincount(a[a >= 0], minlength=n_ref).astype(np.float64)
+    size_b = np.bincount(b[b >= 0], minlength=n_other).astype(np.float64)
+    partner = cnt.argmax(axis=1)
+    inter = cnt[np.arange(n_ref), partner].astype(np.float64)
+    union = size_a + size_b[partner] - inter
+    none = inter == 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = {"partner": np.where(none, -1, partner).astype(np.int32),
+               "iou": np.where(none, 0.0, inter / union),
+               "covered": np.where(size_a > 0, inter / size_a, 0.0),
+               "area_ratio": np.where(none | (size_a == 0), 0.0, size_b[partner] / size_a)}
+    return out
+
+
+def unique_names(primary, *qualifiers, fallback=None) -> list[str]:
+    """Names that are unique, built from a preferred name and successive qualifiers.
+
+    ``primary`` is the best name per item (e.g. the mapped stream at a mouth); each
+    ``qualifiers`` sequence is tried in turn for the items whose name is still shared
+    (e.g. the HUC12 unit, then the HUC10 unit): the qualifier is appended in brackets
+    when it differs from the name and separates the group.  Whatever is still shared
+    after that gets ``fallback`` (default: a running letter) appended.  An empty primary
+    takes the first non-empty qualifier as its name.  Keying a join on a watershed-unit
+    name silently merges every catchment inside the unit; key on IDs, and use this only
+    for what a reader sees.
+    """
+    n = len(primary)
+    names = []
+    for k in range(n):
+        nm = (primary[k] or "").strip()
+        if not nm:
+            nm = next(((q[k] or "").strip() for q in qualifiers if (q[k] or "").strip()), "")
+        names.append(nm or "unnamed")
+
+    def groups(vals):
+        g = {}
+        for k, v in enumerate(vals):
+            g.setdefault(v, []).append(k)
+        return [idx for idx in g.values() if len(idx) > 1]
+
+    for q in qualifiers:
+        for idx in groups(names):
+            quals = [(q[k] or "").strip() for k in idx]
+            if len(set(quals)) > 1:                       # the qualifier separates at least some of them
+                for k, qq in zip(idx, quals):
+                    if qq and qq != names[k]:
+                        names[k] = f"{names[k]} [{qq}]"
+    for idx in groups(names):
+        for m, k in enumerate(idx):
+            tag = fallback[k] if fallback is not None else chr(ord("a") + m) if m < 26 else str(m + 1)
+            names[k] = f"{names[k]} ({tag})"
+    return names
+
+
+def slug(name: str) -> str:
+    """A lookups.toml-style key: lower case, runs of other characters to one underscore."""
+    out, prev = [], "_"
+    for ch in name.lower():
+        c = ch if ch.isalnum() else "_"
+        if not (c == "_" and prev == "_"):
+            out.append(c)
+        prev = c
+    return "".join(out).strip("_")
 
 
 def area_above(hyps: np.ndarray, zbins: np.ndarray, z: float) -> np.ndarray:

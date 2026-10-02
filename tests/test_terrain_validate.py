@@ -104,3 +104,32 @@ def test_channel_agreement_perfect_on_identical_lines():
     assert out["flowline_vertices_near_channel"] == 1.0
     assert out["channel_cells_near_flowline"] == 1.0
     assert v.channel_agreement(np.zeros_like(chan), grid, fl)["n_vertices"] == 0
+
+
+def test_wbd_unit_returns_name_code_and_area(monkeypatch):
+    monkeypatch.setattr(v, "_get_json", lambda url, params=None, **kw: {"features": [
+        {"attributes": {"name": "Middle Little Brush Creek", "huc12": "140600100402", "areasqkm": 97.5}}]})
+    u = v.wbd_unit(-109.42, 40.66, level=12)
+    assert u == {"name": "Middle Little Brush Creek", "huc": "140600100402", "areasqkm": 97.5}
+    monkeypatch.setattr(v, "_get_json", lambda url, params=None, **kw: {"features": []})
+    empty = v.wbd_unit(-109.42, 40.66)
+    assert empty["name"] == "" and empty["huc"] == "" and np.isnan(empty["areasqkm"])
+
+
+def test_stream_name_takes_the_stream_the_path_follows_and_ignores_canals():
+    grid = Grid(500000.0, 4500000.0, 30.0, 200, 200)
+    path = np.array([100 * 200 + i for i in range(20, 180)])           # a west-east channel along row 100
+    px, py = grid.xy(np.full(160, 100), np.arange(20, 180))
+    lon, lat = grid.lonlat_xy(px, py)
+    along = v.Flowline("Dry Fork", "1", np.column_stack([lon, lat]))
+    far_x, far_y = grid.xy(np.full(160, 40), np.arange(20, 180))        # a named stream 1.8 km away
+    flon, flat = grid.lonlat_xy(far_x, far_y)
+    far = v.Flowline("Ashley Creek", "2", np.column_stack([flon, flat]))
+    unnamed = v.Flowline("", "3", np.column_stack([lon, lat]))
+    assert v.stream_name(grid, path, [far, unnamed, along]) == "Dry Fork"
+    assert v.stream_name(grid, path, [far, unnamed]) == ""              # nothing named follows the path
+    canal = v.Flowline("Yellowstone Feeder Canal", "4", np.column_stack([lon, lat]))
+    assert v.stream_name(grid, path, [canal, far]) == ""                # a canal is not a catchment's name
+    assert v.stream_name(grid, path, [canal], exclude=()) == "Yellowstone Feeder Canal"
+    short = v.Flowline("Dry Fork", "5", np.column_stack([lon[:10], lat[:10]]))
+    assert v.stream_name(grid, path, [short]) == ""                     # covers under a fifth of the path
