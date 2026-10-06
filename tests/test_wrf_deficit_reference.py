@@ -165,6 +165,14 @@ def test_profile_rejects_inversions_and_nan(z, theta, msg):
                          mixed_layer_theta_k=280.0, ml_depth_m=500.0, top_m=3000.0)
 
 
+def test_ml_stat_default_is_mean(ds, floor):
+    t = datetime(2025, 1, 26, 23, 30)
+    default = dr.sunset_profile(ds, floor, time=t, top_m=3000.0)
+    mean = dr.sunset_profile(ds, floor, time=t, top_m=3000.0, ml_stat="mean")
+    assert default.ml_stat == "mean"
+    assert default.mixed_layer_theta_k == mean.mixed_layer_theta_k
+
+
 def test_ml_stat_max_is_at_least_mean(ds, floor):
     t = datetime(2025, 1, 26, 23, 30)
     hi = dr.sunset_profile(ds, floor, time=t, top_m=3000.0, ml_stat="max")

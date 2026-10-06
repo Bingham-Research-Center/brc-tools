@@ -93,7 +93,7 @@ class SunsetProfile:
     top_m: float
     floor_label: str = ""               # what the floor mask was, in words
     floor_cells: int = 0
-    ml_stat: str = "max"                # how the per-column ML theta was reduced over the floor
+    ml_stat: str = "mean"               # how the per-column ML theta was reduced over the floor
     method_version: str = METHOD_VERSION
     run_id: str = ""
     domain: int | None = None
@@ -204,7 +204,7 @@ def sunset_profile(
     ml_depth_m: float = 500.0,
     top_m: float = 6000.0,
     dz_m: float = 25.0,
-    ml_stat: str = "max",
+    ml_stat: str = "mean",
     floor_label: str = "",
     run_id: str = "",
     case: str = "",
@@ -216,13 +216,13 @@ def sunset_profile(
 
     ``floor_mask`` is ``(ny, nx)`` bool: the receiving floor whose mixed layer sets
     the datum (e.g. terrain below 1800 m inside a valley box).  ``ml_stat`` reduces
-    the per-column mixed-layer theta over those columns: ``"max"`` (default; the
-    warmest floor column, so a floor cell already shaded at the chosen hour cannot
-    drag the datum down), ``"median"`` or ``"mean"``.  ``"max"`` is always at least
-    the pooled floor mean the ub-wx prototype used (``catchment_budget.py``,
-    ``theta[(agl <= 500) & floor].mean()``, which gave the September 314.9 K);
-    ``"mean"`` comes close to that datum but weights columns equally, where the pooled
-    mean weights each column by its number of levels below 500 m AGL.
+    the per-column mixed-layer theta over those columns: ``"mean"`` (default; a heat
+    budget is a mean quantity, and it weights columns equally, where a pooled mean
+    over every level below ``ml_depth_m`` weights each by its level count),
+    ``"median"`` or ``"max"``.  ``"max"`` is the warmest single column: it resists
+    floor cells already shaded at the chosen hour but rises with the number of
+    columns, so it moves with the mask and the grid spacing
+    (``docs/DEFICIT-REFERENCE.md``).
 
     The profile is the floor-mean theta in ``dz_m`` bins of height ASL from the
     lowest floor terrain up to ``top_m``, floored at the mixed-layer value and made

@@ -18,9 +18,8 @@ the pre-sunset hour:
 
 - **the floor**: the mixed-layer potential temperature over the receiving floor
   -- per column the mean theta in the lowest `ml_depth_m` (500 m), reduced over
-  the floor columns by `ml_stat` (`max` by default, so a floor cell that is
-  already shaded cannot drag the datum down). This is the temperature the
-  drainage air had before the slopes started cooling.
+  the floor columns by `ml_stat` (`mean` by default). This is the temperature
+  the drainage air had before the slopes started cooling.
 - **the profile**: the floor-mean theta in 25 m bins of height ASL, floored at
   that mixed-layer value and made non-decreasing. A single value over 2 km of
   relief counts ambient stratification as deficit (the 100 GW pre-sunset spikes of
@@ -29,13 +28,18 @@ the pre-sunset hour:
   floor-mean bin is warmer (a superadiabatic surface layer, a capping stable
   layer), because over a sloping floor there is no single mixed-layer top in ASL.
 
-**Which statistic reproduces which number.** The September 2025 datum that closed
-the ub-wx catchment budgets, 314.9 K at 23Z (the last hour of the mixed-layer
-maximum *in time*), came from the prototype's pooled floor **mean**
-(`theta[(agl <= 500) & floor].mean()`). `ml_stat="mean"` comes close (it averages
-per-column means, so each column counts once rather than by its number of levels
-below 500 m AGL); the default `"max"` is always at least as warm as either and has
-not yet been checked against a run. Choose before the first sidecar of record, and say which in its `ml_stat`.
+**Why `mean` is the default.** The datum stands for the heat content of the air
+before it cooled, and a heat budget is a mean quantity, so the reducer is a mean.
+`max` is an extreme value: it rises with the number of floor columns, so it moves
+with the mask and the grid spacing. `max` and `median` do resist floor columns that
+are already shaded at the chosen hour, but the levers for that are the hour and the
+mask, which belong to the case, not a warmer statistic, which applies to every case.
+`mean` averages per-column means (each column counts once); a pooled mean over every
+level below `ml_depth_m` weights columns by their level count and agrees closely when
+that count is near-uniform. Checked on one 600 m run (3,204 floor columns, three
+pre-sunset hours): `mean` matched the pooled mean to 0.01 K at each hour, and `max`,
+a single hottest column, ran 0.7-1.4 K warmer. A sidecar records its `ml_stat`, so
+say which in every sidecar of record.
 
 The deficit against it is *cooling since the profile was taken, at that height*:
 materially conserved under adiabatic motion, and on a clear day the residual layer
@@ -76,7 +80,7 @@ the transects reused.
 {"schema": 1, "method_version": "sunset-profile-1",
  "z_asl_m": [...], "theta_k": [...],
  "valid_time": "2025-01-27T00:00:00Z", "mixed_layer_theta_k": 289.4,
- "ml_depth_m": 500.0, "top_m": 6000.0, "ml_stat": "max",
+ "ml_depth_m": 500.0, "top_m": 6000.0, "ml_stat": "mean",
  "floor_label": "HGT < 1800 m in the Ashley box", "floor_cells": 3204,
  "run_id": "...", "domain": 2, "source_file": "wrfout_d02_2025-01-27_00:00:00",
  "case": "gigawatts", "night": "20250126", "notes": ""}
