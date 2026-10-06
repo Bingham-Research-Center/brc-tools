@@ -34,6 +34,7 @@ brc_tools/        installable package
   radar/          4/3-Earth beam geometry + observed radar: iem.py (Level-III from Iowa State RIDGE — the route that works for historical cases) and nexrad.py (Level-II via MetPy). Observations, not NWP — sibling of satellite/
   satellite/      MODIS context imagery (NASA CMR timing + GIBS corrected reflectance, cached, provenance sidecars)
   utils/          lookups, small helpers
+  terrain/        D8 catchments, basin floors, perpendicular gate lines on USGS 3DEP (optional extra `terrain`, env terrain-2026) — docs/TERRAIN-D8.md
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
   walkthroughs/   plain-language per-tool guides + glossary
@@ -55,6 +56,8 @@ figures/          generated output (gitignored)
 - `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the active study repo; SSOT index → `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`
 - `docs/WRF-WINDS.md` — the winds engine (`scripts/wrf_winds.py --config <case.toml>`; `/wrf-basin-winds` skill): five `--figure` families (`topdown`, `section`, `profile`, `view3d`, `tracers`) plus the separate tslist time–height engine `scripts/wrf_timeheight.py` — the family that answers *when*. **SSOT for `w_exag` and section fill/sign conventions** — defer to it, never restate. Per-case TOMLs live in the repo owning the case.
 - `docs/WRF-CONVECTIVE.md` — the convective engine (`scripts/wrf_convective.py --config <case.toml>`; `/wrf-convective` skill), third engine distinct from both above: reflectivity **sampled on a real WSR-88D's beam surfaces** with the observed IEM Level-III scan beside it, a derived `meso` family, MetPy parcel/shear/hodograph products, `auxhist` + `tslist` access. Observed-radar transport: `docs/nwp/NWP-SOURCE-MATRIX.md`.
+- `docs/TERRAIN-D8.md` — `brc_tools.terrain`: D8 routing, floors/rims/cuts, gate rules, validation; runs in `terrain-2026` via `scripts/terrain_pipeline.slurm`
+- `docs/DEFICIT-REFERENCE.md` — the sunset-profile datum for heat-deficit budgets (`nwp.wrf_deficit_reference`), the two-datum error bar and the `theta_ref_*.json` sidecar consumed by brc-voxel-viz
 - `docs/FORECAST-FUNNEL.md` — NAM "forecast funnel" synoptic montage (`brc_tools/nwp/forecast_funnel.py` + `brc_tools/visualize/funnel.py` + `scripts/forecast_funnel.py`); `/basin-forecast-funnel` skill. NAM source auto-picks by init date (Herbie recent / NCEI pre-2017).
 - `docs/VISUAL-SUITE-SOP.md` — **how to produce a suite of WRF visuals, and the ways it goes wrong.** Engine-agnostic procedure (pick engine by question → smoke-test EVERY family at one time → narrow with `--figure`/`--domain`/`--start`/`--end` → DTN → check `.err` → promote keepers), plus the errors already found and fixed and the gaps still open. Read before a first sweep on a new case.
 - `WISHLIST-TASKS.md` — prioritised backlog

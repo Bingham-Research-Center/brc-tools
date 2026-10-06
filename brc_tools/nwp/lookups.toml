@@ -182,11 +182,563 @@ ne = [41.1, -108.5]
 sw = [38.8, -111.5]
 ne = [41.7, -107.8]
 
+# The Basin AIRSHED: the footprint-A analysis extent of ub-wx drainage-canyons-gigawatts
+# (2026-09-14) -- every rim catchment, the Green River corridor to Flaming Gorge, the
+# White / Yampa / Little Snake entries and the Book Cliffs. The [gates.*] table lives inside it.
+[regions.uinta_airshed]
+sw = [39.05, -111.8]
+ne = [41.9, -107.4]
+
 [regions.uinta_basin_xsection_we]
 sw = [40.20, -111.50]
 ne = [40.55, -108.80]
 
 # S->N band on the Vernal meridian: Book Cliffs -> basin floor -> Uinta north slope
+# ---------------------------------------------------------------------------
+# LANDMARKS (label only). Added 2026-09-14 from USGS GNIS DomesticNames (UT/CO/WY) by ub-wx
+# drainage-canyons-gigawatts analysis/preflight/gnis_landmarks_select.py: the canyon mouths of
+# the Basin rim (a stream's GNIS primary point is its mouth), the Green River corridor's places,
+# the reservoirs, the summits and the settlements. Every entry carries the GNIS feature id;
+# elevation_m is the 30 m 3DEP DEM at that point. No reference_stid: never pull obs from one.
+# ---------------------------------------------------------------------------
+
+[waypoints.browns_park]
+lat = 40.88024
+lon = -109.16346
+elevation_m = 1719          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1439176       # USGS GNIS Browns Park (Flat, UT)
+
+[waypoints.gates_of_lodore]
+lat = 40.71330
+lon = -108.89289
+elevation_m = 1627          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 170556       # USGS GNIS Gates of Lodore (Gap, CO)
+
+[waypoints.canyon_of_lodore]
+lat = 40.52979
+lon = -108.98396
+elevation_m = 1547          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 170663       # USGS GNIS Canyon of Lodore (Valley, CO)
+
+[waypoints.echo_park]
+lat = 40.52052
+lon = -108.98678
+elevation_m = 1548          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 170659       # USGS GNIS Echo Park (Flat, CO)
+
+[waypoints.whirlpool_canyon]
+lat = 40.50990
+lon = -109.12044
+elevation_m = 1512          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 170592       # USGS GNIS Whirlpool Canyon (Valley, CO)
+
+[waypoints.island_park]
+lat = 40.51691
+lon = -109.14762
+elevation_m = 1528          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1429063       # USGS GNIS Island Park (Flat, UT)
+
+[waypoints.rainbow_park]
+lat = 40.50469
+lon = -109.16513
+elevation_m = 1508          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1431558       # USGS GNIS Rainbow Park (Flat, UT)
+
+[waypoints.split_mountain_canyon]
+lat = 40.44497
+lon = -109.25153
+elevation_m = 1476          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1432804       # USGS GNIS Split Mountain Canyon (Valley, UT)
+
+[waypoints.jones_hole]
+lat = 40.54108
+lon = -109.06008
+elevation_m = 1535          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1429236       # USGS GNIS Jones Hole (Valley, UT)
+
+[waypoints.jones_hole_creek]
+lat = 40.53941
+lon = -109.06040
+elevation_m = 1561          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1429237       # USGS GNIS Jones Hole Creek (Stream, UT)
+
+[waypoints.crouse_creek]
+lat = 40.84857
+lon = -109.06484
+elevation_m = 1638          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1427122       # USGS GNIS Crouse Creek (Stream, UT)
+
+[waypoints.red_canyon]
+lat = 40.90975
+lon = -109.31755
+elevation_m = 1686          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1444776       # USGS GNIS Red Canyon (Valley, UT)
+
+[waypoints.clay_basin]
+lat = 40.27135
+lon = -109.31096
+elevation_m = 1550          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1426677       # USGS GNIS Clay Basin (Basin, UT)
+
+[waypoints.antelope_flat]
+lat = 40.97718
+lon = -109.43680
+elevation_m = 1936          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1438239       # USGS GNIS Antelope Flat (Flat, UT)
+
+[waypoints.deerlodge_park]
+lat = 40.44636
+lon = -108.51732
+elevation_m = 1718          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 170896       # USGS GNIS Deerlodge Park (Flat, CO)
+
+[waypoints.diamond_mountain]
+lat = 40.60273
+lon = -109.24678
+elevation_m = 2373          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1427389       # USGS GNIS Diamond Mountain (Summit, UT)
+
+[waypoints.yampa_plateau]
+lat = 40.44802
+lon = -109.16262
+elevation_m = 2326          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1451159       # USGS GNIS Yampa Plateau (Plain, UT)
+
+[waypoints.cross_mountain]
+lat = 40.52192
+lon = -108.38167
+elevation_m = 2377          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 201960       # USGS GNIS Cross Mountain (Summit, CO)
+
+[waypoints.flaming_gorge_reservoir]
+lat = 41.09614
+lon = -109.55363
+elevation_m = 1839          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1441113       # USGS GNIS Flaming Gorge Reservoir (Reservoir, WY)
+
+[waypoints.desolation_canyon]
+lat = 39.35258
+lon = -110.02182
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1427362       # USGS GNIS Desolation Canyon (Valley, UT)
+
+[waypoints.nine_mile_canyon]
+lat = 39.83148
+lon = -109.87820
+elevation_m = 1410          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1443829       # USGS GNIS Ninemile Canyon (Valley, UT)
+
+[waypoints.east_tavaputs_plateau]
+lat = 39.64997
+lon = -109.45068
+elevation_m = 1993          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1448009       # USGS GNIS East Tavaputs Plateau (Plain, UT)
+
+[waypoints.west_tavaputs_plateau]
+lat = 39.74996
+lon = -110.35071
+elevation_m = 2577          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1448014       # USGS GNIS West Tavaputs Plateau (Flat, UT)
+
+[waypoints.book_cliffs]
+lat = 39.16664
+lon = -110.29237
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1425876       # USGS GNIS Book Cliffs (Cliff, UT)
+
+[waypoints.roan_cliffs]
+lat = 39.79607
+lon = -110.70377
+elevation_m = 2499          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1445012       # USGS GNIS Roan Cliffs (Cliff, CO)
+
+[waypoints.asphalt_ridge_gnis]
+lat = 40.44243
+lon = -109.60920
+elevation_m = 2037          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1425193       # USGS GNIS Asphalt Ridge (Ridge, UT)
+
+[waypoints.ashley_valley]
+lat = 40.36913
+lon = -109.50069
+elevation_m = 1637          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1425183       # USGS GNIS Ashley Valley (Valley, UT)
+
+[waypoints.uinta_basin_gnis]
+lat = 40.22496
+lon = -109.54236
+elevation_m = 1481          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1433770       # USGS GNIS Uinta Basin (Basin, UT)
+
+[waypoints.strawberry_reservoir]
+lat = 40.17441
+lon = -111.12676
+elevation_m = 2316          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1446189       # USGS GNIS Strawberry Reservoir (Reservoir, UT)
+
+[waypoints.starvation_reservoir]
+lat = 40.19114
+lon = -110.46579
+elevation_m = 1742          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1434779       # USGS GNIS Starvation Reservoir (Reservoir, UT)
+
+[waypoints.currant_creek_reservoir]
+lat = 40.34037
+lon = -111.05837
+elevation_m = 2341          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1447833       # USGS GNIS Currant Creek Reservoir (Reservoir, UT)
+
+[waypoints.moon_lake]
+lat = 40.57959
+lon = -110.50483
+elevation_m = 2455          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1443576       # USGS GNIS Moon Lake (Reservoir, UT)
+
+[waypoints.steinaker_reservoir]
+lat = 40.51596
+lon = -109.53321
+elevation_m = 1676          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1447864       # USGS GNIS Steinaker Reservoir (Reservoir, UT)
+
+[waypoints.red_fleet_reservoir]
+lat = 40.57942
+lon = -109.43061
+elevation_m = 1708          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1455473       # USGS GNIS Red Fleet Reservoir (Reservoir, UT)
+
+[waypoints.pelican_lake]
+lat = 40.19259
+lon = -109.68202
+elevation_m = 1466          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1431166       # USGS GNIS Pelican Lake (Lake, UT)
+
+[waypoints.kings_peak]
+lat = 40.77638
+lon = -110.37280
+elevation_m = 4108          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1442332       # USGS GNIS Kings Peak (Summit, UT)
+
+[waypoints.leidy_peak]
+lat = 40.76823
+lon = -109.83411
+elevation_m = 3667          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1442555       # USGS GNIS Leidy Peak (Summit, UT)
+
+[waypoints.chepeta_lake]
+lat = 40.79162
+lon = -110.01878
+elevation_m = 3217          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1447963       # USGS GNIS Chepeta Lake (Reservoir, UT)
+
+[waypoints.indian_canyon]
+lat = 40.15740
+lon = -110.40514
+elevation_m = 1682          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1428988       # USGS GNIS Indian Canyon (Valley, UT)
+
+[waypoints.daniels_canyon]
+lat = 40.45112
+lon = -111.37292
+elevation_m = 1815          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1440256       # USGS GNIS Daniels Canyon (Valley, UT)
+
+[waypoints.dry_fork_mouth_gnis]
+lat = 40.52607
+lon = -109.60208
+elevation_m = 1776          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1440624       # USGS GNIS Dry Fork (Stream, UT)
+
+[waypoints.ashley_creek_mouth]
+lat = 40.34163
+lon = -109.36485
+elevation_m = 1440          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1438282       # USGS GNIS Ashley Creek (Stream, UT)
+
+[waypoints.big_brush_creek_mouth]
+lat = 40.55246
+lon = -109.40319
+elevation_m = 1645          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1438640       # USGS GNIS Big Brush Creek (Stream, UT)
+
+[waypoints.little_brush_creek_mouth]
+lat = 40.55552
+lon = -109.40069
+elevation_m = 1648          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1442671       # USGS GNIS Little Brush Creek (Stream, UT)
+
+[waypoints.whiterocks_river_mouth]
+lat = 40.44135
+lon = -109.91932
+elevation_m = 1762          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1447291       # USGS GNIS Whiterocks River (Stream, UT)
+
+[waypoints.uinta_river_mouth]
+lat = 40.21648
+lon = -109.78657
+elevation_m = 1453          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1446833       # USGS GNIS Uinta River (Stream, UT)
+
+[waypoints.dry_gulch_creek_mouth]
+lat = 40.24107
+lon = -109.83764
+elevation_m = 1474          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1440636       # USGS GNIS Dry Gulch Creek (Stream, UT)
+
+[waypoints.lake_fork_mouth]
+lat = 40.20829
+lon = -110.10404
+elevation_m = 1558          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1442412       # USGS GNIS Lake Fork River (Stream, UT)
+
+[waypoints.yellowstone_river_mouth]
+lat = 40.44245
+lon = -110.36516
+elevation_m = 2107          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1447570       # USGS GNIS Yellowstone River (Stream, UT)
+
+[waypoints.rock_creek_mouth]
+lat = 40.28940
+lon = -110.49821
+elevation_m = 1830          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1445061       # USGS GNIS Rock Creek (Stream, UT)
+
+[waypoints.duchesne_river_mouth]
+lat = 40.08607
+lon = -109.68403
+elevation_m = 1420          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1440701       # USGS GNIS Duchesne River (Stream, UT)
+
+[waypoints.strawberry_river_mouth]
+lat = 40.16162
+lon = -110.38849
+elevation_m = 1674          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1446192       # USGS GNIS Strawberry River (Stream, UT)
+
+[waypoints.currant_creek_mouth]
+lat = 40.18134
+lon = -110.77016
+elevation_m = 1914          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1440200       # USGS GNIS Currant Creek (Stream, UT)
+
+[waypoints.red_creek_mouth]
+lat = 40.12746
+lon = -110.73738
+elevation_m = 1840          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1444791       # USGS GNIS Red Creek (Stream, UT)
+
+[waypoints.avintaquin_creek_mouth]
+lat = 40.12385
+lon = -110.74099
+elevation_m = 1844          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1438311       # USGS GNIS Avintaquin Creek (Stream, UT)
+
+[waypoints.antelope_creek_mouth]
+lat = 40.16302
+lon = -110.20765
+elevation_m = 1604          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1438238       # USGS GNIS Antelope Creek (Stream, UT)
+
+[waypoints.nine_mile_creek_mouth]
+lat = 39.83385
+lon = -109.87626
+elevation_m = 1410          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1443830       # USGS GNIS Nine Mile Creek (Stream, UT)
+
+[waypoints.willow_creek_mouth]
+lat = 40.02691
+lon = -109.74292
+elevation_m = 1417          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1434319       # USGS GNIS Willow Creek (Stream, UT)
+
+[waypoints.hill_creek_mouth]
+lat = 39.92441
+lon = -109.65819
+elevation_m = 1488          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1428716       # USGS GNIS Hill Creek (Stream, UT)
+
+[waypoints.bitter_creek_mouth]
+lat = 39.97024
+lon = -109.41207
+elevation_m = 1450          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1425637       # USGS GNIS Bitter Creek (Stream, UT)
+
+[waypoints.evacuation_creek_mouth]
+lat = 39.96775
+lon = -109.14761
+elevation_m = 1518          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1427857       # USGS GNIS Evacuation Creek (Stream, UT)
+
+[waypoints.white_river_mouth]
+lat = 40.06219
+lon = -109.67930
+elevation_m = 1417          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 204653       # USGS GNIS White River (Stream, UT)
+
+[waypoints.neola]
+lat = 40.43329
+lon = -110.02988
+elevation_m = 1836          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1430684       # USGS GNIS Neola (Populated Place, UT)
+
+[waypoints.tabiona]
+lat = 40.35444
+lon = -110.71008
+elevation_m = 1989          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1433156       # USGS GNIS Tabiona (Populated Place, UT)
+
+[waypoints.hanna]
+lat = 40.40411
+lon = -110.76516
+elevation_m = 2061          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1428509       # USGS GNIS Hanna (Populated Place, UT)
+
+[waypoints.altamont]
+lat = 40.35940
+lon = -110.28627
+elevation_m = 1946          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1425096       # USGS GNIS Altamont (Populated Place, UT)
+
+[waypoints.lapoint]
+lat = 40.40385
+lon = -109.79348
+elevation_m = 1697          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1429476       # USGS GNIS Lapoint (Populated Place, UT)
+
+[waypoints.whiterocks]
+lat = 40.46801
+lon = -109.93071
+elevation_m = 1839          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1434208       # USGS GNIS Whiterocks (Populated Place, UT)
+
+[waypoints.randlett]
+lat = 40.23274
+lon = -109.80764
+elevation_m = 1469          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1431565       # USGS GNIS Randlett (Populated Place, UT)
+
+[waypoints.mountain_home]
+lat = 40.39912
+lon = -110.38849
+elevation_m = 2135          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1430527       # USGS GNIS Mountain Home (Populated Place, UT)
+
+[waypoints.bluebell]
+lat = 40.35940
+lon = -110.21738
+elevation_m = 1890          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1425831       # USGS GNIS Bluebell (Populated Place, UT)
+
+[waypoints.maeser]
+lat = 40.47718
+lon = -109.58681
+elevation_m = 1708          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1430036       # USGS GNIS Maeser (Populated Place, UT)
+
+[waypoints.naples]
+lat = 40.42691
+lon = -109.49930
+elevation_m = 1595          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1430636       # USGS GNIS Naples (Populated Place, UT)
+
+[waypoints.ouray_gnis]
+lat = 40.08913
+lon = -109.67736
+elevation_m = 1425          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1431039       # USGS GNIS Ouray (Populated Place, UT)
+
+[waypoints.maybell]
+lat = 40.51775
+lon = -108.08703
+elevation_m = 1804          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 170708       # USGS GNIS Maybell (Populated Place, CO)
+
+[waypoints.meeker]
+lat = 40.03747
+lon = -107.91313
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 173407       # USGS GNIS Meeker (Populated Place, CO)
+
+[waypoints.dutch_john_gnis]
+lat = 40.92913
+lon = -109.39097
+elevation_m = 1941          # 30 m DEM at the GNIS primary point
+kind = "landmark"          # label only: never a waypoint_groups member
+gnis_id = 1440738       # USGS GNIS Dutch John (Census, UT)
+
+
 # -> Flaming Gorge -> Wyoming line. Pairs with [waypoint_groups] basin_ns_landmarks.
 [regions.uinta_basin_xsection_sn]
 sw = [39.85, -109.70]
@@ -382,14 +934,13 @@ elevation_m = 3718          # highest summit of the eastern Uintas
 # elevations are reported in FEET there and converted here, cross-checked against the
 # 3-arc-second DEM (Manila 6375 ft -> 1943 m against a 1944 m DEM sample).
 #
-# WHAT IS DELIBERATELY ABSENT, and why: Browns Park, the Canyon of Lodore, Echo Park,
-# Deerlodge Park, Jones Hole, Red Canyon, Diamond Mountain and Blue Mountain are all
-# named in that experiment's prose and are NOT here. There is no station at any of
-# them -- the easternmost corridor site is kings_point at -109.103 -- so their
-# coordinates would be recollection rather than a source, and sampling the DEM at
-# guessed positions put several of them on the wrong landform (a "Red Canyon" guess
-# landed on a 2116 m rim above a 1841 m reservoir). Adding them needs a gazetteer
-# (USGS GNIS), which is a separate change with a citable source.
+# WHAT WAS DELIBERATELY ABSENT until 2026-09-14: Browns Park, the Canyon of Lodore, Echo
+# Park, Deerlodge Park, Jones Hole, Red Canyon, Diamond Mountain and Blue Mountain were named
+# in that experiment's prose and NOT here, because there is no station at any of them and a
+# coordinate from recollection is not a source (a "Red Canyon" guess once landed on a 2116 m
+# rim above a 1841 m reservoir). They now exist as LANDMARKS below (kind = "landmark",
+# gnis_id) with the USGS GNIS primary point as the citable source and the 30 m DEM for the
+# elevation -- label-only waypoints that never join a waypoint_groups member list.
 # ---------------------------------------------------------------------------
 
 # The trench, north to south.
@@ -596,6 +1147,592 @@ green_river_sources = [
     "moose_pond", "willie_spring", "bassett_spring", "windy_point",
     "diamond_rim",
 ]
+
+# ── Gates: the 2-D planes drainage crosses (drainage-canyons-gigawatts) ────────────
+# Analysis GEOMETRY, not places: a gate is a line, has no station, and never joins a
+# waypoint group. Walk a -> b so the RIGHTWARD normal points downstream (out of the
+# catchment): brc_tools.nwp.wrf_output.integrate_flux_transect's Phi is then export.
+# kind = "rim" (a canyon mouth at the 2000 m rim), "floor" (a bench spilling into the
+# sink), "port" (a corridor crossing the d02 boundary; catchment_km2 is truncated at the
+# analysis grid). Written by brc_tools.terrain.gates.format_gate_toml from the 30 m D8
+# run on -111.8..-107.4, 39.05..41.9 (2026-09-14); regenerate rather than hand-edit the
+# geometry. Reader: brc_tools.nwp.gates. Method: docs/TERRAIN-D8.md.
+
+[gates.lake_fork]
+kind          = "rim"
+a             = [40.39295, -110.41324]
+b             = [40.39552, -110.27188]
+mouth         = [40.39426, -110.34256]
+upstream      = [40.39858, -110.34216]
+azimuth_deg   = 178.2
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 4500
+width100_m    = 6540
+width150_m    = 8040
+width200_m    = 8040
+catchment_km2 = 795.3
+huc10         = "Pigeon Water Creek-Lake Fork River"
+label         = "Pigeon Water Creek-Lake Fork River: 795 km2 behind the 2000 m crossing, mouth 8040 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.duchesne_farm_creek]
+kind          = "rim"
+a             = [40.34795, -110.76824]
+b             = [40.38146, -110.67993]
+mouth         = [40.36472, -110.7241]
+upstream      = [40.36905, -110.7262]
+azimuth_deg   = 153.4
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 2220
+width100_m    = 4980
+width150_m    = 5580
+width200_m    = 5880
+catchment_km2 = 795.2
+huc10         = "Farm Creek-Duchesne River"
+label         = "Farm Creek-Duchesne River: 795 km2 behind the 2000 m crossing, mouth 5580 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.strawberry]
+kind          = "rim"
+a             = [40.10319, -110.8778]
+b             = [40.15702, -110.88428]
+mouth         = [40.13011, -110.88104]
+upstream      = [40.12984, -110.88668]
+azimuth_deg   = 84.6
+rim_m         = 2000
+thalweg_m     = 2001
+width50_m     = 480
+width100_m    = 1140
+width150_m    = 1380
+width200_m    = 2100
+catchment_km2 = 793.2
+huc10         = "Middle Strawberry River"
+label         = "Middle Strawberry River: 793 km2 behind the 2000 m crossing, mouth 1380 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.rock_creek]
+kind          = "rim"
+a             = [40.37543, -110.54524]
+b             = [40.38825, -110.47657]
+mouth         = [40.38185, -110.51091]
+upstream      = [40.38618, -110.51194]
+azimuth_deg   = 166.0
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 1050
+width100_m    = 1680
+width150_m    = 3360
+width200_m    = 5160
+catchment_km2 = 530.8
+huc10         = "Rock Creek"
+label         = "Rock Creek: 531 km2 behind the 2000 m crossing, mouth 3360 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.uinta_river]
+kind          = "rim"
+a             = [40.47081, -110.03288]
+b             = [40.54603, -109.99776]
+mouth         = [40.50842, -110.01533]
+upstream      = [40.51117, -110.02096]
+azimuth_deg   = 109.0
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 4980
+width100_m    = 5550
+width150_m    = 5910
+width200_m    = 6840
+catchment_km2 = 523.1
+huc10         = "Lower Uinta River"
+label         = "Lower Uinta River: 523 km2 behind the 2000 m crossing, mouth 5910 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.currant_creek]
+kind          = "rim"
+a             = [40.15626, -110.86593]
+b             = [40.22882, -110.88607]
+mouth         = [40.19254, -110.876]
+upstream      = [40.19336, -110.88164]
+azimuth_deg   = 77.9
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 1020
+width100_m    = 4470
+width150_m    = 5490
+width200_m    = 5700
+catchment_km2 = 377.2
+huc10         = "Currant Creek"
+label         = "Currant Creek: 377 km2 behind the 2000 m crossing, mouth 5490 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.east_willow_creek_willow_creek]
+kind          = "rim"
+a             = [39.38393, -109.62505]
+b             = [39.42536, -109.66979]
+mouth         = [39.40465, -109.64741]
+upstream      = [39.40089, -109.64958]
+azimuth_deg   = 49.2
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 330
+width100_m    = 600
+width150_m    = 780
+width200_m    = 930
+catchment_km2 = 350.2
+huc10         = "East Willow Creek-Willow Creek"
+label         = "East Willow Creek-Willow Creek: 350 km2 behind the 2000 m crossing, mouth 780 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.whiterocks]
+kind          = "rim"
+a             = [40.51179, -109.9946]
+b             = [40.52717, -109.8544]
+mouth         = [40.5195, -109.92451]
+upstream      = [40.52383, -109.92444]
+azimuth_deg   = 171.1
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 7230
+width100_m    = 8040
+width150_m    = 8040
+width200_m    = 8040
+catchment_km2 = 310.6
+huc10         = "Whiterocks River"
+label         = "Whiterocks River: 311 km2 behind the 2000 m crossing, mouth 8040 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.avintaquin]
+kind          = "rim"
+a             = [40.0275, -110.73234]
+b             = [40.0518, -110.79516]
+mouth         = [40.03965, -110.76374]
+upstream      = [40.03533, -110.76622]
+azimuth_deg   = 26.6
+rim_m         = 2000
+thalweg_m     = 2001
+width50_m     = 900
+width100_m    = 1680
+width150_m    = 2250
+width200_m    = 3000
+catchment_km2 = 298.5
+huc10         = "Avintaquin Creek"
+label         = "Avintaquin Creek: 298 km2 behind the 2000 m crossing, mouth 2250 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.dry_fork]
+kind          = "rim"
+a             = [40.53721, -109.70108]
+b             = [40.58326, -109.66399]
+mouth         = [40.56024, -109.68254]
+upstream      = [40.56273, -109.68816]
+azimuth_deg   = 120.7
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 1260
+width100_m    = 1620
+width150_m    = 2640
+width200_m    = 3090
+catchment_km2 = 264.3
+huc10         = "Dry Fork"
+label         = "Dry Fork: 264 km2 behind the 2000 m crossing, mouth 2640 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.ashley_creek]
+kind          = "rim"
+a             = [40.60202, -109.65948]
+b             = [40.61114, -109.58959]
+mouth         = [40.60659, -109.62454]
+upstream      = [40.61093, -109.62658]
+azimuth_deg   = 169.4
+rim_m         = 2000
+thalweg_m     = 2001
+width50_m     = 240
+width100_m    = 360
+width150_m    = 570
+width200_m    = 720
+catchment_km2 = 250.0
+huc10         = "Upper Ashley Creek"
+label         = "Upper Ashley Creek: 250 km2 behind the 2000 m crossing, mouth 570 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.nine_mile]
+kind          = "rim"
+a             = [39.74963, -110.44437]
+b             = [39.80365, -110.44175]
+mouth         = [39.77664, -110.44306]
+upstream      = [39.77721, -110.44866]
+azimuth_deg   = 91.8
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 480
+width100_m    = 630
+width150_m    = 900
+width200_m    = 1860
+catchment_km2 = 232.0
+huc10         = "Upper Nine Mile Creek"
+label         = "Upper Nine Mile Creek: 232 km2 behind the 2000 m crossing, mouth 900 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.hill_creek]
+kind          = "rim"
+a             = [39.50697, -109.7016]
+b             = [39.4946, -109.76953]
+mouth         = [39.50079, -109.73557]
+upstream      = [39.49645, -109.73425]
+azimuth_deg   = 346.0
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 300
+width100_m    = 1380
+width150_m    = 1800
+width200_m    = 2520
+catchment_km2 = 206.4
+huc10         = "Hill Creek"
+label         = "Hill Creek: 206 km2 behind the 2000 m crossing, mouth 1800 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.dry_gulch]
+kind          = "rim"
+a             = [40.44551, -110.239]
+b             = [40.41751, -110.10235]
+mouth         = [40.43153, -110.17066]
+upstream      = [40.43585, -110.17025]
+azimuth_deg   = 194.5
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 8010
+width100_m    = 8040
+width150_m    = 8040
+width200_m    = 8040
+catchment_km2 = 194.0
+huc10         = "Dry Gulch Creek"
+label         = "Dry Gulch Creek: 194 km2 behind the 2000 m crossing, mouth 8040 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.red_creek]
+kind          = "rim"
+a             = [40.18379, -110.85181]
+b             = [40.28223, -110.79349]
+mouth         = [40.23301, -110.82267]
+upstream      = [40.23437, -110.82831]
+azimuth_deg   = 114.3
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 1200
+width100_m    = 5850
+width150_m    = 8040
+width200_m    = 8040
+catchment_km2 = 187.8
+huc10         = "Red Creek"
+label         = "Red Creek: 188 km2 behind the 2000 m crossing, mouth 8040 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.main_canyon]
+kind          = "rim"
+a             = [39.58207, -109.41683]
+b             = [39.52534, -109.46645]
+mouth         = [39.55371, -109.44165]
+upstream      = [39.55098, -109.43927]
+azimuth_deg   = 303.1
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 510
+width100_m    = 870
+width150_m    = 5070
+width200_m    = 7680
+catchment_km2 = 165.6
+huc10         = "Main Canyon"
+label         = "Main Canyon: 166 km2 behind the 2000 m crossing, mouth 5070 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.antelope_creek]
+kind          = "rim"
+a             = [40.00089, -110.39819]
+b             = [40.03011, -110.45735]
+mouth         = [40.01551, -110.42776]
+upstream      = [40.01147, -110.43096]
+azimuth_deg   = 32.3
+rim_m         = 2000
+thalweg_m     = 2001
+width50_m     = 450
+width100_m    = 840
+width150_m    = 2160
+width200_m    = 3450
+catchment_km2 = 145.4
+huc10         = "Antelope Creek"
+label         = "Antelope Creek: 145 km2 behind the 2000 m crossing, mouth 2160 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.nine_mile_2]
+kind          = "rim"
+a             = [39.80154, -110.45136]
+b             = [39.8539, -110.43393]
+mouth         = [39.82772, -110.44265]
+upstream      = [39.83045, -110.44823]
+azimuth_deg   = 104.0
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 420
+width100_m    = 570
+width150_m    = 1320
+width200_m    = 1860
+catchment_km2 = 145.2
+huc10         = "Upper Nine Mile Creek"
+label         = "Upper Nine Mile Creek: 145 km2 behind the 2000 m crossing, mouth 1320 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.big_brush_creek]
+kind          = "rim"
+a             = [40.62414, -109.56734]
+b             = [40.66378, -109.51911]
+mouth         = [40.64396, -109.54324]
+upstream      = [40.6478, -109.54777]
+azimuth_deg   = 131.9
+rim_m         = 2000
+thalweg_m     = 2003
+width50_m     = 210
+width100_m    = 420
+width150_m    = 600
+width200_m    = 720
+catchment_km2 = 122.7
+huc10         = "Big Brush Creek"
+label         = "Big Brush Creek: 123 km2 behind the 2000 m crossing, mouth 600 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.bitter_creek]
+kind          = "rim"
+a             = [39.56831, -109.11962]
+b             = [39.55118, -109.18585]
+mouth         = [39.55975, -109.15274]
+upstream      = [39.55644, -109.14864]
+azimuth_deg   = 340.3
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 390
+width100_m    = 750
+width150_m    = 2130
+width200_m    = 2910
+catchment_km2 = 121.6
+huc10         = "Bitter Creek"
+label         = "Bitter Creek: 122 km2 behind the 2000 m crossing, mouth 2130 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.little_brush_creek]
+kind          = "rim"
+a             = [40.62628, -109.43842]
+b             = [40.6718, -109.39306]
+mouth         = [40.64904, -109.41575]
+upstream      = [40.6518, -109.41994]
+azimuth_deg   = 126.2
+rim_m         = 2000
+thalweg_m     = 2000
+width50_m     = 300
+width100_m    = 420
+width150_m    = 4230
+width200_m    = 4350
+catchment_km2 = 117.8
+huc10         = "Little Brush Creek"
+label         = "Little Brush Creek: 118 km2 behind the 2000 m crossing, mouth 4230 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.strawberry_2]
+kind          = "rim"
+a             = [40.08197, -110.79266]
+b             = [40.11268, -110.85059]
+mouth         = [40.09733, -110.82162]
+upstream      = [40.09301, -110.8255]
+azimuth_deg   = 34.5
+rim_m         = 2000
+thalweg_m     = 2001
+width50_m     = 180
+width100_m    = 360
+width150_m    = 570
+width200_m    = 780
+catchment_km2 = 110.0
+huc10         = "Middle Strawberry River"
+label         = "Middle Strawberry River: 110 km2 behind the 2000 m crossing, mouth 570 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.douglas_creek]
+kind          = "rim"
+a             = [39.70973, -108.64728]
+b             = [39.72419, -108.7147]
+mouth         = [39.71696, -108.68099]
+upstream      = [39.71267, -108.68253]
+azimuth_deg   = 14.0
+rim_m         = 2000
+thalweg_m     = 2001
+width50_m     = 930
+width100_m    = 1110
+width150_m    = 1260
+width200_m    = 1590
+catchment_km2 = 107.4
+huc10         = "Headwaters Douglas Creek"
+label         = "Headwaters Douglas Creek: 107 km2 behind the 2000 m crossing, mouth 1260 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.lake_fork_2]
+kind          = "rim"
+a             = [40.31298, -110.4337]
+b             = [40.4053, -110.36017]
+mouth         = [40.35915, -110.39696]
+upstream      = [40.3608, -110.4026]
+azimuth_deg   = 121.0
+rim_m         = 2000
+thalweg_m     = 2001
+width50_m     = 510
+width100_m    = 8040
+width150_m    = 8040
+width200_m    = 8040
+catchment_km2 = 101.6
+huc10         = "Pigeon Water Creek-Lake Fork River"
+label         = "Pigeon Water Creek-Lake Fork River: 102 km2 behind the 2000 m crossing, mouth 8040 m wide at +150 m"
+source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.port_green_river_out]
+kind          = "port"
+a             = [39.18409, -110.12655]
+b             = [39.14472, -110.07896]
+mouth         = [39.16441, -110.10275]
+upstream      = [39.16441, -110.10275]
+azimuth_deg   = 226.2
+rim_m         = 2000
+thalweg_m     = 1259
+width50_m     = 690
+width100_m    = 1080
+width150_m    = 1350
+width200_m    = 1530
+catchment_km2 = 78160.0
+huc10         = "Tusher Wash-Green River"
+label         = "south edge, outflow, 78160 km2 upstream (truncated at the analysis grid)"
+source        = "D8 on USGS 3DEP 1 as (30 m), corridor crossing of the d02 boundary; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.port_little_snake_river_in]
+kind          = "port"
+a             = [41.09851, -107.69616]
+b             = [40.91865, -107.70514]
+mouth         = [41.00858, -107.70066]
+upstream      = [41.00858, -107.70066]
+azimuth_deg   = 270.0
+rim_m         = 2000
+thalweg_m     = 1887
+width50_m     = 9630
+width100_m    = 12840
+width150_m    = 13530
+width200_m    = 13620
+catchment_km2 = 3499.0
+huc10         = "Willow Creek-Little Snake River"
+label         = "east edge, inflow, 3499 km2 upstream (truncated at the analysis grid)"
+source        = "D8 on USGS 3DEP 1 as (30 m), corridor crossing of the d02 boundary; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.port_yampa_river_in]
+kind          = "port"
+a             = [40.45541, -107.67374]
+b             = [40.38589, -107.72814]
+mouth         = [40.42065, -107.70095]
+upstream      = [40.42065, -107.70095]
+azimuth_deg   = 298.7
+rim_m         = 2000
+thalweg_m     = 1857
+width50_m     = 3900
+width100_m    = 4830
+width150_m    = 6000
+width200_m    = 12270
+catchment_km2 = 1638.0
+huc10         = "Morgan Gulch-Yampa River"
+label         = "east edge, inflow, 1638 km2 upstream (truncated at the analysis grid)"
+source        = "D8 on USGS 3DEP 1 as (30 m), corridor crossing of the d02 boundary; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.port_white_river_in]
+kind          = "port"
+a             = [39.97296, -107.71017]
+b             = [39.92097, -107.69118]
+mouth         = [39.94697, -107.70067]
+upstream      = [39.94697, -107.70067]
+azimuth_deg   = 252.2
+rim_m         = 2000
+thalweg_m     = 2063
+width50_m     = 690
+width100_m    = 1710
+width150_m    = 2010
+width200_m    = 4500
+catchment_km2 = 878.0
+huc10         = "Coal Creek-White River"
+label         = "east edge, inflow, 878 km2 upstream (truncated at the analysis grid)"
+source        = "D8 on USGS 3DEP 1 as (30 m), corridor crossing of the d02 boundary; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.port_green_river_in]
+kind          = "port"
+a             = [41.76115, -109.85519]
+b             = [41.76974, -109.61489]
+mouth         = [41.76551, -109.73505]
+upstream      = [41.76551, -109.73505]
+azimuth_deg   = 176.4
+rim_m         = 2000
+thalweg_m     = 1891
+width50_m     = 8460
+width100_m    = 15600
+width150_m    = 16050
+width200_m    = 16050
+catchment_km2 = 782.0
+huc10         = "Eightmile Wash-Green River"
+label         = "north edge, inflow, 782 km2 upstream (truncated at the analysis grid)"
+source        = "D8 on USGS 3DEP 1 as (30 m), corridor crossing of the d02 boundary; ub-wx drainage-canyons-gigawatts 2026-09-14"
+
+[gates.ouray_sink_exit]
+kind          = "floor"
+a             = [39.81996, -109.91855]
+b             = [39.78005, -109.92782]
+mouth         = [39.80001, -109.92319]
+upstream      = [39.7962, -109.92009]
+azimuth_deg   = 279.5
+rim_m         = 2000
+thalweg_m     = 1404
+width50_m     = 690
+width100_m    = 2280
+width150_m    = 3000
+width200_m    = 3930
+catchment_km2 = 1228.2
+huc10         = ""
+label         = "ouray sink exit: the floor gate the box budget closes on"
+source        = "D8 floor drainage on USGS 3DEP 1 as (30 m), ub-wx drainage-canyons-gigawatts 2026-09"
+
+[gates.duchesne_bench_exit]
+kind          = "floor"
+a             = [40.05548, -109.73956]
+b             = [40.16482, -109.6577]
+mouth         = [40.11016, -109.69866]
+upstream      = [40.11319, -109.70423]
+azimuth_deg   = 119.1
+rim_m         = 2000
+thalweg_m     = 1420
+width50_m     = 3330
+width100_m    = 12030
+width150_m    = 12030
+width200_m    = 12030
+catchment_km2 = 2671.9
+huc10         = ""
+label         = "duchesne bench exit: the floor gate the box budget closes on"
+source        = "D8 floor drainage on USGS 3DEP 1 as (30 m), ub-wx drainage-canyons-gigawatts 2026-09"
+
+[gates.ashley_bench_exit]
+kind          = "floor"
+a             = [40.3491, -109.48431]
+b             = [40.39577, -109.33115]
+mouth         = [40.37246, -109.40776]
+upstream      = [40.3768, -109.40907]
+azimuth_deg   = 157.2
+rim_m         = 2000
+thalweg_m     = 1463
+width50_m     = 7920
+width100_m    = 10980
+width150_m    = 12030
+width200_m    = 12030
+catchment_km2 = 391.2
+huc10         = ""
+label         = "ashley bench exit: the floor gate the box budget closes on"
+source        = "D8 floor drainage on USGS 3DEP 1 as (30 m), ub-wx drainage-canyons-gigawatts 2026-09"
 
 # ── Airports (aviation exports) ────────────────────────────────────────────
 

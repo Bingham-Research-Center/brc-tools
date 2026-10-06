@@ -1,0 +1,22 @@
+# The raster / hydrology env for brc_tools.terrain (D8 catchments on USGS 3DEP). Kept
+# separate from brc-tools-2026 on purpose: richdem and rasterio drag in GDAL, which the
+# obs/NWP cron never needs. brc_tools itself is NOT installed here -- the SLURM wrapper
+# (scripts/terrain_pipeline.slurm) puts the checkout on PYTHONPATH.
+#   mamba env create -f environment-terrain.yml
+name: terrain-2026
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy>=1.24
+  - scipy>=1.10
+  - polars>=0.20
+  - requests>=2.31
+  - rasterio>=1.3          # GeoTIFF mosaic + warp (terrain.dem)
+  - richdem>=2.3           # priority-flood pit filling (terrain.d8)
+  - pyproj>=3.4            # NAD83 <-> UTM 12N (terrain.dem.Grid)
+  - gdal                   # command-line tools for the WPS terrain builder in brc-wrf
+  - xarray
+  - netcdf4
+  - matplotlib-base
+  - pytest

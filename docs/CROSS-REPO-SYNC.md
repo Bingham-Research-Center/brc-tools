@@ -206,6 +206,17 @@ cd ~/gits && grep -r "DATA_UPLOAD_API_KEY" \
   ubair-website clyfar brc-tools
 ```
 
+## Cross-repo data contracts
+
+- **`theta_ref_<case>_<night>.json`** (schema 1) — the sunset-profile reference temperature a
+  heat-deficit budget is measured against, written by `brc_tools.nwp.wrf_deficit_reference.SunsetProfile.to_json`
+  and read by brc-voxel-viz (a fourth isosurface scheme, "colder than the sunset profile") and by the
+  ub-wx drainage experiments. Fields and semantics: `docs/DEFICIT-REFERENCE.md`. Bump `schema` on any
+  incompatible change and tell the consumers; a consumer must refuse a newer schema than it knows.
+- **`[gates.*]` in `brc_tools/nwp/lookups.toml`** — the flux planes (rim / floor / port) the drainage
+  budgets integrate through; read with `brc_tools.nwp.gates`. Geometry only, generated from terrain
+  (`docs/TERRAIN-D8.md`); brc-wrf's tslist and seed scripts consume the same lines.
+
 ## Version Control Strategy
 
 - **clyfar**: Tag releases when deploying to CHPC (e.g., v0.9.5)
