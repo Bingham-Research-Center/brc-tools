@@ -97,6 +97,17 @@ def test_sunset_profile_rejects_bad_masks(ds):
         dr.sunset_profile(ds, np.ones((6, 6), bool), time=datetime(2025, 1, 1), ml_stat="mode")
 
 
+@pytest.mark.parametrize("fmt", ["%Y-%m-%d_%H:%M:%S", "%Y-%m-%d_%H_%M_%S"])
+def test_from_run_reads_both_filename_conventions(ds, floor, tmp_path, fmt):
+    # nocolons = .true. writes underscores for the colons; the datum must not depend on it
+    time = datetime(2025, 1, 26, 23)
+    name = f"wrfout_d02_{time:{fmt}}"
+    ds.to_netcdf(tmp_path / name)
+    prof = dr.sunset_profile_from_run(tmp_path, 2, time, floor, ml_depth_m=500.0, top_m=3000.0)
+    assert (prof.source_file, prof.domain) == (name, 2)
+    assert prof.mixed_layer_theta_k == pytest.approx(284.0)
+
+
 def test_two_datum_ordering(ds, floor):
     lo, hi = dr.two_datum(290.0, 0.5)
     assert lo < 290.0 < hi

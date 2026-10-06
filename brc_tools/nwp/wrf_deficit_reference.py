@@ -272,8 +272,14 @@ def sunset_profile(
 
 
 def sunset_profile_from_run(run_dir, domain: int, time: datetime, floor_mask, **kw) -> SunsetProfile:
-    """Open the wrfout for ``(domain, time)`` in ``run_dir`` and call :func:`sunset_profile`."""
-    path = wo.wrfout_path(run_dir, domain, time)
+    """Open the wrfout for ``(domain, time)`` in ``run_dir`` and call :func:`sunset_profile`.
+
+    Either filename convention is found: a run with ``nocolons = .true.`` writes
+    ``_HH_MM_SS`` for ``_HH:MM:SS``.
+    """
+    from brc_tools.nwp.wrf_section import wrfout_path
+
+    path = wrfout_path(run_dir, domain, time)
     ds = wo.open_wrfout(path)
     try:
         kw.setdefault("source_file", path.name)
