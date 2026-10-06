@@ -149,6 +149,60 @@ def wbd_name(lon: float, lat: float, *, level: int = 10, timeout: float = 30.0) 
     return str(feats[0]["attributes"].get("name", "")) if feats else ""
 
 
+def wbd_unit(lon: float, lat: float, *, level: int = 12, timeout: float = 30.0) -> dict:
+    """The Watershed Boundary Dataset unit containing a point: ``{"name", "huc", "areasqkm"}``
+    (empty strings / NaN if none).  ``level`` 12 is the finest (sub-watershed); a level-10
+    unit usually holds several rim catchments, so its name is not an identifier."""
+    field = f"huc{level}"
+    params = {"geometry": f"{lon},{lat}", "geometryType": "esriGeometryPoint", "inSR": "4326",
+              "spatialRel": "esriSpatialRelIntersects", "outFields": f"name,{field},areasqkm",
+              "returnGeometry": "false", "f": "json"}
+    empty = {"name": "", "huc": "", "areasqkm": float("nan")}
+    try:
+        js = _get_json(NATIONAL_MAP.format(service="wbd", layer=WBD_LAYERS[level]), params, timeout=timeout)
+    except RuntimeError as exc:
+        logger.warning("WBD query failed at %s,%s: %s", lon, lat, exc)
+        return empty
+    feats = js.get("features") or []
+    if not feats:
+        return empty
+    at = {k.lower(): v for k, v in (feats[0].get("attributes") or {}).items()}
+    area = at.get("areasqkm")
+    return {"name": str(at.get("name") or ""), "huc": str(at.get(field) or ""),
+            "areasqkm": float(area) if area is not None else float("nan")}
+
+
+ARTIFICIAL_WORDS = ("Canal", "Ditch", "Lateral", "Feeder", "Aqueduct", "Pipeline", "Tunnel", "Drain")
+
+
+def stream_name(grid, path_cells: np.ndarray, flowlines, *, tol_m: float = 120.0, min_share: float = 0.2,
+                exclude=ARTIFICIAL_WORDS) -> str:
+    """The mapped (GNIS) name of the stream a D8 path follows: among named NHD flowlines,
+    the one with the most vertices within ``tol_m`` of the path's cells, provided those
+    vertices cover at least ``min_share`` of the path.  "" when no named stream follows it.
+    Flowlines whose name contains a word in ``exclude`` are ignored: on an irrigated bench a
+    D8 path can run along a canal, and a canal is not what a catchment is called."""
+    from scipy.spatial import cKDTree
+
+    named = [f for f in flowlines if f.gnis_name and not any(w in f.gnis_name for w in exclude)]
+    if not named or len(path_cells) == 0:
+        return ""
+    pj, pi = np.divmod(np.asarray(path_cells, dtype=np.int64), grid.nx)
+    px, py = grid.xy(pj, pi)
+    tree = cKDTree(np.column_stack([px, py]))
+    hit: dict[str, set] = {}
+    for f in named:
+        vx, vy = grid.to_grid.transform(f.lonlat[:, 0], f.lonlat[:, 1])
+        d, k = tree.query(np.column_stack([vx, vy]))
+        near = k[d <= tol_m]
+        if near.size:
+            hit.setdefault(f.gnis_name, set()).update(near.tolist())
+    if not hit:
+        return ""
+    name, cells = max(hit.items(), key=lambda kv: len(kv[1]))
+    return name if len(cells) >= min_share * len(path_cells) else ""
+
+
 @dataclass(frozen=True)
 class Flowline:
     gnis_name: str
