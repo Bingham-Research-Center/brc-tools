@@ -52,9 +52,10 @@ floods a continuous path between two seeds: the highest point of the lowest conn
 route. It is a bisection on the stage with a connected-component test, so it needs no
 path search and costs about `log2(relief / tol)` labelings of the window.
 
-- Seeds are `(j, i)` cells or bool masks. A named place can sit on a bench or a wall on
-  a coarse grid; `depressions.lowest_cell(z, grid, lat, lon, radius_m=...)` snaps it to
-  the lowest cell nearby.
+- Seeds are `(j, i)` cells or bool masks -- a single cell is fine *here*, because a sill
+  is a level, not a cross-section (the throat functions below refuse one). A named place
+  can sit on a bench or a wall on a coarse grid; `depressions.lowest_cell(z, grid, lat,
+  lon, radius_m=...)` snaps it to the lowest cell nearby.
 - Take the seeds **once, on the true terrain**, and reuse their coordinates on every
   grid, or the comparison measures the seed, not the grid.
 - The answer is only as wide as the window: if the true lowest route leaves the array,
@@ -72,6 +73,14 @@ four axis neighbours, `pi/(8 sqrt 2)` for the diagonals) that make the total wei
 cut approximate its Euclidean length whatever its orientation. `scipy.sparse.csgraph.
 maximum_flow` gives the cut.
 
+**The basins are masks, never cells.** `src` and `dst` must be bool masks of the grid's
+shape; a `(j, i)` cell or a one-cell mask is a `ValueError`. With a point seed the
+cheapest cut is the ring round that one cell, so the answer measures the seed, not the
+canyon: 13 400 m2 against 39 900 m2 for a 9-cell test channel, and a clearance width
+limited by the clearance at the seed. Build each mask well wider than the throat --
+a disc of a few kilometres round the `lowest_cell` of each basin, or the basin's own
+floor -- and keep it the same on every grid.
+
 Why a cut and not a transect: it needs no thalweg and no perpendicular, so meanders do
 not matter; dead-end side canyons contribute nothing; parallel routes (a braided reach, a
 bypass over a low saddle) add up, as they should. On straight channels rotated to any
@@ -81,6 +90,9 @@ angle the result is within 10 % of the analytic section (`tests/test_terrain_thr
 through the passage at all: the width of the widest path between the basins through the
 flooded cells, by a bisection on the distance-to-dry transform. A one-cell channel has
 width `res`; a bulk current wants about five.
+
+A cell exactly at the stage counts as flooded, as it does in `sill_between`: at the sill
+the throat is open, one cell wide, with zero area.
 
 `throat.throat_curve` evaluates both over a list of stages. **Use the same absolute
 stages on every terrain** (heights above the true upstream floor), so that
@@ -106,23 +118,28 @@ what `brc_tools.drainage.hydraulics.Reach` takes.
 
 - `wrfgrid.read_geo_em(path)` returns `HGT_M` north-up with a `Grid` in the domain's
   own Lambert projection on the WRF sphere, and the land mask, land use and lake mask
-  beside it. The projection is checked against the file's own corner coordinates.
+  beside it. The projection is checked against the file's own corner coordinates, and
+  the cells whose `LANDMASK` is not 0 or 1 (the seam cell below) are counted into
+  `meta["landmask_bad_cells"]`, with a warning when there are any.
 - `dem.warp_tiles(tifs, grid, resampling="average", src_crs=wrfgrid.sphere_geo_crs())`
   puts the source DEM on the same cells the way geogrid sees it (no datum shift).
 - `wrfgrid.hgt_source_diff(hgt, src)` is the crater detector: `HGT_M` minus the source.
   geogrid's own smoothing pass leaves differences of 100-170 m on canyon rims at
   500-600 m; a real artefact is several hundred metres and has a cross of half-depth
   neighbours (the smoothing pass spreading one empty cell).
-- `wrfgrid.wps_tile_coverage(tile_dir)` reads a WPS binary tile set back and reports
-  missing cells per tile and whether `index` declares a `missing_value`. A tile built
-  where the source had no data is otherwise read as -32768 m of terrain.
+- `wrfgrid.wps_tile_coverage(tile_dir)` reads a WPS binary tile set back (in the
+  `index`'s `endian`, big by default) and reports missing cells per tile and whether
+  `index` declares a `missing_value`. A declared `missing_value` is what counts as
+  missing; without one, values at or below `nodata_below` (-1000 m) do, because geogrid
+  then reads a hole -- -32768 m -- as terrain.
 
 **The seam cell.** The WPS build used here leaves *every* field without data at any
-cell whose centre has the float32 longitude -110.00003051757812 (two float steps west
-of the -110 meridian, a tile seam of the 10-degree standard datasets): `LANDMASK` comes
-out -1, the land use "water", and `HGT_M` 0 m before smoothing. All 23 such cells in 64
-archived `geo_em` files sit on that one value. The check is one line -- `LANDMASK` must
-be 0 or 1 everywhere -- and the cure is in the domain spec: make -110 the central
+cell whose centre has the float32 longitude -110.00003051757812 (four float32 steps of
+7.63e-6 degrees west of the -110 meridian, a tile seam of the 10-degree standard
+datasets): `LANDMASK` comes out -1, the land use "water", and `HGT_M` 0 m before
+smoothing. All 23 such cells in 64 archived `geo_em` files sit on that one value. The
+check -- `LANDMASK` must be 0 or 1 everywhere -- is `meta["landmask_bad_cells"]` from
+`read_geo_em`, and the cure is in the domain spec: make -110 the central
 meridian (`stand_lon = ref_lon = -110`) with an odd coarse `e_we`, so the meridian is a
 cell edge of every domain and no centre comes near it.
 

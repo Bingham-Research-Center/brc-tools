@@ -65,6 +65,7 @@ terrain = [
     "rasterio>=1.3",   # GeoTIFF mosaic + warp (terrain.dem.mosaic_tiles)
     "richdem>=2.3",    # priority-flood pit filling (terrain.d8.fill_depressions)
     "pyproj>=3.4",     # NAD83 <-> UTM 12N (terrain.dem.Grid)
+    "netCDF4>=1.6",    # geo_em reading (terrain.wrfgrid.read_geo_em)
 ]
 dev = [
     "pytest>=7.4.0",

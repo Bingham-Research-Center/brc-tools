@@ -214,7 +214,9 @@ def fill_depth(dem: np.ndarray, grid) -> np.ndarray:
     DEM this is ponds and lake basins; on a model grid it is also the storage that
     coarsening put behind canyons it could no longer resolve."""
     flat = fill_depressions(dem, grid, epsilon=False)
-    return np.maximum(flat - dem, 0.0).astype(np.float32)
+    # subtract on the fill's own float32 values: a float64 DEM would leave ~1e-4 m of
+    # rounding as depth in every cell the fill never touched
+    return np.maximum(flat - np.asarray(dem, dtype=np.float32), np.float32(0.0))
 
 
 def slope_deg(dem: np.ndarray, res: float) -> np.ndarray:

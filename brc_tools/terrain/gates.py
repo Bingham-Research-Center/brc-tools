@@ -62,7 +62,9 @@ def channel_direction(rcv: np.ndarray, acc: np.ndarray, cell: int, nx: int, *, n
 def valley_widths(zf: np.ndarray, grid, cell: int, direction_xy, *, heights=DEFAULT_HEIGHTS,
                   half_km: float = 4.0) -> tuple[dict[float, float], float]:
     """Width of the valley cross-section perpendicular to ``direction_xy`` at ``cell``:
-    the contiguous run around the thalweg lying below thalweg + h, for each h.
+    the contiguous run around the thalweg lying below thalweg + h, for each h.  The
+    thalweg is the lowest cell within 3 cells of ``cell`` along the section, and the run
+    grows from there (a crossing cell can sit on the bank above the gorge).
     Returns ``({h: width_m}, thalweg_m)``; a run reaching the +/- half_km window edge
     means the valley is wider than the window."""
     ny, nx = zf.shape
@@ -77,7 +79,11 @@ def valley_widths(zf: np.ndarray, grid, cell: int, direction_xy, *, heights=DEFA
     prof = np.full(s.size, np.nan)
     prof[ok] = zf[jj[ok], ii[ok]]
     centre = int(np.argmin(np.abs(s)))
-    zc = float(np.nanmin(prof[max(centre - 3, 0):centre + 4]))
+    lo = max(centre - 3, 0)
+    # seed the run at the thalweg, not the crossing: from a bank cell above thalweg + h the
+    # run would never start and the width would come out as one cell
+    centre = lo + int(np.argmin(np.nan_to_num(prof[lo:centre + 4], nan=np.inf)))
+    zc = float(prof[centre])
     widths = {}
     for h in heights:
         below = prof < zc + h

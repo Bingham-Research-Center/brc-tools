@@ -3,6 +3,8 @@ conditioning, profiles and sections, catchment matching and names, WPS tiles and
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -75,6 +77,17 @@ def test_fill_depth_of_a_dammed_valley():
     assert depth[mid, 35] == 0.0 and depth[mid, 5] == 0.0      # below the dam; above the pond's reach
 
 
+def test_fill_depth_of_a_float64_dem_is_zero_where_nothing_was_filled():
+    pytest.importorskip("richdem")
+    z = valley(drop=1.0) + 0.1                        # float64 values float32 cannot hold exactly
+    z[:, 30] += 12.0
+    g = Grid(x0=0.0, y1=270.0, res=30.0, ny=z.shape[0], nx=z.shape[1])
+    depth = d8.fill_depth(z, g)
+    mid = z.shape[0] // 2
+    assert depth[mid, 29] == pytest.approx(11.0, abs=0.01)
+    assert (depth[:, 31:] == 0.0).all()                       # below the dam: not a rounding error of depth
+
+
 # ------------------------------------------------------------------ conditioning
 def test_limit_slope_tames_a_cliff_and_spares_the_flats():
     z = np.zeros((40, 40))
@@ -85,6 +98,20 @@ def test_limit_slope_tames_a_cliff_and_spares_the_flats():
     assert out[:, 0].max() == 0.0 and out[:, -1].min() == 600.0      # far from the cliff: untouched
     same, n0 = cond.limit_slope(np.zeros((5, 5)), 100.0, 30.0)
     assert n0 == 0 and not same.any()
+
+
+def test_limit_slope_ignores_a_nodata_hole():
+    # a hole in flat terrain far from the cliff: its neighbours are flat and must stay so
+    z = np.zeros((40, 40))
+    z[:, 30:] = 600.0
+    z[10:15, 5:10] = np.nan
+    out, n = cond.limit_slope(z, 100.0, 30.0)
+    assert n > 0 and np.isnan(out[10:15, 5:10]).all() and np.isnan(out).sum() == 25
+    assert np.nanmax(np.abs(out[:, :20])) == 0.0              # beside the hole: untouched
+    assert np.degrees(np.arctan(cond.max_neighbour_slope(out, 100.0).max())) <= 30.0 + 1e-6
+    # without the hole the cliff comes out the same: holes change only themselves
+    ref, _ = cond.limit_slope(np.where(np.isnan(z), 0.0, z), 100.0, 30.0)
+    assert np.allclose(out[:, 20:], ref[:, 20:])
 
 
 def test_breach_carves_a_monotone_channel():
@@ -98,6 +125,8 @@ def test_breach_carves_a_monotone_channel():
     assert out[mid, 21] == pytest.approx(479.0) and out[mid - 1, 21] == z[mid - 1, 21]
     wide = cond.breach(z, cells, target, half_width_cells=1)
     assert wide[mid - 1, 21] == pytest.approx(478.0)                  # the lowest target among its three path neighbours
+    with pytest.raises(ValueError):                                   # a profile one short is an error, not a shorter breach
+        cond.breach(z, cells, target[:-1])
 
 
 # ------------------------------------------------------------------ profiles
@@ -180,6 +209,65 @@ def test_wps_tile_coverage_reports_a_hole(tmp_path):
     assert rows["00011-00020.00001-00010"]["frac_valid"] == pytest.approx(0.5)
     assert rows["00011-00020.00001-00010"]["n_missing"] == 50
     assert rows["00001-00010.00001-00010"]["has_missing_value"] is False
+
+
+def test_wps_tile_coverage_reads_little_endian_and_honours_missing_value(tmp_path):
+    # bathymetry below -1000 m is data when the index declares its own missing value
+    d = tmp_path / "bathy"
+    d.mkdir()
+    (d / "index").write_text("type = continuous\nsigned = yes\nprojection = regular_ll\ndx = 0.01\ndy = 0.01\n"
+                             "known_x = 1.0\nknown_y = 1.0\nknown_lat = -89.995\nknown_lon = 0.005\nwordsize = 2\n"
+                             "tile_x = 10\ntile_y = 10\ntile_z = 1\nendian = little\nscale_factor = 0.5\n"
+                             "missing_value = -9999.\n")
+    a = np.full((10, 10), -4000, dtype="<i2")         # -2000 m once scaled
+    a[:3] = -19998                                    # the declared missing value, -9999 m once scaled
+    a.tofile(d / "00001-00010.00001-00010")
+    (row,) = wrfgrid.wps_tile_coverage(d)
+    assert row["n_missing"] == 30 and row["frac_valid"] == pytest.approx(0.7)
+    assert row["z_min"] == row["z_max"] == -2000.0 and row["has_missing_value"] is True
+
+
+def geo_em(path, landmask=None):
+    """A small Lambert ``geo_em`` (30 x 40, 600 m) with an optional ``LANDMASK``; returns its path."""
+    nc = pytest.importorskip("netCDF4")
+    pyproj = pytest.importorskip("pyproj")
+    ny, nx, dx = 30, 40, 600.0
+    crs = ("+proj=lcc +lat_1=39 +lat_2=42 +lat_0=40.45 +lon_0=-109.6 +a=6370000 +b=6370000 +units=m +no_defs")
+    tr = pyproj.Transformer.from_crs(crs, wrfgrid.sphere_geo_crs(), always_xy=True)
+    x = (np.arange(nx) - nx / 2 + 0.5) * dx + 20000.0
+    y = (np.arange(ny) - ny / 2 + 0.5) * dx - 10000.0
+    xx, yy = np.meshgrid(x, y)
+    lon, lat = tr.transform(xx, yy)
+    hgt = (1500.0 + 0.01 * xx + 0.02 * yy).astype(np.float32)
+    with nc.Dataset(path, "w") as ds:
+        ds.createDimension("Time", 1)
+        ds.createDimension("south_north", ny)
+        ds.createDimension("west_east", nx)
+        fields = [("HGT_M", hgt), ("XLAT_M", lat), ("XLONG_M", lon), ("LU_INDEX", np.full((ny, nx), 21.0))]
+        if landmask is not None:
+            fields.append(("LANDMASK", landmask))
+        for name, arr in fields:
+            v = ds.createVariable(name, "f4", ("Time", "south_north", "west_east"))
+            v[0] = arr
+        ds.setncatts({"MAP_PROJ": 1, "DX": dx, "DY": dx, "TRUELAT1": 39.0, "TRUELAT2": 42.0, "MOAD_CEN_LAT": 40.45,
+                      "STAND_LON": -109.6, "CEN_LAT": 40.4, "CEN_LON": -109.4, "grid_id": 2, "parent_grid_ratio": 5,
+                      "ISLAKE": 21, "MMINLU": "MODIFIED_IGBP_MODIS_NOAH"})
+    return path
+
+
+def test_read_geo_em_counts_cells_with_no_landmask(tmp_path):
+    lm = np.ones((30, 40))
+    lm[:, 7] = -1.0                                   # a column geogrid found no source data for (the -110 seam)
+    fill = np.zeros(lm.shape, bool)
+    fill[3, 3] = True                                 # and one cell left at the fill value
+    with pytest.warns(UserWarning, match="31 cell"):
+        meta = wrfgrid.read_geo_em(geo_em(tmp_path / "seam.nc", np.ma.masked_array(lm, mask=fill)))[2]
+    assert meta["landmask_bad_cells"] == 31
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")                # a clean mask is silent
+        meta = wrfgrid.read_geo_em(geo_em(tmp_path / "ok.nc", np.where(np.arange(40) < 20, 0.0, 1.0) * np.ones((30, 1))))[2]
+    assert meta["landmask_bad_cells"] == 0
+    assert "landmask_bad_cells" not in wrfgrid.read_geo_em(geo_em(tmp_path / "none.nc"))[2]
 
 
 def test_read_geo_em_round_trips_its_own_coordinates(tmp_path):

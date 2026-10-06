@@ -61,6 +61,22 @@ def test_widths_increase_with_height_and_are_hand_computable(valley):
     assert g.thalweg_m == pytest.approx(float(z[10, 20]), abs=0.6)
 
 
+def test_width_run_starts_at_the_gorge_not_on_the_bank():
+    # a crossing cell on a bench 120 m above a 5-cell gorge whose nearest floor cell is two
+    # rows away: the widths are the gorge's, not one cell
+    ny, nx, res = 41, 21, 30.0
+    jj = np.indices((ny, nx))[0]
+    z = (1000.0 + 40.0 * np.abs(jj - 22)).astype(np.float32)    # walls: 40 m per row from row 22
+    z[20:25] = 1000.0                                            # gorge floor, rows 20-24
+    z[17:20] = 1120.0                                            # a bench north of it, rows 17-19
+    grid = Grid(0.0, ny * res, res, ny, nx)
+    bench, zc = gates.valley_widths(z, grid, 18 * nx + 10, (1.0, 0.0), heights=(50.0, 100.0))
+    assert zc == 1000.0
+    assert bench[50.0] == pytest.approx(5 * res) and bench[100.0] == pytest.approx(5 * res)
+    axis, _ = gates.valley_widths(z, grid, 22 * nx + 10, (1.0, 0.0), heights=(50.0, 100.0))
+    assert bench == axis                                         # the same section from either cell
+
+
 def test_line_length_clipped_to_range(valley):
     z, grid, rcv, acc = valley
     g = gates.perpendicular_gate(z, grid, 10 * grid.nx + 20, rcv=rcv, acc=acc, line_km=(6.0, 12.0))

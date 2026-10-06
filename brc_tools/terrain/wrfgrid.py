@@ -15,6 +15,7 @@ cannot import ``brc_tools.nwp``.
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +40,11 @@ def read_geo_em(path: str | Path) -> tuple[np.ndarray, Grid, dict]:
     ``landmask``, ``lu_index`` and ``lake`` (bool, land-use category 21) north-up, the
     map factor, and the projection attributes.  Only Lambert (``MAP_PROJ = 1``) domains
     are supported.
+
+    ``meta["landmask_bad_cells"]`` counts the cells whose ``LANDMASK`` is neither 0 nor 1
+    (fill and NaN included) -- geogrid's mark of a cell it found no data for, such as the
+    seam cell on the -110 meridian (``docs/TERRAIN-THROATS.md``) -- and a ``UserWarning``
+    says so when there are any.  Absent when the file has no ``LANDMASK``.
     """
     nc = require("netCDF4")
     pyproj = require("pyproj")
@@ -59,6 +65,13 @@ def read_geo_em(path: str | Path) -> tuple[np.ndarray, Grid, dict]:
         for key, var in (("landmask", "LANDMASK"), ("lu_index", "LU_INDEX"), ("mapfac_m", "MAPFAC_M")):
             if var in ds.variables:
                 meta[key] = np.asarray(ds[var][0])[::-1].copy()
+        if "LANDMASK" in ds.variables:
+            # masked (fill) cells become NaN, so they count as bad too
+            lm = np.ma.filled(np.ma.asarray(ds["LANDMASK"][0], dtype=np.float64), np.nan)
+            meta["landmask_bad_cells"] = int(np.count_nonzero((lm != 0.0) & (lm != 1.0)))
+            if meta["landmask_bad_cells"]:
+                warnings.warn(f"{path}: {meta['landmask_bad_cells']} cell(s) with LANDMASK not 0 or 1 -- geogrid found "
+                              "no source data there (the -110 seam cell?); see docs/TERRAIN-THROATS.md", stacklevel=2)
         meta["mminlu"] = str(getattr(ds, "MMINLU", ""))
         meta["islake"] = int(getattr(ds, "ISLAKE", LAKE_CATEGORY))
     ny, nx = hgt.shape
@@ -118,11 +131,15 @@ def read_wps_index(path: str | Path) -> dict[str, str]:
 def wps_tile_coverage(tile_dir: str | Path, *, nodata_below: float = -1000.0) -> list[dict]:
     """Read every tile of a WPS continuous dataset back and report what is in it.
 
-    One dict per tile: ``name``, ``lon_w``, ``lat_s`` (of the tile core), ``frac_valid``
-    (core cells above ``nodata_below``), ``n_missing``, ``z_min`` / ``z_max`` of the valid
-    cells, and ``has_missing_value`` (whether ``index`` declares one -- without it geogrid
-    reads a hole as terrain).  A tile built where the source had no data is all missing
-    values; nothing downstream reports that unless this is asked.
+    The tiles are read as ``index`` describes them: ``wordsize``, ``signed``, ``endian``
+    (big unless ``little``) and ``scale_factor``.  A cell is missing if it equals the
+    ``missing_value`` the index declares (after scaling); an index without one gets the heuristic
+    "at or below ``nodata_below``" instead (a hole is -32768 m).  One dict per tile:
+    ``name``, ``lon_w``, ``lat_s`` (of the tile core), ``frac_valid``, ``n_missing``,
+    ``z_min`` / ``z_max`` of the valid cells, and ``has_missing_value`` (whether ``index``
+    declares one -- without it geogrid reads a hole as terrain).  A tile built where the
+    source had no data is all missing values; nothing downstream reports that unless this
+    is asked.
     """
     tile_dir = Path(tile_dir)
     idx = read_wps_index(tile_dir / "index")
@@ -132,8 +149,10 @@ def wps_tile_coverage(tile_dir: str | Path, *, nodata_below: float = -1000.0) ->
     known_lat, known_lon = float(idx["known_lat"]), float(idx["known_lon"])
     kx, ky = float(idx.get("known_x", 1)), float(idx.get("known_y", 1))
     word = int(idx.get("wordsize", 2))
-    dtype = {1: "i1", 2: ">i2", 4: ">i4"}[word] if idx.get("signed", "no") == "yes" else {1: "u1", 2: ">u2", 4: ">u4"}[word]
+    endian = "<" if idx.get("endian", "big").strip().lower() == "little" else ">"
+    dtype = np.dtype(f"{endian}{'i' if idx.get('signed', 'no') == 'yes' else 'u'}{word}")
     scale = float(idx.get("scale_factor", 1.0))
+    missing = float(idx["missing_value"]) if "missing_value" in idx else None
     rows = []
     for p in sorted(q for q in tile_dir.iterdir() if re.match(r"^\d{5,6}-\d{5,6}\.\d{5,6}-\d{5,6}$", q.name)):
         xs, _, ys, _ = (int(v) for v in re.split(r"[-.]", p.name))
@@ -142,7 +161,10 @@ def wps_tile_coverage(tile_dir: str | Path, *, nodata_below: float = -1000.0) ->
         lon_w = known_lon + (xs - kx) * dx - 0.5 * dx
         if lon_w > 180.0:
             lon_w -= 360.0
-        ok = core > nodata_below
+        if missing is None:
+            ok = core > nodata_below
+        else:                                          # values are multiples of the scale: half of one is exact
+            ok = ~np.isclose(core, missing, rtol=0.0, atol=0.5 * abs(scale))
         rows.append({"name": p.name, "lon_w": round(lon_w, 4), "lat_s": round(known_lat + (ys - ky) * dy - 0.5 * dy, 4),
                      "frac_valid": float(ok.mean()), "n_missing": int((~ok).sum()),
                      "z_min": float(core[ok].min()) if ok.any() else float("nan"),

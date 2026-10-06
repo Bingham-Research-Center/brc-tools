@@ -59,8 +59,12 @@ domain never saw cool -- instead of being counted as a canyon.
 Everything outside the floor that drains into it crosses the rim somewhere;
 `catchments.rim_crossings` finds those cells, `d8.label_upstream` gives each its
 catchment, and a crossing with at least `channel_km2` upstream is a canyon
-**gate**. Crossings whose catchment contains floor cells (`floor_leak_fraction`
-above ~1 %) are artefacts of the floor's shape and are dropped.
+**gate**. `floor_leak_fraction` (the share of a crossing's catchment lying on the
+floor; the pipeline's `--floor-leak` threshold and `floor_leak` CSV column) is
+**identically zero** under this floor definition: a floor cell's D8 path runs
+downhill, below the rim and upstream of the outlet, so it never leaves the floor and
+never passes a crossing. It drops nothing; it is kept only as a guard against a
+floor or labelling built some other way.
 
 **A higher rim makes a canyon narrower or wider by construction.** The crossing
 moves up-valley to where the channel passes the new height, and the width is
@@ -79,12 +83,20 @@ rim from the pool depth the question is about, not the other way round.
    `wrf_output.integrate_flux_transect` the rightward normal is the export
    direction, so `Phi > 0` is flow out of the catchment.
 4. Widths are the contiguous run of DEM cells around the thalweg lying below
-   thalweg + 50 / 100 / 150 / 200 m (`valley_widths`), in metres;
+   thalweg + 50 / 100 / 150 / 200 m (`valley_widths`), in metres; the thalweg is the
+   lowest cell within three cells of the crossing along the line, and the run grows
+   from it (a crossing cell can sit on a bank above the gorge);
    `width_in_cells(width, dx)` says whether a model resolves the mouth (a bulk
    flux wants five cells or more).
 5. `gate_to_lookup_entry` + `format_gate_toml` write the `[gates.<name>]` block
    for lookups.toml with the citation string, so a gate is a registered place
    only when the terrain it came from is named.
+6. **No two lines may cross** (`tests/test_lookups_gates.py`): air between two
+   crossing lines is counted at both. Two crossings a few km apart whose widths
+   saturate the +/-4 km search window both get 12 km lines and can overlap;
+   `perpendicular_gate` does not check its neighbours, so clip both lines at
+   their intersection (they then meet at a shared end point) and record it in the
+   row's `note`, as was done for `lake_fork` / `lake_fork_2`.
 
 ## 5. Validation surfaces (`terrain.validate`)
 

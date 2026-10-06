@@ -15,9 +15,12 @@ measures of that section are computed here for a pool whose level top stands at
     indifferent to meanders, it ignores dead-end side canyons, and it sums parallel routes
     (a braided reach, a bypass over a low saddle).
 
-Both take the upstream and downstream basins as bool masks (or single cells) and work on
-any grid: the true terrain, a block-averaged model grid, or ``HGT_M`` of a real WRF
-domain.  numpy and scipy only.
+Both take the upstream and downstream basins as bool MASKS -- never single cells: the
+cheapest cut round one cell is that cell's own perimeter, usually smaller than the
+throat, and a path can be no wider than the cell it starts from.  A mask must reach
+well past the throat's width on both sides (a disc of a few kilometres round
+``depressions.lowest_cell`` will do).  They work on any grid: the true terrain, a
+block-averaged model grid, or ``HGT_M`` of a real WRF domain.  numpy and scipy only.
 """
 from __future__ import annotations
 
@@ -30,21 +33,28 @@ W_AXIS = np.pi / 8.0
 W_DIAG = np.pi / (8.0 * np.sqrt(2.0))
 
 
-def _as_mask(shape, seed) -> np.ndarray:
-    if isinstance(seed, np.ndarray) and seed.dtype == bool:
-        return seed
-    m = np.zeros(shape, dtype=bool)
-    m[int(seed[0]), int(seed[1])] = True
-    return m
+def _as_mask(shape, seed, which: str) -> np.ndarray:
+    # a point seed measures the seed, not the throat: the ring round one cell is a cheaper cut
+    # than most canyons (13 400 m2 against 39 900 m2 for the 9-cell test channel), so refuse it
+    if not (isinstance(seed, np.ndarray) and seed.dtype == bool and seed.shape == tuple(shape)):
+        raise ValueError(f"{which} must be a bool mask of the basin, shape {tuple(shape)}, not a (j, i) cell: "
+                         "the cut round a single cell is smaller than the throat.  Pass the basin, e.g. a disc of "
+                         "cells round depressions.lowest_cell reaching well past the throat's width")
+    if np.count_nonzero(seed) < 2:
+        raise ValueError(f"{which} is a single cell: pass the basin as a mask reaching well past the throat's width")
+    return seed
 
 
 def flooded(z: np.ndarray, stage: float) -> np.ndarray:
-    """Cells a pool with a level top at ``stage`` would cover (NaN is dry)."""
-    return np.nan_to_num(z, nan=np.inf) < stage
+    """Cells a pool with a level top at ``stage`` would cover, a cell AT the stage included
+    -- as ``depressions.sill_between`` counts it, so at the sill the throat is open (one
+    cell wide, no depth).  NaN is dry."""
+    return np.nan_to_num(z, nan=np.inf) <= stage
 
 
 def clearance_width(z: np.ndarray, res: float, stage: float, src, dst, *, tol_cells: float = 0.25) -> float:
-    """Width (m) of the widest path from ``src`` to ``dst`` through the cells below ``stage``.
+    """Width (m) of the widest path from ``src`` to ``dst`` (bool masks of the two basins)
+    through the cells at or below ``stage``.
 
     The clearance of a cell is its Euclidean distance to the nearest dry cell; a path's
     clearance is its smallest; the widest path maximises it (a bisection on the clearance
@@ -55,7 +65,7 @@ def clearance_width(z: np.ndarray, res: float, stage: float, src, dst, *, tol_ce
     from scipy import ndimage
 
     wet = flooded(z, stage)
-    a, b = _as_mask(z.shape, src) & wet, _as_mask(z.shape, dst) & wet
+    a, b = _as_mask(z.shape, src, "src") & wet, _as_mask(z.shape, dst, "dst") & wet
     if not a.any() or not b.any():
         return 0.0
 
@@ -91,8 +101,8 @@ def min_cut_area(z: np.ndarray, res: float, stage: float, src, dst, *, scale: fl
     cut's total weight its length.  The maximum flow from the upstream basin to the
     downstream one equals the minimum cut, i.e. the throat's area.
 
-    ``src`` / ``dst`` are bool masks (or (j, i) cells) of the two basins; their cells are
-    tied to a super-source and a super-sink.  ``scale`` sets the integer resolution of the
+    ``src`` / ``dst`` are bool masks of the two basins (a single cell is refused: the cut
+    round it would be the answer); their cells are tied to a super-source and a super-sink.  ``scale`` sets the integer resolution of the
     capacities (10 -> 0.1 m2).  With ``return_cut`` the bool mask of the cells on the
     upstream side of the cut is returned too, so the throat can be drawn on a map.
     Returns 0 where the basins are not connected at this stage.
@@ -102,7 +112,7 @@ def min_cut_area(z: np.ndarray, res: float, stage: float, src, dst, *, scale: fl
     from scipy.sparse.csgraph import breadth_first_order, maximum_flow
 
     wet = flooded(z, stage)
-    a, b = _as_mask(z.shape, src) & wet, _as_mask(z.shape, dst) & wet
+    a, b = _as_mask(z.shape, src, "src") & wet, _as_mask(z.shape, dst, "dst") & wet
     none = (0.0, np.zeros(z.shape, dtype=bool)) if return_cut else 0.0
     if not a.any() or not b.any():
         return none
@@ -175,7 +185,8 @@ def cut_cells(upstream_side: np.ndarray, wet: np.ndarray) -> np.ndarray:
 
 
 def throat_curve(z: np.ndarray, res: float, stages, src, dst) -> dict[str, np.ndarray]:
-    """Throat area and clearance width at each stage (absolute elevations, m)."""
+    """Throat area and clearance width at each stage (absolute elevations, m); ``src`` and
+    ``dst`` are bool masks of the two basins."""
     stages = np.atleast_1d(np.asarray(stages, dtype=float))
     area = np.array([min_cut_area(z, res, s, src, dst) for s in stages])
     width = np.array([clearance_width(z, res, s, src, dst) for s in stages])

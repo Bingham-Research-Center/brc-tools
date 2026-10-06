@@ -89,7 +89,8 @@ class Hypsometry:
 
 def aggregate(lab: np.ndarray, nlab: int, cell_area: float, zf: np.ndarray, slope: np.ndarray,
               zbins: np.ndarray, *, steep_deg: float = 3.0) -> Hypsometry:
-    """Area, hypsometry, mean/max elevation and slope statistics per label."""
+    """Area, hypsometry, mean/max elevation and slope statistics per label (``nlab`` may be
+    0: a rim no channel crosses gives empty arrays)."""
     m = lab >= 0
     ll = lab[m]
     zz = zf.ravel()[m]
@@ -97,7 +98,8 @@ def aggregate(lab: np.ndarray, nlab: int, cell_area: float, zf: np.ndarray, slop
     counts = np.maximum(np.bincount(ll, minlength=nlab), 1)
     area = np.bincount(ll, minlength=nlab) * cell_area
     zb = np.clip(np.digitize(zz, zbins) - 1, 0, len(zbins) - 2)
-    hyps = np.bincount(ll * (len(zbins) - 1) + zb, minlength=nlab * (len(zbins) - 1)).reshape(nlab, -1) * cell_area
+    nb = len(zbins) - 1
+    hyps = np.bincount(ll * nb + zb, minlength=nlab * nb).reshape(nlab, nb) * cell_area     # not -1: nlab may be 0
     zmean = np.bincount(ll, weights=zz, minlength=nlab) / counts
     zmax = np.zeros(nlab, dtype=np.float32)
     np.maximum.at(zmax, ll, zz)
@@ -131,9 +133,14 @@ def touches_edge_or_nodata(lab: np.ndarray, nlab: int, dem: np.ndarray, *, margi
 
 def floor_leak_fraction(lab: np.ndarray, floor: np.ndarray, nlab: int, cell_area: float,
                         area_m2: np.ndarray) -> np.ndarray:
-    """Fraction of each label's area that lies on the floor.  A rim crossing whose
-    catchment contains floor cells is an outflow artefact of the floor's shape, not a
-    canyon; callers drop labels above a small threshold (1 % in the ub-wx prototype)."""
+    """Fraction of each label's area that lies on the floor -- a guard, not a filter.
+
+    With the floor of ``basin_floor`` and the labels of ``d8.label_upstream`` on the same
+    receivers it is identically zero: a floor cell's D8 path runs downhill, so it stays
+    below the rim, upstream of the outlet and 8-connected to the floor -- inside the floor
+    -- all the way to the outlet, and never passes a crossing, which lies outside it.  It
+    is kept (and the pipeline still writes it) to catch a floor or labelling made some
+    other way; a nonzero value means the two do not belong together."""
     lf = lab[floor.ravel()]
     return np.bincount(lf[lf >= 0], minlength=nlab) * cell_area / np.maximum(area_m2, cell_area)
 
