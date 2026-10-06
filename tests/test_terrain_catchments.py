@@ -74,6 +74,16 @@ def test_aggregate_hypsometry_sums_to_area():
     assert fl.tolist() == [7.0, 7.0]
 
 
+def test_aggregate_with_no_labels_gives_empty_tables():
+    # a rim no channel crosses: zero labels must not raise
+    z, grid = bowl_with_outlet()
+    lab = np.full(z.size, -1, dtype=np.int32)
+    zb = ct.elevation_bins(z, 50.0)
+    h = ct.aggregate(lab, 0, grid.cell_area_m2, z, d8.slope_deg(z, grid.res), zb)
+    assert h.n_labels == 0 and h.area_m2.shape == (0,) and h.hyps_m2.shape == (0, zb.size - 1)
+    assert h.z_mean_m.size == h.z_max_m.size == h.slope_mean_deg.size == h.steep_fraction.size == 0
+
+
 def test_area_above_and_supply_curve_monotone():
     z, grid = bowl_with_outlet()
     lab = np.zeros(z.size, dtype=np.int32)

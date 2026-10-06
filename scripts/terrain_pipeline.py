@@ -13,8 +13,10 @@ basin floor (below-rim component holding the sink, upstream of the outlet, upstr
 cut), the channels crossing into it, the catchment behind each crossing, and a gate cut
 perpendicular to the channel at the crossing.  No theory, no figures: those belong to the
 case (ub-wx).  Writes ``<out>/terrain_<tag>.npz`` (dem, accumulation, per-rim labels and
-floors), ``gates_<tag>.csv`` (one row per channel crossing with its gate line and widths)
-and ``basin_<tag>.json`` (totals).  Run on a compute node: ``scripts/terrain_pipeline.slurm``.
+floors), ``gates_<tag>.csv`` (one row per channel crossing with its gate line and widths;
+the header is written even when no crossing qualifies) and ``basin_<tag>.json`` (totals).
+The DEM cache is ``--cache-dir``, else ``$BRC_TOOLS_TERRAIN_CACHE``, else
+``~/.cache/brc-tools/terrain``.  Run on a compute node: ``scripts/terrain_pipeline.slurm``.
 """
 from __future__ import annotations
 
@@ -34,6 +36,11 @@ from brc_tools.terrain import d8, dem, gates
 
 log = logging.getLogger("terrain_pipeline")
 
+# the CSV columns, fixed so that a run with no qualifying crossing still writes a header
+FIELDS = ["rim_m", "id", "cell", "lat", "lon", "lat_up", "lon_up", "a_lat", "a_lon", "b_lat", "b_lon", "azimuth_deg",
+          "line_length_m", "z_mouth_m", "thalweg_m", "acc_km2", "catch_km2", "z_mean_m", "z_max_m", "slope_mean_deg",
+          "flow_len_km", *(f"width{int(h)}_m" for h in gates.DEFAULT_HEIGHTS), "truncated_at_edge", "floor_leak"]
+
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -48,10 +55,13 @@ def main(argv=None) -> int:
                     help="a line where the floor is open to a river corridor the grid cannot hold (repeatable)")
     ap.add_argument("--rims", type=float, nargs="+", default=[2000.0])
     ap.add_argument("--channel-km2", type=float, default=20.0)
-    ap.add_argument("--floor-leak", type=float, default=0.01, help="drop crossings with more floor upstream than this")
+    ap.add_argument("--floor-leak", type=float, default=0.01,
+                    help="drop crossings with more floor upstream than this (a guard: zero by construction, "
+                         "see catchments.floor_leak_fraction)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--tag", required=True)
-    ap.add_argument("--cache-dir", default=None)
+    ap.add_argument("--cache-dir", default=None,
+                    help="DEM cache (default: $BRC_TOOLS_TERRAIN_CACHE, else ~/.cache/brc-tools/terrain)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s", datefmt="%H:%M:%S")
     t0 = time.time()
@@ -59,8 +69,8 @@ def main(argv=None) -> int:
     source = args.source if args.source != "auto" else ("13as" if args.res < 30 else "1as")
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    z, grid = dem.mosaic_tiles(args.tiles_dir, source, tuple(args.extent), args.res,
-                               cache_dir=args.cache_dir or out / "cache")
+    # cache_dir None -> dem.terrain_cache_dir(): $BRC_TOOLS_TERRAIN_CACHE (the slurm wrapper sets it), then ~/.cache
+    z, grid = dem.mosaic_tiles(args.tiles_dir, source, tuple(args.extent), args.res, cache_dir=args.cache_dir)
     ny, nx = z.shape
     zf = d8.fill_depressions(z, grid)
     rcv = d8.d8_receivers(zf, grid.res)
@@ -76,6 +86,9 @@ def main(argv=None) -> int:
     with open(Path(brc_tools.__file__).parent / "nwp" / "lookups.toml", "rb") as fh:
         wp = tomllib.load(fh)["waypoints"][args.sink]
     sink = tuple(int(v) for v in grid.ji(float(wp["lat"]), float(wp["lon"])))
+    if not grid.inside(*sink):
+        raise ValueError(f"sink {args.sink!r} ({wp['lat']}, {wp['lon']}) is outside the grid {args.extent}: "
+                         "widen --extent or pick another waypoint")
     outlet = ct.line_max_acc_cell(grid, acc, tuple(args.outlet))
     cuts = {c[0]: ct.line_max_acc_cell(grid, acc, tuple(float(v) for v in c[1:])) for c in args.cut}
     hydro = ct.hydro_mask(rcv, order, starts, outlet, cuts)
@@ -99,7 +112,7 @@ def main(argv=None) -> int:
         for k in np.flatnonzero(is_chan):
             c = int(xc[k])
             g = gates.perpendicular_gate(zf, grid, c, rcv=rcv, acc=acc, name=f"r{rim:.0f}_{k}")
-            rows.append({
+            rows.append({                                   # keys in FIELDS order
                 "rim_m": rim, "id": g.name, "cell": c, "lat": round(g.mouth[0], 5), "lon": round(g.mouth[1], 5),
                 "lat_up": round(g.upstream[0], 5), "lon_up": round(g.upstream[1], 5),
                 "a_lat": round(g.a[0], 5), "a_lon": round(g.a[1], 5), "b_lat": round(g.b[0], 5), "b_lon": round(g.b[1], 5),
@@ -112,7 +125,8 @@ def main(argv=None) -> int:
                 **{f"width{int(hh)}_m": round(w) for hh, w in g.widths_m.items()},
                 "truncated_at_edge": bool(trunc[k]), "floor_leak": round(float(leak[k]), 4),
             })
-        labels[f"lab_rim{rim:.0f}"] = np.where(is_chan[np.maximum(lab, 0)] & (lab >= 0), lab, -1).astype(np.int32).reshape(ny, nx)
+        keep = np.append(is_chan, False)                    # lab = -1 picks the trailing False, so no crossings is fine
+        labels[f"lab_rim{rim:.0f}"] = np.where(keep[lab], lab, -1).astype(np.int32).reshape(ny, nx)
         labels[f"floor_rim{rim:.0f}"] = floor
         basin["rims"][f"{rim:.0f}"] = {
             "floor_km2": round(floor.sum() * grid.cell_area_m2 / 1e6),
@@ -123,7 +137,7 @@ def main(argv=None) -> int:
         }
     dem.save_labels_npz(out / f"terrain_{args.tag}.npz", grid, dem=z, acc_cells=acc.reshape(ny, nx), **labels)
     with open(out / f"gates_{args.tag}.csv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(rows)
     basin["elapsed_s"] = round(time.time() - t0)

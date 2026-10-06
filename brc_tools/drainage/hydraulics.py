@@ -22,8 +22,13 @@ whose cross-section is known as area against interface level (``terrain.throat``
 A real pool is continuously stratified, not a slab.  For a linearly stratified reservoir
 drawn through a line opening the discharge per unit width scales as ``N * H^2`` with a
 critical Froude number ``q / (N H^2)`` near ``1 / pi`` (selective withdrawal; published
-values differ by tens of per cent), which is ``STRATIFIED_FACTOR`` times the layer value
-for the same total buoyancy.  Carry both as a bracket; neither is a measurement.
+values differ by tens of per cent).  Against a slab of the same total buoyancy -- the
+same MEAN deficit, which is what a heat budget gives (``cascade`` takes ``g'`` from
+``D / (rho cp V)``): ``g' H = N^2 H^2 / 2``, so ``N = sqrt(2 g' / H)`` and
+``q = (sqrt(2) / pi) sqrt(g') H^1.5``, which is ``STRATIFIED_FACTOR`` (0.827) times the
+weir value.  (Matching the BOTTOM deficit instead, ``N^2 = g' / H``, gives
+``(1 / pi) / WEIR = 0.585`` -- half the buoyancy, not the same pool.)  Carry both
+closures as a bracket; neither is a measurement.
 
 Geometry-only measures (sill height, throat area, width in cells) need none of this and
 are the firmer result; these capacities are upper bounds on what a MODEL carries, because
@@ -31,6 +36,7 @@ a model does not resolve a current through fewer than about five cells.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -38,7 +44,7 @@ import numpy as np
 from . import G
 
 WEIR = (2.0 / 3.0) ** 1.5                      # 0.544: rectangular critical flow, Q / (W sqrt(g') H^1.5)
-STRATIFIED_FACTOR = (1.0 / np.pi) / WEIR       # 0.585: linear stratification against a slab of equal buoyancy
+STRATIFIED_FACTOR = (np.sqrt(2.0) / np.pi) / WEIR   # 0.827: linear stratification against a slab of equal total buoyancy
 
 
 def reduced_gravity(dtheta_k: float, theta0_k: float = 270.0) -> float:
@@ -148,7 +154,9 @@ def backwater_energy(reach: Reach, q: float, g_prime: float, *, cd: float = 0.01
     the subcritical branch; where the available energy is less than the section's own
     critical energy the section is a control and the level is reset to critical there.
     Returns ``(energy at the upstream end, level at every section, index of the controlling
-    section -- the most upstream one that was critical)``.
+    section -- the most upstream one that was critical)``.  A section that would need a level
+    above the top stage is held at the top stage, with a ``RuntimeWarning``: the energy is
+    then a lower bound, so extend the stages.
     """
     n = reach.s_m.size
     st = reach.stages_m
@@ -162,6 +170,7 @@ def backwater_energy(reach: Reach, q: float, g_prime: float, *, cd: float = 0.01
     sf_dn = friction_slope(q, a, t, p, g_prime, cd, ci)
     levels[k] = eta
     control = k
+    saturated = []
     for k in range(n - 2, -1, -1):
         ds = abs(float(reach.s_m[k + 1] - reach.s_m[k]))
         eta_c = reach.critical_level(k, q, g_prime)
@@ -179,6 +188,7 @@ def backwater_energy(reach: Reach, q: float, g_prime: float, *, cd: float = 0.01
             lo, hi = eta_c, float(st[-1])
             if resid(hi) < 0.0:                     # the section table is not tall enough: saturate
                 eta = hi
+                saturated.append(k)
             else:
                 for _ in range(48):
                     mid = 0.5 * (lo + hi)
@@ -191,6 +201,10 @@ def backwater_energy(reach: Reach, q: float, g_prime: float, *, cd: float = 0.01
         h_dn = eta + q * q / (2.0 * g_prime * max(a, 1e-9) ** 2)
         sf_dn = friction_slope(q, a, t, p, g_prime, cd, ci)
         levels[k] = eta
+    if saturated:
+        warnings.warn(f"backwater_energy: {len(saturated)} section(s) need a level above the top stage "
+                      f"{float(st[-1]):.0f} m and were held there; the energy is a lower bound -- extend the stages",
+                      RuntimeWarning, stacklevel=2)
     return float(h_dn), levels, control
 
 

@@ -3,8 +3,13 @@
 Three steps, each usable on its own:
 
 * :func:`list_abi` -- what a bucket holds for a product between two times (an HTTPS listing
-  of ``<product>/<year>/<day-of-year>/<hour>/``; ``requests`` only).
-* :func:`fetch_abi` -- download those files, skipping the ones already on disk.
+  of ``<product>/<year>/<day-of-year>/<hour>/``; ``requests`` only). The bucket follows the
+  satellite operational in the GOES-West (default) or GOES-East slot on the scan date
+  (:func:`resolve_satellite`), and a date before there was any GOES-R ABI raises rather than
+  listing nothing.
+* :func:`fetch_abi` -- download those files, skipping the ones already on disk; by default
+  into ``$BRC_TOOLS_GOES_CACHE`` or ``~/.cache/brc-tools/goes`` (:func:`default_cache_dir`),
+  never the checkout.
 * :func:`sample_on_latlon` -- put a field on a regular lat/lon grid by computing, for every
   target point, the scan angles at which the satellite sees it and taking the nearest
   fixed-grid pixel. With ``height_m`` the point is placed at its terrain height first, which
@@ -12,7 +17,8 @@ Three steps, each usable on its own:
   uncorrected displacement is 3-4 km.
 
 The fixed-grid navigation is the GOES-R Product User Guide's (L1b, section 5.1.2.8), on the
-GRS80 ellipsoid the files carry in ``goes_imager_projection``.
+GRS80 ellipsoid the files carry in ``goes_imager_projection`` -- including the sub-satellite
+longitude, so it is right for whichever satellite wrote the file.
 
 Caveats that belong to the products, not the code: ABI land-surface temperature is a
 clear-sky product (cloudy pixels are missing, and at night a cold pool with fog can be
@@ -21,6 +27,8 @@ and it is a *skin* temperature. Use it for basin-scale pattern, not for a canyon
 """
 from __future__ import annotations
 
+import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -31,13 +39,29 @@ from xml.etree import ElementTree
 import numpy as np
 
 __all__ = [
-    "AbiFile", "parse_listing", "list_abi", "nearest_files", "fetch_abi", "GoesProjection",
-    "scan_angles", "lonlat_from_scan", "nearest_index", "LatLonField", "sample_on_latlon",
+    "AbiFile", "parse_listing", "OPERATIONAL", "resolve_satellite", "list_abi", "nearest_files",
+    "default_cache_dir", "fetch_abi", "GoesProjection", "scan_angles", "lonlat_from_scan",
+    "nearest_index", "LatLonField", "sample_on_latlon",
 ]
+
+logger = logging.getLogger(__name__)
 
 BUCKET_URL = "https://{bucket}.s3.amazonaws.com"
 _S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 _START_RE = re.compile(r"_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})\d_e")
+
+# The satellite in each operational slot from a date on (00 UTC: the hand-over itself took
+# place during that day, so for a scan on a changeover day name the satellite outright).
+# Each one's bucket is ``noaa-<name>``.
+OPERATIONAL = {
+    "west": ((datetime(2019, 2, 12), "goes17"), (datetime(2023, 1, 4), "goes18")),
+    "east": ((datetime(2017, 12, 18), "goes16"), (datetime(2025, 4, 7), "goes19")),
+}
+# Launch dates: no file from a satellite can predate its launch. A named satellite is
+# otherwise taken as asked, including its post-launch test period away from its slot (the
+# file's own projection then says where it looked from).
+_LAUNCHED = {"goes16": datetime(2016, 11, 19), "goes17": datetime(2018, 3, 1),
+             "goes18": datetime(2022, 3, 1), "goes19": datetime(2024, 6, 25)}
 
 
 @dataclass(frozen=True)
@@ -77,15 +101,59 @@ def parse_listing(xml_text: str, bucket: str) -> list[AbiFile]:
     return out
 
 
-def list_abi(product: str, start: datetime, end: datetime, *, bucket: str = "noaa-goes18",
+def resolve_satellite(satellite: str, when: datetime) -> str:
+    """The GOES-R satellite (``"goes16"`` .. ``"goes19"``) that ``satellite`` means at ``when`` (UTC-naive).
+
+    ``"west"`` and ``"east"`` resolve to the satellite operational in that slot on the date
+    (:data:`OPERATIONAL`); a name -- ``"goes18"``, ``"GOES-18"``, ``"G18"`` -- is taken as
+    given. A time before that slot had a GOES-R ABI, or before the named satellite was
+    launched, raises ``ValueError``: there is nothing to list, and an empty listing would
+    read as a gap in the record rather than as the wrong satellite or era.
+    """
+    key = satellite.strip().lower().replace("-", "").replace("_", "")
+    if re.fullmatch(r"g1[6-9]", key):
+        key = "goes" + key[1:]
+    if key in OPERATIONAL:
+        slots = OPERATIONAL[key]
+        first, first_name = slots[0]
+        if when < first:
+            other = "east" if key == "west" else "west"
+            raise ValueError(
+                f"no GOES-R ABI data before {first:%Y-%m-%d} for satellite={satellite!r} (asked for "
+                f"{when:%Y-%m-%d %H:%M} UTC): {first_name} became the operational GOES-{key.title()} then. "
+                f"GOES-{other.title()} began {OPERATIONAL[other][0][0]:%Y-%m-%d}, and before GOES-16 (launched "
+                f"2016-11-19) there is no ABI at all -- this module reads only GOES-R ABI files")
+        return [name for start, name in slots if when >= start][-1]
+    if key in _LAUNCHED:
+        if when < _LAUNCHED[key]:
+            raise ValueError(f"no GOES-R ABI data before {_LAUNCHED[key]:%Y-%m-%d} from {key}, its launch "
+                             f"(asked for {when:%Y-%m-%d %H:%M} UTC)")
+        return key
+    raise ValueError(f"unknown GOES satellite {satellite!r}: use 'west', 'east' or one of {sorted(_LAUNCHED)}")
+
+
+def list_abi(product: str, start: datetime, end: datetime, *, satellite: str = "west", bucket: str | None = None,
              session=None, timeout: float = 60.0, retries: int = 3) -> list[AbiFile]:
-    """Files of ``product`` (e.g. ``"ABI-L2-LSTC"``) whose scan starts in ``start..end`` (UTC-naive), time-ordered."""
+    """Files of ``product`` (e.g. ``"ABI-L2-LSTC"``) whose scan starts in ``start..end`` (UTC-naive), time-ordered.
+
+    ``satellite`` chooses the bucket by scan date (:func:`resolve_satellite`): ``"west"``
+    (the default; GOES-18 since 2023-01-04, GOES-17 before), ``"east"``, or a satellite by
+    name. A window across a changeover lists each hour from the satellite operational in
+    it. ``bucket`` names a bucket outright and overrides ``satellite``. A ``start`` before
+    the chosen satellite has ABI data raises ``ValueError`` before any request is made.
+    Failed requests are retried ``retries`` times with a growing pause, each retry logged.
+    """
     import requests
 
+    if bucket is None:
+        resolve_satellite(satellite, start)
+    elif m := re.fullmatch(r"noaa-(goes1[6-9])", bucket):
+        resolve_satellite(m.group(1), start)
     http = session or requests.Session()
     files: list[AbiFile] = []
     hour = start.replace(minute=0, second=0, microsecond=0)
     while hour <= end:
+        name = bucket or f"noaa-{resolve_satellite(satellite, max(hour, start))}"
         prefix = f"{product}/{hour:%Y}/{hour:%j}/{hour:%H}/"
         token = None
         while True:
@@ -94,14 +162,17 @@ def list_abi(product: str, start: datetime, end: datetime, *, bucket: str = "noa
                 params["continuation-token"] = token
             for attempt in range(retries):
                 try:
-                    resp = http.get(BUCKET_URL.format(bucket=bucket), params=params, timeout=timeout)
+                    resp = http.get(BUCKET_URL.format(bucket=name), params=params, timeout=timeout)
                     resp.raise_for_status()
                     break
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
                     if attempt == retries - 1:
                         raise
-                    time.sleep(3 * (attempt + 1))
-            files.extend(parse_listing(resp.text, bucket))
+                    wait = 3 * (attempt + 1)
+                    logger.warning("listing %s/%s failed (attempt %d of %d: %s); retrying in %d s",
+                                   name, prefix, attempt + 1, retries, exc, wait)
+                    time.sleep(wait)
+            files.extend(parse_listing(resp.text, name))
             root = ElementTree.fromstring(resp.text)
             token = root.findtext(f"{_S3_NS}NextContinuationToken")
             if not token:
@@ -122,13 +193,29 @@ def nearest_files(files: list[AbiFile], times: list[datetime], *, tolerance_min:
     return out
 
 
-def fetch_abi(files: list[AbiFile], dest_dir: str | Path, *, session=None, timeout: float = 300.0,
+def default_cache_dir() -> Path:
+    """Return the host-neutral GOES cache outside the source checkout."""
+
+    configured = os.environ.get("BRC_TOOLS_GOES_CACHE")
+    if configured:
+        return Path(configured).expanduser()
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    root = Path(xdg).expanduser() if xdg else Path.home() / ".cache"
+    return root / "brc-tools" / "goes"
+
+
+def fetch_abi(files: list[AbiFile], dest_dir: str | Path | None = None, *, session=None, timeout: float = 300.0,
               retries: int = 3) -> list[Path]:
-    """Download ``files`` into ``dest_dir``; a file already present at the listed size is kept."""
+    """Download ``files`` into ``dest_dir``; a file already present at the listed size is kept.
+
+    ``dest_dir`` defaults to :func:`default_cache_dir` (``$BRC_TOOLS_GOES_CACHE``, else
+    ``~/.cache/brc-tools/goes``), so by default no download lands in the checkout (an
+    explicit relative ``dest_dir`` still resolves against the working directory). Failed downloads are retried ``retries`` times, each retry logged.
+    """
     import requests
 
     http = session or requests.Session()
-    dest = Path(dest_dir)
+    dest = Path(dest_dir).expanduser() if dest_dir else default_cache_dir()
     dest.mkdir(parents=True, exist_ok=True)
     paths = []
     for f in files:
@@ -144,10 +231,13 @@ def fetch_abi(files: list[AbiFile], dest_dir: str | Path, *, session=None, timeo
                                 fh.write(chunk)
                         part.replace(path)
                     break
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
                     if attempt == retries - 1:
                         raise
-                    time.sleep(5 * (attempt + 1))
+                    wait = 5 * (attempt + 1)
+                    logger.warning("download of %s failed (attempt %d of %d: %s); retrying in %d s",
+                                   f.name, attempt + 1, retries, exc, wait)
+                    time.sleep(wait)
         paths.append(path)
     return paths
 
@@ -241,7 +331,9 @@ def sample_on_latlon(path: str | Path, extent: tuple[float, float, float, float]
     ``extent`` is ``(lon_w, lon_e, lat_s, lat_n)``. Pixels whose quality flag exceeds
     ``max_quality`` become NaN (``None`` keeps everything). ``height_m`` -- a scalar or a
     ``(lat, lon)`` array on the target grid, metres above the ellipsoid -- moves each target
-    point up to its terrain before the scan angles are computed (parallax correction).
+    point up to its terrain before the scan angles are computed (parallax correction). The
+    navigation constants, sub-satellite longitude included, are the file's own, so a GOES-East
+    file is navigated (and its parallax set) from 75 W and a GOES-West one from 137 W.
     """
     import netCDF4
 

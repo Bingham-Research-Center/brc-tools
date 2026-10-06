@@ -2,13 +2,16 @@
 
 The integrator works on plain arrays, so most tests build :class:`Frame` objects by hand
 with answers that can be written down: a uniform wind, a solid-body rotation that must
-close, a flow parallel to sloping model levels that must stay on its level.  One test goes
-through files written from the shared synthetic wrfout to cover the reading path.
+close, a flow parallel to sloping model levels that must stay on its level.  The file-driver
+tests go through files written from the shared synthetic wrfout to cover the reading path,
+including an auxiliary stream that packs several frames into one file.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import dataclasses
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -178,3 +181,117 @@ def _without(tmp_path, src, var):
     out = tmp_path / "no_w.nc"
     ds.drop_vars(var).to_netcdf(out)
     return out
+
+
+def _one_minute_run(tmp_path):
+    """Three one-frame auxhist2 files a minute apart and one wrfout: the synthetic steady flow."""
+    for m in range(3):
+        t = T0 + timedelta(seconds=60 * m)
+        make_synthetic_wrf(nz=8, ny=12, nx=12).to_netcdf(tmp_path / f"auxhist2_d02_{t:%Y-%m-%d_%H:%M:%S}")
+    make_synthetic_wrf(nz=8, ny=12, nx=12).to_netcdf(tmp_path / f"wrfout_d02_{T0:%Y-%m-%d_%H:%M:%S}")
+    return tmp_path
+
+
+def test_a_file_still_being_written_does_not_stop_the_listing(tmp_path):
+    """Opening every file to count frames must not let one truncated file (a run still
+    writing) break the listing: it is listed at its filename time, with a warning."""
+    run = _one_minute_run(tmp_path)
+    last = sorted(run.glob("auxhist2_d02_*"))[-1]
+    last.write_bytes(last.read_bytes()[: last.stat().st_size // 3])
+    with pytest.warns(RuntimeWarning, match="could not be opened"):
+        listing = wt.stream_times(run, 2, "auxhist2")
+    assert [t for t, _ in listing] == [T0 + timedelta(seconds=60 * m) for m in range(3)]
+
+
+def _multi_frame_file(path, times, u_values, *, with_times=True):
+    """One auxhist-style file holding a frame per entry of ``times``, frame n with U = u_values[n], V = 0."""
+    import xarray as xr
+
+    frames = []
+    for u in u_values:
+        ds = make_synthetic_wrf(nz=6, ny=12, nx=12)
+        ds["U"] = ds["U"] * 0.0 + u
+        ds["V"] = ds["V"] * 0.0
+        frames.append(ds)
+    big = xr.concat(frames, dim="Time")
+    if with_times:
+        big["Times"] = ("Time", np.array([f"{t:%Y-%m-%d_%H:%M:%S}".encode() for t in times], dtype="S19"))
+    big.to_netcdf(path)
+
+
+def test_a_file_holding_several_frames_is_read_frame_by_frame(tmp_path):
+    """Regression: an auxiliary stream packs many frames per file (frames_per_auxhist2), but the
+    listing took one time per file NAME and load_frame read frame 0 of each, so every inner frame
+    was skipped without a word and the winds were interpolated across the gap."""
+    step = timedelta(minutes=10)
+    t1 = T0 + 3 * step
+    _multi_frame_file(tmp_path / f"auxhist2_d02_{T0:%Y-%m-%d_%H:%M:%S}", [T0, T0 + step, T0 + 2 * step], [0.5, 1.5, 0.5])
+    _multi_frame_file(tmp_path / f"auxhist2_d02_{t1:%Y-%m-%d_%H:%M:%S}", [t1, t1 + step, t1 + 2 * step], [0.5, 0.5, 0.5])
+    make_synthetic_wrf(nz=6, ny=12, nx=12).to_netcdf(tmp_path / f"wrfout_d02_{T0:%Y-%m-%d_%H:%M:%S}")
+    listing = wt.stream_times(tmp_path, 2, "auxhist2")
+    assert [t for t, _ in listing] == [T0 + k * step for k in range(6)]
+    # u goes 0.5 -> 1.5 -> 0.5 m/s over the first 20 min and stays 0.5: 600, 600 and 300 m
+    # (frame 0 of each file alone would say 0.5 throughout: 900 m)
+    ds = wt.forward_trajectories(tmp_path, 2, np.array([[40.3, -109.7, 1.0]]), T0, 0.5, stream="auxhist2")
+    assert ds.sizes["time"] == 4 and ds.attrs["frame_interval_s"] == 600.0
+    np.testing.assert_allclose(ds["i"].values[:, 0], 3.0 + np.array([0.0, 600.0, 1200.0, 1500.0]) / 333.333, atol=1e-4)
+    inner = wt.forward_trajectories(tmp_path, 2, np.array([[40.3, -109.7, 1.0]]), T0 + step, 10.0 / 60.0, stream="auxhist2")
+    np.testing.assert_allclose(inner["i"].values[-1, 0], 3.0 + 600.0 / 333.333, atol=1e-4)   # an inner frame is a t0
+    st = wt.read_statics(tmp_path / f"wrfout_d02_{T0:%Y-%m-%d_%H:%M:%S}")
+    with pytest.raises(ValueError, match="none is valid"):
+        wt.load_frame(listing[0][1], T0 + timedelta(minutes=5), st)
+    bad = tmp_path / "no_times"
+    bad.mkdir()
+    _multi_frame_file(bad / f"auxhist2_d02_{T0:%Y-%m-%d_%H:%M:%S}", [T0, T0 + step], [0.5, 0.5], with_times=False)
+    with pytest.raises(ValueError, match="holds 2 frames"):
+        wt.stream_times(bad, 2, "auxhist2")
+
+
+def test_map_factors_along_x_and_y_are_kept_apart(tmp_path):
+    """Regression: MAPFAC_M was applied to both axes; on a lat-lon grid MAPFAC_MX and MAPFAC_MY differ."""
+    st = dataclasses.replace(_statics(), msf=np.full((60, 60), 2.0), msf_y=np.full((60, 60), 0.5))
+    fr = _frames(st, 3.0, 4.0, 0.0, n=1)[0]
+    np.testing.assert_allclose(fr.idot, 3.0 * 2.0 / DX, rtol=1e-6)
+    np.testing.assert_allclose(fr.jdot, 4.0 * 0.5 / DX, rtol=1e-6)
+    ds = make_synthetic_wrf(nz=4, ny=6, nx=6)
+    sfc = ("Time", "south_north", "west_east")
+    for name, value in (("MAPFAC_M", 1.0), ("MAPFAC_MX", 1.25), ("MAPFAC_MY", 0.8)):
+        ds[name] = (sfc, np.full((1, 6, 6), value))
+    ds.to_netcdf(tmp_path / "latlon.nc")
+    st = wt.read_statics(tmp_path / "latlon.nc")
+    assert np.all(st.msf == 1.25) and np.all(st.msf_y == 0.8)
+    ds.drop_vars(["MAPFAC_MX", "MAPFAC_MY"]).assign(MAPFAC_M=(sfc, np.full((1, 6, 6), 1.1))).to_netcdf(tmp_path / "lambert.nc")
+    st = wt.read_statics(tmp_path / "lambert.nc")
+    assert np.all(st.msf == 1.1) and st.msf_y is None                  # one factor for both axes
+
+
+def test_the_file_driver_refuses_releases_it_cannot_honour(tmp_path):
+    """Regression: release_points returns (i, j, k), and passed without release_is_index it was
+    read as (lat, lon, level) -- far off the grid -- and came back as all-NaN parcels; a release
+    above kmax was clipped down to the top level read, also without a word."""
+    run = _one_minute_run(tmp_path)
+    st = wt.read_statics(run / f"wrfout_d02_{T0:%Y-%m-%d_%H:%M:%S}")
+    rel = wt.release_points(st, [40.3], [-109.7], levels=(1,))
+    hours = 120.0 / 3600.0
+    with pytest.raises(ValueError, match="release_is_index=True"):
+        wt.forward_trajectories(run, 2, rel, T0, hours, stream="auxhist2")
+    with pytest.raises(ValueError, match="outside the grid"):
+        wt.forward_trajectories(run, 2, np.array([[45.0, -100.0, 1.0]]), T0, hours, stream="auxhist2")
+    with pytest.raises(ValueError, match="outside the 12 x 12"):
+        wt.forward_trajectories(run, 2, np.array([[30.0, 3.0, 1.0]]), T0, hours, stream="auxhist2", release_is_index=True)
+    with pytest.raises(ValueError, match="kmax=3"):
+        wt.forward_trajectories(run, 2, np.array([[40.3, -109.7, 6.5]]), T0, hours, stream="auxhist2", kmax=3)
+    ok = wt.forward_trajectories(run, 2, rel, T0, hours, stream="auxhist2", release_is_index=True, kmax=3)
+    assert np.isfinite(ok["i"].values).all()
+
+
+def test_an_aware_t0_is_converted_to_utc(tmp_path):
+    """Regression: an aware t0 never equalled a (naive UTC) frame time and was refused as
+    "not a frame time"."""
+    import xarray as xr
+
+    run = _one_minute_run(tmp_path)
+    release = np.array([[40.3, -109.7, 4.0]])
+    naive = wt.forward_trajectories(run, 2, release, T0, 120.0 / 3600.0, stream="auxhist2")
+    t0_mst = T0.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Denver"))
+    xr.testing.assert_identical(wt.forward_trajectories(run, 2, release, t0_mst, 120.0 / 3600.0, stream="auxhist2"), naive)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from brc_tools.terrain import throat
+from brc_tools.terrain import depressions, throat
 
 
 def basins_and_channel(width_cells=5, depth=100.0, ny=61, nx=121, res=50.0, floor=1000.0, wall=2000.0):
@@ -107,3 +107,32 @@ def test_overlapping_masks_are_an_error():
     z, a, b, res, stage = basins_and_channel()
     with pytest.raises(ValueError):
         throat.min_cut_area(z, res, stage, a, a)
+
+
+def test_point_and_single_cell_seeds_are_refused():
+    # the cut round one cell is cheaper than the throat: a point seed would measure the seed
+    z, a, b, res, stage = basins_and_channel(width_cells=9)
+    one = np.zeros(z.shape, bool)
+    one[30, 20] = True
+    for src in ((30, 20), one):
+        with pytest.raises(ValueError, match="mask"):
+            throat.min_cut_area(z, res, stage, src, b)
+        with pytest.raises(ValueError, match="mask"):
+            throat.clearance_width(z, res, stage, a, src)
+    with pytest.raises(ValueError, match="mask"):
+        throat.min_cut_area(z, res, stage, a[:10], b)                # not the grid's shape
+    disc = np.hypot(*(np.indices(z.shape) - np.array([30, 20])[:, None, None])) <= 8.0
+    assert throat.min_cut_area(z, res, stage, disc, b) == pytest.approx(throat.min_cut_area(z, res, stage, a, b))
+
+
+def test_the_throat_opens_at_the_sill_sill_between_reports():
+    z, a, b, res, _ = basins_and_channel(width_cells=3)
+    z[30, 60] = 1040.0                                               # a one-cell sill in the channel ...
+    z[29, 60] = z[31, 60] = 1100.0                                   # ... flanked by higher cells
+    sill = 1040.0
+    assert depressions.connected(z <= sill, a, b)                    # the definition sill_between bisects on
+    assert depressions.sill_between(z, a, b, tol=0.01) == pytest.approx(sill, abs=0.01)
+    assert throat.clearance_width(z, res, sill, a, b) == pytest.approx(res)   # open, one cell wide ...
+    assert throat.min_cut_area(z, res, sill, a, b) == 0.0                     # ... with no depth yet
+    assert throat.clearance_width(z, res, sill - 0.01, a, b) == 0.0
+    assert throat.min_cut_area(z, res, sill + 10.0, a, b) > 0.0

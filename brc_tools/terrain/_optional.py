@@ -4,7 +4,7 @@ from __future__ import annotations
 import importlib
 
 EXTRA = "terrain"
-HINT = ("pip install 'brc-tools[terrain]'  (rasterio, richdem, pyproj), or use the "
+HINT = ("pip install 'brc-tools[terrain]'  (rasterio, richdem, pyproj, netCDF4), or use the "
         "terrain-2026 conda env: environment-terrain.yml")
 
 

@@ -10,10 +10,11 @@ follow the terrain.  A parcel is therefore carried as fractional grid indices
 ``(i, j, k)`` on the mass grid, and its vertical motion is the motion *relative to the
 model levels*::
 
-    di/dt = u m / dx                      dj/dt = v m / dy
+    di/dt = u m_x / dx                    dj/dt = v m_y / dy
     dk/dt = ( w - u dz/dx|k - v dz/dy|k - dz/dt|k ) / ( dz/dk )
 
-with ``u, v`` grid-relative, ``m`` the map factor and ``z`` the geometric height of the
+with ``u, v`` grid-relative, ``m_x, m_y`` the map factors along each axis (equal on a
+conformal projection, not on a lat-lon grid) and ``z`` the geometric height of the
 levels.  Air flowing parallel to the terrain has ``dk/dt = 0`` and stays on its level
 however steep the slope; integrating ``w`` in height coordinates would walk the same
 parcel into the hillside.  Fields are linear in space (trilinear in index space) and in
@@ -27,13 +28,17 @@ level and are dropped (NaN) once they leave the domain.
     ds = back_trajectories(run_dir, 2, release, t0, 6.0, stream="auxhist2", statics=wrfout)
 
 ``release`` is an ``(n, 3)`` array of ``(lat, lon, level)`` with ``level`` a mass-level
-index (0 = lowest), or build it with :func:`release_points`.  The integrator itself
+index (0 = lowest).  :func:`release_points` builds the other form, ``(i, j, k)`` grid
+indices, which the drivers take only with ``release_is_index=True``; a release that falls
+outside the grid raises either way, so the two cannot be confused silently.  Times are
+naive UTC, as in ``wrf_output``; an aware ``t0`` is converted.  The integrator itself
 (:func:`integrate`) works on plain arrays, which is what the tests use.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -44,9 +49,6 @@ __all__ = [
     "release_points", "integrate", "trajectories", "back_trajectories", "forward_trajectories",
     "sampling_separation",
 ]
-
-G = 9.81
-THETA0 = 300.0
 
 
 # --------------------------------------------------------------------------- #
@@ -59,9 +61,12 @@ class Statics:
     lat: np.ndarray            # (ny, nx) degrees
     lon: np.ndarray            # (ny, nx) degrees
     hgt: np.ndarray            # (ny, nx) terrain height, m
-    msf: np.ndarray            # (ny, nx) map factor at mass points
+    msf: np.ndarray            # (ny, nx) map factor along x at mass points (MAPFAC_MX, else MAPFAC_M)
     dx: float                  # m
     dy: float                  # m
+    # (ny, nx) map factor along y (MAPFAC_MY); None = the same as msf.  The two are equal on
+    # the conformal projections (Lambert, polar, Mercator) and differ on a lat-lon grid.
+    msf_y: np.ndarray | None = None
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -84,11 +89,8 @@ class Frame:
 # --------------------------------------------------------------------------- #
 # reading
 # --------------------------------------------------------------------------- #
-def stream_times(run_dir: str | Path, domain: int, stream: str = "wrfout") -> list[tuple[datetime, Path]]:
-    """``(valid time, path)`` for every frame of a stream, either filename convention.
-
-    ``stream`` is the file prefix before ``_d0N_``: ``wrfout``, ``auxhist2``, ...
-    """
+def _stream_files(run_dir: str | Path, domain: int, stream: str) -> list[tuple[datetime, Path]]:
+    """``(filename stamp, path)`` for every file of a stream, either filename convention."""
     from brc_tools.nwp.wrf_section import _parse_stamp
 
     prefix = f"{stream}_d{domain:02d}_"
@@ -100,8 +102,67 @@ def stream_times(run_dir: str | Path, domain: int, stream: str = "wrfout") -> li
     return sorted(out)
 
 
+def _frame_times(ds, path: Path, stamp: datetime) -> list[datetime]:
+    """Valid time of each frame in one open file: the filename stamp for a single frame, the
+    ``Times`` variable when the file holds several."""
+    n = int(ds.sizes.get("Time", 1))
+    if n <= 1:
+        return [stamp]
+    from brc_tools.nwp.wrf_convective import _times_in
+
+    try:
+        times = _times_in(ds)
+    except KeyError:
+        times = []
+    if len(times) != n:
+        raise ValueError(f"{path.name} holds {n} frames but its Times variable gives {len(times)} readable "
+                         "valid times, so its frames cannot be placed in time")
+    return times
+
+
+def stream_times(run_dir: str | Path, domain: int, stream: str = "wrfout") -> list[tuple[datetime, Path]]:
+    """``(valid time, path)`` for every frame of a stream, either filename convention.
+
+    ``stream`` is the file prefix before ``_d0N_``: ``wrfout``, ``auxhist2``, ...  An
+    auxiliary stream usually packs several frames per file (``frames_per_auxhist2``), so the
+    filenames alone under-report its times: a file that holds several frames is opened and
+    listed once per frame, at that frame's time from ``Times``, and :func:`load_frame`
+    picks the frame by its time.  A one-frame file keeps the time in its name.  A time that
+    two files both hold (a restart writes a new file starting at a time the old one already
+    has) is listed once, from the first file by name.  A file that cannot be opened (a run
+    still writing it) is listed at its filename time with a ``RuntimeWarning``.
+    """
+    from brc_tools.nwp import wrf_output as wo
+
+    out: list[tuple[datetime, Path]] = []
+    for stamp, p in _stream_files(run_dir, domain, stream):
+        try:
+            ds = wo.open_wrfout(p)
+        except OSError as e:
+            # a run still writing (or a truncated file) must not stop the whole listing:
+            # keep the filename time, as before multi-frame support, and say so
+            warnings.warn(f"{p.name} could not be opened ({e}); listed at its filename time only",
+                          RuntimeWarning, stacklevel=2)
+            out.append((stamp, p))
+            continue
+        try:
+            out.extend((t, p) for t in _frame_times(ds, p, stamp))
+        finally:
+            ds.close()
+    unique: list[tuple[datetime, Path]] = []
+    for t, p in sorted(out):
+        if not unique or unique[-1][0] != t:
+            unique.append((t, p))
+    return unique
+
+
 def read_statics(path: str | Path) -> Statics:
-    """Latitude, longitude, terrain and map factor from a file that carries them."""
+    """Latitude, longitude, terrain, map factors and grid spacing from a file that carries them.
+
+    The map factor along x is ``MAPFAC_MX`` and along y ``MAPFAC_MY``; a file without them
+    falls back to ``MAPFAC_M`` for both (identical on conformal projections), and a file
+    with none to 1.
+    """
     from brc_tools.nwp import wrf_output as wo
 
     ds = wo.open_wrfout(path)
@@ -112,11 +173,13 @@ def read_statics(path: str | Path) -> Statics:
         lat = wo.surface_field(ds, "XLAT").astype(np.float64)
         lon = wo.surface_field(ds, "XLONG").astype(np.float64)
         hgt = wo.surface_field(ds, "HGT").astype(np.float64)
-        msf = wo.surface_field(ds, "MAPFAC_M").astype(np.float64) if "MAPFAC_M" in ds else np.ones_like(lat)
+        mx = next((v for v in ("MAPFAC_MX", "MAPFAC_M") if v in ds), None)
+        msf = wo.surface_field(ds, mx).astype(np.float64) if mx else np.ones_like(lat)
+        msf_y = wo.surface_field(ds, "MAPFAC_MY").astype(np.float64) if "MAPFAC_MY" in ds else None
         dx, dy = wo.dx_dy(ds)
     finally:
         ds.close()
-    return Statics(lat=lat, lon=lon, hgt=hgt, msf=msf, dx=float(dx), dy=float(dy))
+    return Statics(lat=lat, lon=lon, hgt=hgt, msf=msf, dx=float(dx), dy=float(dy), msf_y=msf_y)
 
 
 def frame_from_fields(time: datetime, u: np.ndarray, v: np.ndarray, w: np.ndarray, z_w: np.ndarray,
@@ -136,9 +199,10 @@ def frame_from_fields(time: datetime, u: np.ndarray, v: np.ndarray, w: np.ndarra
         raise ValueError(f"z_w has {z_w.shape[0]} levels for {nz} mass levels")
     z = 0.5 * (z_w[:-1] + z_w[1:])
     dzdk = z_w[1:] - z_w[:-1]
-    m = statics.msf.astype(np.float32)[np.newaxis]
-    idot = u * m / np.float32(statics.dx)
-    jdot = v * m / np.float32(statics.dy)
+    mx = statics.msf.astype(np.float32)[np.newaxis]
+    my = mx if statics.msf_y is None else statics.msf_y.astype(np.float32)[np.newaxis]
+    idot = u * mx / np.float32(statics.dx)
+    jdot = v * my / np.float32(statics.dy)
     dzdi = np.gradient(z, axis=2)                       # m per cell along the level
     dzdj = np.gradient(z, axis=1)
     kdot = (w - idot * dzdi - jdot * dzdj) / dzdk
@@ -148,18 +212,30 @@ def frame_from_fields(time: datetime, u: np.ndarray, v: np.ndarray, w: np.ndarra
 
 def load_frame(path: str | Path, time: datetime, statics: Statics, *, kmax: int | None = None,
                with_theta: bool = True) -> Frame:
-    """Read one frame of a 3-D stream.  ``kmax`` keeps only the lowest mass levels."""
+    """Read the frame valid at ``time`` from a 3-D stream file.  ``kmax`` keeps only the
+    lowest mass levels.
+
+    A one-frame file is read as it is; in a file that holds several frames the one whose
+    ``Times`` entry is ``time`` is selected (``ValueError`` if none is).
+    """
     from brc_tools.nwp import wrf_output as wo
 
     ds = wo.open_wrfout(path)
     try:
+        frame = ds
+        if int(ds.sizes.get("Time", 1)) > 1:
+            times = _frame_times(ds, Path(path), time)
+            if time not in times:
+                raise ValueError(f"{Path(path).name} holds {len(times)} frames ({times[0]} .. {times[-1]}) "
+                                 f"and none is valid at {time}")
+            frame = ds.isel(Time=times.index(time))
         for name in ("U", "V", "W", "PH", "PHB"):
-            if name not in ds:
+            if name not in frame:
                 raise KeyError(f"{Path(path).name} has no {name}; a trajectory stream needs U, V, W, PH, PHB")
-        u, v = wo.grid_relative_winds(ds)
-        w = wo.vertical_velocity(ds)
-        z_w = wo.geopotential_height_w(ds)
-        theta = wo.potential_temperature(ds) if (with_theta and "T" in ds) else None
+        u, v = wo.grid_relative_winds(frame)
+        w = wo.vertical_velocity(frame)
+        z_w = wo.geopotential_height_w(frame)
+        theta = wo.potential_temperature(frame) if (with_theta and "T" in frame) else None
     finally:
         ds.close()
     if kmax is not None:
@@ -198,12 +274,17 @@ def release_points(statics: Statics, lats: Sequence[float], lons: Sequence[float
     the grid raises, because a parcel released there is a parcel nobody will see again.
     """
     fi, fj = _fractional_index(statics, lats, lons)
-    ny, nx = statics.shape
-    bad = (fi < 0) | (fi > nx - 1) | (fj < 0) | (fj > ny - 1)
+    bad = _outside(statics, fi, fj)
     if bad.any():
         raise ValueError(f"release site(s) outside the grid: {np.flatnonzero(bad).tolist()}")
     out = [(i, j, float(k)) for i, j in zip(fi, fj) for k in levels]
     return np.asarray(out, dtype=np.float64)
+
+
+def _outside(statics: Statics, fi: np.ndarray, fj: np.ndarray) -> np.ndarray:
+    """True where a fractional (i, j) lies off the mass grid (NaN is not "outside": it is no parcel)."""
+    ny, nx = statics.shape
+    return (fi < 0) | (fi > nx - 1) | (fj < 0) | (fj > ny - 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -360,25 +441,51 @@ def trajectories(run_dir: str | Path, domain: int, release: np.ndarray, t0: date
                  every: int = 1, kmax: int | None = None, scheme: str = "rk4", release_is_index: bool = False):
     """Trajectories from the frames of one stream of one domain; returns an ``xarray.Dataset``.
 
-    ``release`` is (n, 3): ``(lat, lon, level)``, or ``(i, j, k)`` with ``release_is_index``.
-    ``hours`` is signed (negative = backward from ``t0``).  ``every`` uses only every n-th
-    frame, counted from the frame at ``t0`` -- the sampling experiment.  ``statics`` is a
+    ``release`` is (n, 3): ``(lat, lon, level)``, or ``(i, j, k)`` -- what
+    :func:`release_points` returns -- with ``release_is_index``.  A release off the grid
+    raises (the usual sign of ``(i, j, k)`` passed without the flag), and so does one above
+    the ``kmax`` levels read.  ``t0`` is naive UTC (an aware one is converted).  ``hours`` is
+    signed (negative = backward from ``t0``).  ``every`` uses only every n-th frame, counted
+    from the frame at ``t0`` -- the sampling experiment.  ``statics`` is a
     :class:`Statics`, or a path to a file with ``XLAT, XLONG, HGT`` (default: the first
     ``wrfout`` of the domain in ``run_dir``).  Output variables on (time, parcel):
     ``lat, lon, z_msl, z_agl, theta, i, j, k``.
     """
     import xarray as xr
 
+    if t0.tzinfo is not None and t0.utcoffset() is not None:
+        t0 = t0.astimezone(timezone.utc).replace(tzinfo=None)
     listing = stream_times(run_dir, domain, stream)
     if not listing:
         raise FileNotFoundError(f"no {stream}_d{domain:02d}_* under {run_dir}")
     if statics is None:
-        wrfouts = stream_times(run_dir, domain, "wrfout")
+        wrfouts = _stream_files(run_dir, domain, "wrfout")     # by name: only the first is opened
         if not wrfouts:
             raise FileNotFoundError("no wrfout to read statics from; pass statics=")
         statics = wrfouts[0][1]
     if not isinstance(statics, Statics):
         statics = read_statics(statics)
+    rel = np.asarray(release, dtype=np.float64)
+    if not release_is_index:
+        fi, fj = _fractional_index(statics, rel[:, 0], rel[:, 1])
+        bad = _outside(statics, fi, fj)
+        if bad.any():
+            raise ValueError(f"release point(s) {np.flatnonzero(bad).tolist()} fall outside the grid. `release` is "
+                             "read as (lat, lon, level); if it came from release_points it is already (i, j, k): "
+                             "pass release_is_index=True")
+        rel = np.column_stack([fi, fj, rel[:, 2]])
+    else:
+        bad = _outside(statics, rel[:, 0], rel[:, 1])
+        if bad.any():
+            ny, nx = statics.shape
+            raise ValueError(f"release point(s) {np.flatnonzero(bad).tolist()} have (i, j) outside the "
+                             f"{nx} x {ny} mass grid")
+    if kmax is not None:
+        high = np.isfinite(rel[:, 2]) & (rel[:, 2] > kmax - 1)
+        if high.any():
+            raise ValueError(f"release level(s) {sorted(set(rel[high, 2].tolist()))} are above the kmax={kmax} "
+                             f"levels read (top mass-level index {kmax - 1}); a parcel there would be clipped "
+                             "down to it silently -- raise kmax")
     t_end = t0 + timedelta(hours=hours)
     lo, hi = min(t0, t_end), max(t0, t_end)
     times = [t for t, _ in listing]
@@ -396,10 +503,6 @@ def trajectories(run_dir: str | Path, domain: int, release: np.ndarray, t0: date
         t, p = listing[picked[n]]
         return load_frame(p, t, statics, kmax=kmax)
 
-    rel = np.asarray(release, dtype=np.float64)
-    if not release_is_index:
-        fi, fj = _fractional_index(statics, rel[:, 0], rel[:, 1])
-        rel = np.column_stack([fi, fj, rel[:, 2]])
     res = integrate(get, rel, t0, hours, frame_times=[listing[n][0] for n in picked], dt_s=dt_s, scheme=scheme)
     nt, npar = res["i"].shape
     z_msl, theta = res["z"], res["theta"]

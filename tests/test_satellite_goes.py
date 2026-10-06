@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 import numpy as np
@@ -10,6 +11,7 @@ import pytest
 from brc_tools.satellite import goes
 
 G18 = goes.GoesProjection(35786023.0, 6378137.0, 6356752.31414, -137.0)
+G16 = goes.GoesProjection(35786023.0, 6378137.0, 6356752.31414, -75.2)
 
 LISTING = """<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>noaa-goes18</Name>
@@ -77,10 +79,12 @@ def test_nearest_index_on_ascending_and_descending_coordinates():
     assert goes.nearest_index(desc, [0.1, 0.0, -0.1004]).tolist() == [0, 100, 200]
 
 
-def test_sample_on_latlon_reads_the_nearest_pixel_and_applies_the_quality_flag(tmp_path):
+@pytest.mark.parametrize("proj", [G18, G16], ids=["west", "east"])
+def test_sample_on_latlon_reads_the_nearest_pixel_and_applies_the_quality_flag(tmp_path, proj):
+    """The navigation is the file's own: a GOES-East file must be navigated from 75.2 W."""
     netCDF4 = pytest.importorskip("netCDF4")
-    # a small fixed grid round 40.5 N, 109.5 W as GOES-18 sees it: 56 microradian (2 km) pixels
-    x0, y0 = goes.scan_angles(40.5, -109.5, G18)
+    # a small fixed grid round 40.5 N, 109.5 W as the satellite sees it: 56 microradian (2 km) pixels
+    x0, y0 = goes.scan_angles(40.5, -109.5, proj)
     step = 56e-6
     xs = float(x0) + step * (np.arange(81) - 40)
     ys = float(y0) - step * (np.arange(61) - 30)                         # north to south, as the files are
@@ -100,8 +104,8 @@ def test_sample_on_latlon_reads_the_nearest_pixel_and_applies_the_quality_flag(t
         v[:] = lst
         nc.createVariable("DQF", "u2", ("y", "x"), fill_value=65535)[:] = dqf
         p = nc.createVariable("goes_imager_projection", "i4")
-        p.perspective_point_height, p.semi_major_axis = G18.perspective_point_height, G18.semi_major_axis
-        p.semi_minor_axis, p.longitude_of_projection_origin = G18.semi_minor_axis, G18.longitude_of_projection_origin
+        p.perspective_point_height, p.semi_major_axis = proj.perspective_point_height, proj.semi_major_axis
+        p.semi_minor_axis, p.longitude_of_projection_origin = proj.semi_minor_axis, proj.longitude_of_projection_origin
         nc.platform_ID, nc.title = "G18", "ABI L2 Land Surface Temperature"
     out = goes.sample_on_latlon(path, (-109.9, -109.1, 40.3, 40.7), res_deg=0.05, max_quality=1)
     assert out.time == datetime(2025, 1, 27, 6, 1, 18) and out.units == "K" and out.name == "LST"
@@ -109,7 +113,7 @@ def test_sample_on_latlon_reads_the_nearest_pixel_and_applies_the_quality_flag(t
     j, i = int(np.argmin(np.abs(out.lat - 40.5))), int(np.argmin(np.abs(out.lon + 109.5)))
     assert out.values[j, i] == pytest.approx(lst[30, 40])               # the centre pixel
     # every sampled value is the pixel whose scan angles are nearest the target's
-    sx, sy = goes.scan_angles(*np.meshgrid(out.lat, out.lon, indexing="ij"), G18)
+    sx, sy = goes.scan_angles(*np.meshgrid(out.lat, out.lon, indexing="ij"), proj)
     ix, iy = goes.nearest_index(xs, sx), goes.nearest_index(ys, sy)
     assert (ix >= 0).all() and (iy >= 0).all()                           # the whole target grid is inside the image
     keep = ix >= 35
@@ -121,3 +125,103 @@ def test_sample_on_latlon_reads_the_nearest_pixel_and_applies_the_quality_flag(t
     assert np.isnan(strict.values[keep & (iy % 2 == 1)]).all() and np.isfinite(strict.values[keep & (iy % 2 == 0)]).all()
     everything = goes.sample_on_latlon(path, (-109.9, -109.1, 40.3, 40.7), res_deg=0.05, max_quality=None)
     assert np.isfinite(everything.values[(ix >= 0) & (iy >= 0)]).all()
+
+
+@pytest.mark.parametrize("slot, when, expected", [
+    ("west", datetime(2019, 2, 12), "goes17"), ("west", datetime(2023, 1, 3, 23, 59), "goes17"),
+    ("west", datetime(2023, 1, 4), "goes18"), ("west", datetime(2025, 1, 27, 6), "goes18"),
+    ("east", datetime(2017, 12, 18), "goes16"), ("east", datetime(2025, 4, 6, 23, 59), "goes16"),
+    ("east", datetime(2025, 4, 7), "goes19"),
+    ("GOES-16", datetime(2025, 6, 1), "goes16"), ("G18", datetime(2022, 8, 1), "goes18"),   # names taken as given
+])
+def test_resolve_satellite_at_each_changeover(slot, when, expected):
+    assert goes.resolve_satellite(slot, when) == expected
+
+
+@pytest.mark.parametrize("slot, when", [
+    ("west", datetime(2019, 2, 11, 23, 59)), ("east", datetime(2017, 12, 17, 23, 59)),
+    ("west", datetime(2013, 2, 2, 12)), ("east", datetime(2013, 2, 2, 12)), ("goes18", datetime(2022, 2, 28)),
+])
+def test_dates_before_the_abi_raise_instead_of_listing_nothing(slot, when):
+    """Regression: the bucket was always noaa-goes18, so a 2013 case (or any GOES-East or
+    pre-2023 request) listed an empty or wrong bucket and came back [] without a word."""
+    with pytest.raises(ValueError, match="no GOES-R ABI data before"):
+        goes.resolve_satellite(slot, when)
+
+
+class _ListingSession:
+    """Answers every bucket listing with an empty page and records which bucket was asked."""
+
+    def __init__(self):
+        self.urls = []
+
+    def get(self, url, params=None, timeout=None):
+        self.urls.append((url, params["prefix"]))
+        return _Response('<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></ListBucketResult>')
+
+
+class _Response:
+    def __init__(self, text="", content=b""):
+        self.text, self.content = text, content
+
+    def raise_for_status(self):
+        pass
+
+    def iter_content(self, size):
+        yield self.content
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_list_abi_follows_the_operational_satellite_across_a_changeover():
+    http = _ListingSession()
+    goes.list_abi("ABI-L2-LSTC", datetime(2023, 1, 3, 23, 30), datetime(2023, 1, 4, 1, 10), session=http)
+    assert [u for u, _ in http.urls] == ["https://noaa-goes17.s3.amazonaws.com"] + ["https://noaa-goes18.s3.amazonaws.com"] * 2
+    assert [prefix for _, prefix in http.urls][0] == "ABI-L2-LSTC/2023/003/23/"
+    http = _ListingSession()
+    goes.list_abi("ABI-L2-LSTC", datetime(2025, 1, 27, 6), datetime(2025, 1, 27, 6, 30), satellite="east", session=http)
+    assert http.urls == [("https://noaa-goes16.s3.amazonaws.com", "ABI-L2-LSTC/2025/027/06/")]
+    http = _ListingSession()
+    goes.list_abi("ABI-L2-LSTC", datetime(2025, 1, 27, 6), datetime(2025, 1, 27, 6), bucket="my-mirror", session=http)
+    assert http.urls[0][0] == "https://my-mirror.s3.amazonaws.com"                  # a bucket overrides the satellite
+    http = _ListingSession()
+    with pytest.raises(ValueError, match="no GOES-R ABI data before"):
+        goes.list_abi("ABI-L2-LSTC", datetime(2013, 2, 2), datetime(2013, 2, 3), session=http)
+    with pytest.raises(ValueError, match="no GOES-R ABI data before"):
+        goes.list_abi("ABI-L2-LSTC", datetime(2013, 2, 2), datetime(2013, 2, 3), bucket="noaa-goes18", session=http)
+    assert http.urls == []                                                       # refused before any request
+
+
+def test_default_cache_dir_is_outside_the_checkout(monkeypatch, tmp_path):
+    monkeypatch.setenv("BRC_TOOLS_GOES_CACHE", str(tmp_path / "goes-cache"))
+    assert goes.default_cache_dir() == tmp_path / "goes-cache"
+    monkeypatch.delenv("BRC_TOOLS_GOES_CACHE")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    assert goes.default_cache_dir() == tmp_path / "xdg" / "brc-tools" / "goes"
+    monkeypatch.delenv("XDG_CACHE_HOME")
+    assert goes.default_cache_dir() == goes.Path.home() / ".cache" / "brc-tools" / "goes"
+
+
+def test_fetch_abi_defaults_to_the_cache_and_logs_each_retry(monkeypatch, tmp_path, caplog):
+    """Regression: there was no default destination (the documented example wrote into a
+    relative scratch/ -- the checkout, run from the repo), and retries were silent."""
+    monkeypatch.setenv("BRC_TOOLS_GOES_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setattr(goes.time, "sleep", lambda s: None)
+    calls = []
+
+    class Flaky:
+        def get(self, url, stream=False, timeout=None):
+            calls.append(url)
+            if len(calls) == 1:
+                raise ConnectionError("reset by peer")
+            return _Response(content=b"12345")
+
+    f = goes.parse_listing(LISTING, "noaa-goes18")[1]                            # size 5
+    with caplog.at_level(logging.WARNING, logger="brc_tools.satellite.goes"):
+        paths = goes.fetch_abi([f], session=Flaky())
+    assert paths == [tmp_path / "cache" / f.name] and paths[0].read_bytes() == b"12345"
+    assert len(calls) == 2 and "attempt 1 of 3" in caplog.text and "reset by peer" in caplog.text

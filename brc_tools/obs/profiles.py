@@ -5,24 +5,33 @@ A basin ringed by stations at different heights is a poor man's sounding: plot e
 station's potential temperature against its elevation and the cold pool, its top and the
 free-air stratification above it appear without a balloon. This module holds the pieces
 that turn Synoptic time series into that picture and into per-night drainage numbers.
-Everything takes and returns numpy arrays (or a polars frame at the edges) and nothing here
-touches the network, so it is unit-testable and runs in any environment with numpy.
+Everything takes numpy arrays (or anything ``numpy.asarray`` reads) and returns arrays or
+small frozen dataclasses, and nothing here touches the network, so it is unit-testable and
+runs in any environment with numpy.
 
-Conventions: UTC-naive times; temperature in degrees C in, potential temperature in K out;
-pressure in hPa; heights in metres. **Synoptic station elevations are in feet** -- convert
-with :func:`feet_to_m` before anything else.
+Conventions: UTC times (naive ones are read as UTC, aware ones converted once); temperature
+in degrees C in, potential temperature in K out; heights in metres. **Pressure is in hPa,
+but Synoptic reports Pa** -- divide by 100 first; the functions that take a pressure refuse
+values that can only be Pa, because Pa passed as hPa does not fail loudly on its own (the
+pressure fit rejects every report and the heat deficit comes out 27 times too large).
+**Synoptic station elevations are in feet** -- convert with :func:`feet_to_m` before
+anything else.
 
 Pressure for theta. Few mesonet stations report pressure, and a 1 % pressure error is a
-0.3 % (0.8 K) theta error, which is as large as the signal. So theta is never computed
-from a standard atmosphere here. :func:`fit_pressure_height` fits ``ln p = a + b z`` to the
+0.3 % (0.8 K) theta error, which is as large as the signal. So theta is not computed from a
+standard atmosphere here. :func:`fit_pressure_height` fits ``ln p = a + b z`` to the
 stations that *do* report pressure at that hour (the hydrostatic relation for the layer's
 own mean temperature), and :func:`pressure_at` evaluates it at every station's height;
 reported pressures are used for the fit only, so that every theta in one profile shares one
-pressure-height relation and differences between neighbours are not sensor offsets.
+pressure-height relation and differences between neighbours are not sensor offsets. An
+hour with no usable report at all can only be given the standard atmosphere, and the fit
+warns when that happens rather than doing it quietly.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -37,6 +46,45 @@ __all__ = [
 FT_TO_M = 0.3048
 _KAPPA = 287.05 / 1004.0
 _G, _RD, _CP = 9.80665, 287.05, 1004.0
+# No surface pressure on Earth reaches 1100 hPa, and no station pressure in Pa falls below
+# 30000; any value above this can only be Pa.
+_MAX_PLAUSIBLE_HPA = 2000.0
+
+
+def _hpa(pressure, name: str = "pressure_hpa") -> np.ndarray:
+    """``pressure`` as a float array, refused if it is in Pa rather than hPa.
+
+    Synoptic (and WRF) give pressure in Pa; this module works in hPa. Passed through
+    unconverted, a Pa pressure fails every 3 % check in :func:`fit_pressure_height` -- so
+    the fit falls back to the standard atmosphere without a word -- and multiplies the
+    density in :func:`heat_deficit` by about 27. Neither looks like an error downstream.
+    """
+    p = np.asarray(pressure, dtype=float)
+    finite = p[np.isfinite(p)]
+    # any one value, not the median: a single Pa report among hPa ones gives theta ~75 K
+    if finite.size and float(finite.max()) > _MAX_PLAUSIBLE_HPA:
+        raise ValueError(f"{name} looks like Pa, not hPa (max {float(finite.max()):.0f}); "
+                         "Synoptic and WRF report Pa -- divide by 100 before passing it here")
+    return p
+
+
+def _utc64(t) -> np.ndarray:
+    """UTC ``datetime64[s]`` from a datetime, a sequence of them, or datetime64 values.
+
+    Aware datetimes are converted to naive UTC here, once, before numpy sees them: numpy
+    converts them correctly too, but with a UserWarning for every element.
+    """
+    def naive(x):
+        if isinstance(x, datetime) and x.tzinfo is not None and x.utcoffset() is not None:
+            return x.astimezone(timezone.utc).replace(tzinfo=None)
+        return x
+
+    if isinstance(t, datetime):
+        return np.datetime64(naive(t), "s")
+    a = np.asarray(t)
+    if a.dtype == object:
+        a = np.array([naive(x) for x in a.ravel()], dtype=object).reshape(a.shape)
+    return a.astype("datetime64[s]")
 
 
 def feet_to_m(feet):
@@ -77,9 +125,11 @@ def fit_pressure_height(z_m, pressure_hpa, *, tolerance: float = 0.03, min_stati
 
     With fewer than ``min_stations`` usable reports the fit falls back to the standard
     atmosphere's own slope shifted to the median of what is there (``n`` says how many).
+    With none at all it is the standard atmosphere itself, and a ``UserWarning`` says so.
+    ``pressure_hpa`` in Pa raises ``ValueError`` (see the module notes).
     """
     z = np.asarray(z_m, dtype=float)
-    p = np.asarray(pressure_hpa, dtype=float)
+    p = _hpa(pressure_hpa)
     ok = np.isfinite(z) & np.isfinite(p) & (p > 0)
     std = standard_pressure_hpa(z)
     ok &= np.abs(p / std - 1.0) <= tolerance
@@ -88,6 +138,10 @@ def fit_pressure_height(z_m, pressure_hpa, *, tolerance: float = 0.03, min_stati
         b, a = np.polyfit(z[ok], np.log(p[ok]), 1)
         rms = float(np.sqrt(np.mean((np.exp(a + b * z[ok]) - p[ok]) ** 2)))
         return PressureFit(float(a), float(b), n, rms)
+    if n == 0:
+        warnings.warn(f"no usable station pressure among {p.size} report(s) (none finite and within "
+                      f"{tolerance:.0%} of the standard atmosphere): the fit IS the standard atmosphere, "
+                      "so theta from it carries that atmosphere's error", UserWarning, stacklevel=2)
     # fallback: the standard atmosphere's slope near 2 km, level set by the median ratio
     z0, z1 = 1500.0, 2500.0
     b = float(np.log(standard_pressure_hpa(z1) / standard_pressure_hpa(z0)) / (z1 - z0))
@@ -102,9 +156,9 @@ def pressure_at(z_m, fit: PressureFit):
 
 
 def potential_temperature(temp_c, pressure_hpa):
-    """Potential temperature (K) from temperature (degrees C) and pressure (hPa)."""
+    """Potential temperature (K) from temperature (degrees C) and pressure (hPa; Pa raises)."""
     t = np.asarray(temp_c, dtype=float) + 273.15
-    return t * (1000.0 / np.asarray(pressure_hpa, dtype=float)) ** _KAPPA
+    return t * (1000.0 / _hpa(pressure_hpa)) ** _KAPPA
 
 
 def wind_components(speed, direction_deg):
@@ -136,7 +190,9 @@ def pseudo_profile(z_m, value, *, bin_m: float = 100.0, z_min: float | None = No
     """Bin stations by elevation: median, quartiles and count of ``value`` per ``bin_m`` layer.
 
     Returns arrays ``z`` (bin centre), ``median``, ``q25``, ``q75``, ``n`` for the bins that hold at
-    least ``min_count`` stations. A pseudo-profile, not a sounding: the stations sit on the
+    least ``min_count`` stations. Bins are half-open, ``[lower, upper)``, so a station exactly on
+    an edge belongs to the bin above it; ``z_min``/``z_max``, when given, are the bottom and the
+    (excluded) top of the range. A pseudo-profile, not a sounding: the stations sit on the
     ground, so it is the near-surface air at each height.
     """
     z = np.asarray(z_m, dtype=float)
@@ -146,7 +202,10 @@ def pseudo_profile(z_m, value, *, bin_m: float = 100.0, z_min: float | None = No
     if z.size == 0:
         return {k: np.array([]) for k in ("z", "median", "q25", "q75", "n")}
     lo = np.floor((z.min() if z_min is None else z_min) / bin_m) * bin_m
-    hi = np.ceil((z.max() if z_max is None else z_max) / bin_m) * bin_m
+    # Without z_max the top edge must lie strictly above the highest station: rounding it up
+    # with ceil leaves a station at an exact multiple of bin_m ON the top edge, past the last
+    # half-open bin, and the highest station -- often the rim, the reference level -- is lost.
+    hi = np.ceil(z_max / bin_m) * bin_m if z_max is not None else (np.floor(z.max() / bin_m) + 1.0) * bin_m
     edges = np.arange(lo, hi + bin_m, bin_m)
     idx = np.digitize(z, edges) - 1
     rows = []
@@ -250,16 +309,18 @@ def drainage_metrics(times, speed, direction_deg, sector: tuple[float, float], *
                      calm: float = 0.3, run: int = 3, lead_h: float = 3.0, surge_rise: float = 1.0) -> DrainageNight | None:
     """Per-night drainage numbers for one station.
 
-    ``times`` are UTC-naive ``datetime64`` (or anything ``numpy.asarray(..., 'datetime64[s]')``
-    accepts). The fraction, duration and speeds use sunset..sunrise. The onset is the start of
-    the first run of ``run`` consecutive in-sector, non-calm observations at or after
+    ``times`` are UTC ``datetime64`` or datetimes (naive = UTC, aware converted), or anything
+    ``numpy.asarray(..., 'datetime64[s]')`` accepts; likewise ``sunset``/``sunrise``. The
+    fraction, duration and speeds use sunset..sunrise. The onset is the start of the first
+    run of ``run`` consecutive in-sector, non-calm observations at or after
     ``sunset - lead_h`` (drainage in a shaded canyon starts before astronomical sunset).
-    Calm observations (below ``calm`` m/s) carry no direction and count as not down-valley.
+    Calm observations (below ``calm`` m/s) carry no direction and count as not down-valley;
+    one reported without a direction adds zero to ``mean_along``.
     """
-    t = np.asarray(times, dtype="datetime64[s]")
+    t = _utc64(times)
     s = np.asarray(speed, dtype=float)
     d = np.asarray(direction_deg, dtype=float)
-    ss, sr = np.datetime64(sunset, "s"), np.datetime64(sunrise, "s")
+    ss, sr = _utc64(sunset), _utc64(sunrise)
     order = np.argsort(t)
     t, s, d = t[order], s[order], d[order]
     ok = np.isfinite(s) & (np.isfinite(d) | (s < calm))
@@ -270,6 +331,9 @@ def drainage_metrics(times, speed, direction_deg, sector: tuple[float, float], *
     centre = np.radians(_sector_centre(*sector))
     u, v = wind_components(s, np.where(np.isfinite(d), d, 0.0))
     along = -(u * np.sin(centre) + v * np.cos(centre))       # component blowing FROM the sector centre
+    # a calm with no direction is no wind, not a northerly: projected through the 0.0
+    # stand-in above, every calm report pulled mean_along toward wind from the north
+    along = np.where(np.isfinite(d), along, 0.0)
     down = in_sector(d, *sector) & (s >= calm)
     tn, sn, dn, an = t[night], s[night], down[night], along[night]
     spacing_h = float(np.median(np.diff(tn).astype(float))) / 3600.0 if tn.size > 1 else float("nan")
@@ -299,12 +363,13 @@ def nightly_cooling(times, temp_c, *, sunset, sunrise, window_min: float = 30.0)
 
     The sunset and sunrise values are means within ``window_min`` of each; ``cooling_k`` is
     sunset minus minimum (positive = it cooled); ``t_min_h`` is the hour of the minimum after sunset.
+    Times as in :func:`drainage_metrics`.
     """
-    t = np.asarray(times, dtype="datetime64[s]")
+    t = _utc64(times)
     x = np.asarray(temp_c, dtype=float)
     ok = np.isfinite(x)
     t, x = t[ok], x[ok]
-    ss, sr = np.datetime64(sunset, "s"), np.datetime64(sunrise, "s")
+    ss, sr = _utc64(sunset), _utc64(sunrise)
     w = np.timedelta64(int(window_min * 60), "s")
     at_ss = x[(t >= ss - w) & (t <= ss + w)]
     at_sr = x[(t >= sr - w) & (t <= sr + w)]
@@ -339,12 +404,12 @@ def heat_deficit(z_m, theta_k, *, z_ref_m: float, pressure_hpa=None) -> HeatDefi
     deficit as a hydrostatic pressure excess at the bottom of the column -- the number to set
     against a synoptic pressure difference across the basin. Layers warmer than the reference
     count as zero. ``pressure_hpa`` (same shape) gives the density; the standard atmosphere is
-    used without it (a 1-2 % effect). Returns ``None`` if the profile does not reach ``z_ref_m``
-    or has fewer than two levels below it.
+    used without it (a 1-2 % effect); Pa raises ``ValueError``. Returns ``None`` if the
+    profile does not reach ``z_ref_m`` or has fewer than two levels below it.
     """
     z = np.asarray(z_m, dtype=float)
     th = np.asarray(theta_k, dtype=float)
-    p = standard_pressure_hpa(z) if pressure_hpa is None else np.asarray(pressure_hpa, dtype=float)
+    p = standard_pressure_hpa(z) if pressure_hpa is None else _hpa(pressure_hpa)
     ok = np.isfinite(z) & np.isfinite(th) & np.isfinite(p)
     z, th, p = z[ok], th[ok], p[ok]
     order = np.argsort(z)

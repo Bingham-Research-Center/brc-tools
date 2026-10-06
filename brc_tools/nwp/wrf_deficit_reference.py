@@ -10,10 +10,11 @@ CHK-REFERENCE).  This module supplies the datum a *budget* needs:
 
 ``SunsetProfile``
     theta_ref(z): one profile per night, taken from the pre-sunset sounding over
-    the basin floor.  Below the mixed-layer top it is the mixed-layer maximum
-    (the temperature the drainage air had before the slopes started cooling);
-    above it the floor-mean profile, floored at that value and made
-    non-decreasing.  The deficit measured against it is *cooling since the
+    the basin floor: the floor-mean profile in height bins, floored at the
+    mixed-layer theta (the temperature the drainage air had before the slopes
+    started cooling) and made non-decreasing.  Inside a well-mixed layer that
+    floor is what the datum reads; the profile is not forced to it where the
+    floor-mean is warmer.  The deficit measured against it is *cooling since the
     profile was taken at that height*, materially conserved under adiabatic
     motion, and the same datum brc-voxel-viz can draw an isosurface against
     (the JSON sidecar, ``docs/CROSS-REPO-SYNC.md``).
@@ -33,8 +34,10 @@ CHK-REFERENCE).  This module supplies the datum a *budget* needs:
 ``catchment_budget_terms``
     Per catchment and output time: production P = sum(-HFX A), storage H, export
     Phi through the catchment's line(s) at the datum and at the two shifted
-    datums, and the longwave production when the run wrote the radiative
-    tendency (history name ``RTHRATLW``; ``RTHRATENLW`` is the restart name).
+    datums, and the longwave production when the dataset holds the radiative
+    tendency ``RTHRATLW`` (the netCDF name of the Registry state ``RTHRATENLW``,
+    written to restarts by default and to a history stream only through
+    ``iofields`` -- usually an auxhist, not the wrfout).
 
 Nothing here touches :mod:`wrf_output`, :mod:`wrf_figures` or ``visualize``; it
 imports the frozen readers and adds a datum on top.
@@ -43,7 +46,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -60,7 +63,7 @@ __all__ = [
 
 METHOD_VERSION = "sunset-profile-1"
 SIDECAR_SCHEMA = 1
-LW_TENDENCY_VARS = ("RTHRATLW", "RTHRATENLW")   # history name first, restart name second
+LW_TENDENCY_VARS = ("RTHRATLW", "RTHRATENLW")   # netCDF name (every stream); Fortran name, in case a tool renamed it
 _RD = 287.05
 
 Line = tuple[tuple[float, float], tuple[float, float]]   # ((lat_a, lon_a), (lat_b, lon_b))
@@ -71,12 +74,15 @@ Line = tuple[tuple[float, float], tuple[float, float]]   # ((lat_a, lon_a), (lat
 # --------------------------------------------------------------------------- #
 @dataclass
 class SunsetProfile:
-    """theta_ref(z): a mixed-layer datum below the mixed-layer top, the floor-mean
-    profile above it, non-decreasing with height.  All heights are metres ASL.
+    """theta_ref(z): the floor-mean profile floored at a mixed-layer datum,
+    non-decreasing with height.  All heights are metres ASL.
 
     ``theta_ref(z)`` interpolates linearly and clamps at both ends, so a height below
-    the lowest floor terrain sees the mixed-layer value and a height above ``top_m``
-    sees the topmost profile value.
+    the lowest floor terrain sees the lowest bin (the mixed-layer value unless a
+    superadiabatic surface layer made that bin warmer) and a height above ``top_m``
+    sees the topmost profile value.  Construction rejects non-finite values and a
+    ``theta_k`` that decreases with height, so a hand-edited sidecar cannot slip a NaN
+    or an inversion into every budget downstream.
     """
 
     z_asl_m: np.ndarray                 # (n,) strictly increasing
@@ -104,8 +110,12 @@ class SunsetProfile:
             raise ValueError("z_asl_m and theta_k must be 1-D arrays of the same length")
         if self.z_asl_m.size < 2:
             raise ValueError("a profile needs at least two levels")
+        if not (np.isfinite(self.z_asl_m).all() and np.isfinite(self.theta_k).all()):
+            raise ValueError("z_asl_m and theta_k must be finite")
         if np.any(np.diff(self.z_asl_m) <= 0):
             raise ValueError("z_asl_m must be strictly increasing")
+        if np.any(np.diff(self.theta_k) < -1e-9):
+            raise ValueError("theta_k must be non-decreasing with height")
         if isinstance(self.valid_time, str):
             self.valid_time = _parse_iso(self.valid_time)
         if self.valid_time.tzinfo is not None:
@@ -127,8 +137,11 @@ class SunsetProfile:
 
     # -- the sidecar ------------------------------------------------------- #
     def sidecar_name(self) -> str:
+        """``theta_ref_<case>_<night>.json``.  Without an explicit ``night`` the label
+        is the date of the evening: a pre-sunset profile valid at 00Z belongs to the
+        night that began the day before (the UTC date would name the wrong night)."""
         case = self.case or "case"
-        night = self.night or self.valid_time.strftime("%Y%m%d")
+        night = self.night or (self.valid_time - timedelta(hours=12)).strftime("%Y%m%d")
         return f"theta_ref_{case}_{night}.json"
 
     def to_dict(self) -> dict[str, Any]:
@@ -147,11 +160,13 @@ class SunsetProfile:
 
     @classmethod
     def from_json(cls, src: str | Path | dict) -> SunsetProfile:
+        """Read a sidecar from a path, a JSON string or an already-parsed dict."""
         if isinstance(src, dict):
             d = dict(src)
+        elif isinstance(src, str) and src.lstrip().startswith("{"):
+            d = json.loads(src)          # text, not a path: Path(text) would hit ENAMETOOLONG
         else:
-            p = Path(src)
-            d = json.loads(p.read_text() if p.exists() else str(src))
+            d = json.loads(Path(src).read_text())
         schema = int(d.pop("schema", SIDECAR_SCHEMA))
         if schema > SIDECAR_SCHEMA:
             raise ValueError(f"sidecar schema {schema} is newer than this reader ({SIDECAR_SCHEMA})")
@@ -203,9 +218,18 @@ def sunset_profile(
     the datum (e.g. terrain below 1800 m inside a valley box).  ``ml_stat`` reduces
     the per-column mixed-layer theta over those columns: ``"max"`` (default; the
     warmest floor column, so a floor cell already shaded at the chosen hour cannot
-    drag the datum down), ``"median"`` or ``"mean"``.  Above the mixed-layer top the
-    profile is the floor-mean theta in ``dz_m`` bins of height ASL up to ``top_m``,
-    floored at the mixed-layer value and made non-decreasing; gaps are interpolated.
+    drag the datum down), ``"median"`` or ``"mean"``.  ``"max"`` is always at least
+    the pooled floor mean the ub-wx prototype used (``catchment_budget.py``,
+    ``theta[(agl <= 500) & floor].mean()``, which gave the September 314.9 K);
+    ``"mean"`` comes close to that datum but weights columns equally, where the pooled
+    mean weights each column by its number of levels below 500 m AGL.
+
+    The profile is the floor-mean theta in ``dz_m`` bins of height ASL from the
+    lowest floor terrain up to ``top_m``, floored at the mixed-layer value and made
+    non-decreasing; gaps are interpolated.  There is no single mixed-layer top in
+    ASL over a sloping floor, so bins inside the mixed layer are floored, not
+    replaced: where the floor-mean is warmer than the datum (a superadiabatic
+    surface layer, a capping stable layer) the profile keeps the warmer value.
     """
     floor = np.asarray(floor_mask, dtype=bool)
     if floor.ndim != 2 or not floor.any():
@@ -335,9 +359,11 @@ def longwave_production_field(
 
     over the levels below the cap (and, by default, only where the column already
     holds deficit against ``ref``, so the number is deficit *production* rather than
-    the radiative tendency of the whole column).  Reads ``RTHRATLW`` (the history-stream
-    name written through ``iofields``) or ``RTHRATENLW`` (the restart name).  Returns
-    ``None`` when the run wrote neither -- the term the two 600 m runs never had.
+    the radiative tendency of the whole column).  Reads ``RTHRATLW``, the netCDF name of
+    the Registry state ``RTHRATENLW`` in every stream; it reaches a history stream only
+    through ``iofields`` (e.g. ``+:h:7:RTHRATLW``, i.e. auxhist7), so merge that stream
+    onto the wrfout before calling.  Returns ``None`` when the dataset holds neither
+    name -- the term the two 600 m runs never had.
     """
     var = next((v for v in LW_TENDENCY_VARS if v in ds), None)
     if var is None:
@@ -425,6 +451,10 @@ def catchment_budget_terms(
     ``exner_correct_hfx`` multiplies HFX by ``(p0/psfc)^(R/cp)`` so the production is
     a theta-flux equivalent like H; off by default (a few percent at 850 hPa) to keep
     continuity with the ub-wx prototype that established the numbers.
+
+    ``lw_production_w`` is ``None`` unless ``ds`` holds ``RTHRATLW``; when the run
+    writes it to an auxhist stream, merge that stream onto the wrfout first, or the
+    longwave term silently drops out of the budget.
     """
     area = np.asarray(area_m2) if area_m2 is not None else wo.grid_cell_area_m2(ds)
     if "HFX" in ds:
