@@ -20,10 +20,17 @@ the run can falsify it. numpy only; it imports in any environment.
 
 Per cell, per hour, for the surface temperature `Ts`:
 
-    eps * sigma * Ts^4 = L_down + H + G
+    eps * sigma * Ts^4 = eps * L_down + H + G
     L_down = SVF * eps_clear(Ta, ea) * sigma * Ta^4 + (1 - SVF) * sigma * Ta^4
     H      = rho cp C_HN f(Ri_b) U (Ta - Ts),   f = 1 / (1 + c Ri_b)
     G      = k (T_base - Ts) / d
+
+The surface is grey: it absorbs `eps` of the downwelling longwave as it emits `eps` of
+a black body (Kirchhoff) and reflects the rest, so the returned upwelling longwave is
+`L_up = eps sigma Ts^4 + (1 - eps) L_down` and the net loss `L_up - L_down` is `H + G`.
+(Absorbing all of `L_down` while emitting with `eps`, as the first version did, kept
+the surface 0.6-0.9 K too warm and `H` too small: by 4 % over snow, `eps = 0.98`, and
+13-23 % over soil, `eps = 0.95`, on 258-270 K nights.)
 
 Clear-sky emissivity from Prata (1996), saturation vapour pressure from Bolton (1980),
 stable damping in the form of Louis (1979), sky-view factor from the terrain
@@ -91,9 +98,19 @@ interface level (from `terrain.throat` or `terrain.profiles`):
 
 A real pool is continuously stratified, not a slab. For a linearly stratified reservoir
 drawn through a line opening the discharge per unit width scales as `N H^2` with a
-critical Froude number near `1/pi` (selective withdrawal), which is `STRATIFIED_FACTOR`
-(0.585) times the slab value for the same total buoyancy. **Published values of that
-constant differ by tens of per cent; carry both closures as a bracket.**
+critical Froude number near `1/pi` (selective withdrawal). To compare it with the slab,
+give both the same **total buoyancy** -- the same mean deficit, which is what a heat
+budget fixes and what `cascade` uses (`g'` from `D / (rho cp V)`):
+
+    slab:    integral of buoyancy = g' H
+    linear:  integral of N^2 (H - z) dz = N^2 H^2 / 2   ->   N^2 = 2 g' / H
+    q_strat = (1/pi) N H^2 = (sqrt(2)/pi) sqrt(g') H^1.5 = STRATIFIED_FACTOR * q_weir
+
+so `STRATIFIED_FACTOR = (sqrt(2)/pi) / (2/3)^1.5 = 0.827`. (Matching the *bottom*
+deficit instead, `N^2 = g'/H`, gives 0.585 -- a pool with half the buoyancy; the first
+version used that value, which understated the stratified capacity by a factor
+`sqrt(2)`.) **Published values of the withdrawal constant differ by tens of per cent;
+carry both closures as a bracket.**
 
 The geometry-only measures (sill height, throat area, width in cells) need none of this
 and are the firmer result. The capacities are upper bounds on what a *model* carries: a
@@ -116,6 +133,14 @@ the surface under the pool (it chills the pool without adding volume), `eff` the
 of the slope cooling that reaches the pool as a current, and `Q_out` the throat's
 drowned capacity for the pool's own `g'`, so a pool backing up from below throttles the
 one above it.
+
+Bookkeeping: explicit Euler, the outflow of a step capped at the volume present. A pool
+that drains away inside a step takes the deficit it gained during that step with it
+(into the node below, or out of the system, and into that step's `phi_out_w`), so volume
+and heat deficit are both conserved. Every `downstream` must name a node of the cascade
+(`None` is the only way out of the system); a name that matches no node is an error.
+`CascadeParams.day_length_h` (default 10 h) is the daytime over which `day_loss` of a
+pool decays when `is_day` is given.
 
 What it is for: run it twice, with the throat curves of the true terrain and of a model
 grid, and the difference is what the grid spacing does to the answer. What it is not: a

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -50,7 +51,18 @@ def test_rectangular_throat_is_the_weir_formula():
     assert np.all(np.diff(qs) > 0) and qs.shape == (3,)
     assert hy.rating_curve(stages, section("rectangle", stages), energies, GP, factor=hy.STRATIFIED_FACTOR) == pytest.approx(
         hy.STRATIFIED_FACTOR * qs)
-    assert hy.STRATIFIED_FACTOR == pytest.approx(0.585, abs=0.002)
+    assert hy.STRATIFIED_FACTOR == pytest.approx(0.827, abs=0.002)
+
+
+def test_stratified_factor_compares_pools_of_equal_total_buoyancy():
+    # a linearly stratified pool with the slab's total buoyancy, g' H = N^2 H^2 / 2, passes
+    # (1/pi) N H^2 per unit width; that is STRATIFIED_FACTOR times the slab's weir discharge
+    for gp, depth in ((GP, 100.0), (0.05, 300.0)):
+        n = np.sqrt(2.0 * gp / depth)
+        assert n ** 2 * depth ** 2 / 2.0 == pytest.approx(gp * depth)
+        assert (1.0 / np.pi) * n * depth ** 2 == pytest.approx(hy.STRATIFIED_FACTOR * hy.WEIR * np.sqrt(gp) * depth ** 1.5)
+    # the bottom-deficit match (N^2 = g'/H) is a pool with half the buoyancy: sqrt(2) less
+    assert hy.STRATIFIED_FACTOR / ((1.0 / np.pi) / hy.WEIR) == pytest.approx(np.sqrt(2.0))
 
 
 def test_no_flow_below_the_sill_and_drowning_reduces_it():
@@ -98,6 +110,17 @@ def test_backwater_recovers_normal_depth_in_a_long_uniform_channel():
     # and the capacity for that reservoir level returns the discharge it was built from
     q_back, _ = hy.backwater_capacity(reach, energy, GP, cd=cd, ci=ci)
     assert q_back == pytest.approx(q, rel=0.01)
+
+
+def test_backwater_warns_when_the_section_table_is_too_short():
+    reach, *_ = uniform_reach(slope=5e-3, depth_range=200.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")                             # a table tall enough: silent
+        hy.backwater_energy(reach, 5.0e3, GP, cd=0.030, ci=0.006)
+    short, *_ = uniform_reach(slope=5e-3, depth_range=20.0)
+    with pytest.warns(RuntimeWarning, match="top stage"):
+        energy, levels, _ = hy.backwater_energy(short, 5.0e4, GP, cd=0.030, ci=0.006)
+    assert levels.max() == pytest.approx(short.stages_m[-1])       # held at the top: a lower bound
 
 
 def test_friction_lowers_the_capacity():
@@ -187,6 +210,71 @@ def test_cycles_are_rejected():
         cascade.integrate([a, b], z, z, np.array([0.0, 60.0]))
 
 
+def test_a_misspelt_downstream_is_an_error_not_an_exit():
+    a = flat_basin("a", 1700.0, 10.0, downstream="lower_basn", throat=lambda s: 300.0 * np.maximum(s - 1700.0, 0.0))
+    b = flat_basin("lower_basin", 1500.0, 10.0)
+    z = {"a": np.zeros(2), "lower_basin": np.zeros(2)}
+    with pytest.raises(ValueError, match="lower_basn"):
+        cascade.integrate([a, b], z, z, np.array([0.0, 60.0]))
+    with pytest.raises(ValueError, match="unique"):
+        cascade.integrate([b, flat_basin("lower_basin", 1500.0, 10.0)], z, z, np.array([0.0, 60.0]))
+
+
+def emptying_pool(downstream):
+    """A shallow pool behind a throat far wider than it needs: it drains in the first step,
+    while the cooling under it keeps adding deficit during that step."""
+    up = flat_basin("up", 1700.0, 50.0, downstream=downstream, throat=lambda s: 1e5 * np.maximum(s - 1700.0, 0.0))
+    up.v0_m3 = up.volume(1710.0)
+    up.d0_j = 1.0 * 1004.0 * 6.0 * up.v0_m3
+    return up
+
+
+def test_a_pool_that_empties_inside_a_step_keeps_its_deficit():
+    dt = 60.0
+    t = np.array([0.0, 600.0])
+    p = cascade.CascadeParams(efficiency=0.0, day_loss=0.0)
+    up, down = emptying_pool("down"), flat_basin("down", 1500.0, 200.0)
+    cool = {"up": np.full(2, 50.0), "down": np.full(2, 50.0)}
+    res = cascade.integrate([up, down], cool, cool, t, p, dt=dt, record_every=1)
+    assert res.volume_m3[1, 0] == 0.0 and res.q_out_m3s[0, 0] > 0.0          # gone after one step
+    supplied = res.supply_w[:-1].sum() * dt                                  # explicit Euler: what the steps added
+    assert res.deficit_j[-1].sum() == pytest.approx(up.d0_j + supplied, rel=1e-9)
+    assert res.volume_m3[-1].sum() == pytest.approx(up.v0_m3, rel=1e-9)
+    # an exit out of the system: what is left plus what left equals what there was plus what was added
+    alone = emptying_pool(None)
+    res = cascade.integrate([alone], {"up": np.full(2, 50.0)}, {"up": np.full(2, 50.0)}, t, p, dt=dt, record_every=1)
+    left = res.phi_out_w[:-1, 0].sum() * dt
+    assert res.deficit_j[-1, 0] + left == pytest.approx(alone.d0_j + res.supply_w[:-1, 0].sum() * dt, rel=1e-9)
+
+
+def test_day_length_sets_the_decay_rate():
+    def run(**kw):
+        node = flat_basin("a", 1500.0, 100.0)
+        node.v0_m3 = node.volume(1600.0)
+        node.d0_j = 1.0 * 1004.0 * 5.0 * node.v0_m3
+        p = cascade.CascadeParams(efficiency=0.0, day_loss=0.5, **kw)
+        zero = {"a": np.zeros(2)}
+        res = cascade.integrate([node], zero, zero, np.array([0.0, 5 * 3600.0]), p, dt=60.0, is_day=lambda t: True,
+                                record_every=1)
+        return res.deficit_j[-1, 0] / node.d0_j
+    assert run(day_length_h=5.0) == pytest.approx(0.5, rel=1e-6)            # half gone after the 5 h day
+    assert run() == pytest.approx(0.5 ** 0.5, rel=1e-6)                      # the default 10 h day: half way there
+
+
+def test_delivered_deficit_without_numpy_trapezoid(monkeypatch):
+    # NumPy < 2.0 has only np.trapz; the result must not depend on which one exists
+    up = flat_basin("up", 1700.0, 50.0, downstream="down", throat=lambda s: 300.0 * np.maximum(s - 1700.0, 0.0))
+    up.v0_m3 = up.volume(1800.0)
+    up.d0_j = 1.0 * 1004.0 * 6.0 * up.v0_m3
+    zero = {"up": np.zeros(2), "down": np.zeros(2)}
+    res = cascade.integrate([up, flat_basin("down", 1500.0, 200.0)], zero, zero, np.array([0.0, 3600.0]),
+                            cascade.CascadeParams(efficiency=0.0, day_loss=0.0), dt=60.0)
+    expect = res.delivered_j("up")
+    monkeypatch.delattr(np, "trapezoid", raising=False)
+    monkeypatch.setattr(np, "trapz", lambda y, x: float(np.sum(0.5 * (y[1:] + y[:-1]) * np.diff(x))), raising=False)
+    assert res.delivered_j("up") == pytest.approx(expect, rel=1e-12)
+
+
 # ------------------------------------------------------------------ slope flow
 def test_prandtl_jet_thins_on_steep_slopes_and_its_speed_ignores_the_slope():
     assert sf.prandtl_jet_height(10.0, 0.02, 0.1) == pytest.approx(5.96, abs=0.05)
@@ -242,6 +330,29 @@ def test_surface_balance_closes_and_snow_cools_the_air_harder():
     assert cooling.prata_emissivity(273.15, 4.0) == pytest.approx(0.705, abs=0.02)
     less_sky = cooling.longwave_down(260.0, 2.0, 0.5)
     assert less_sky > cooling.longwave_down(260.0, 2.0, 1.0)       # canyon walls radiate more than clear sky
+
+
+def test_surface_balance_obeys_kirchhoff():
+    # a grey surface absorbs eps of L_down and reflects the rest: eps sigma Ts^4 = eps L_down + H + G
+    t_a = np.array([258.0, 258.0, 265.0])
+    e = cooling.vapour_pressure_hpa(np.array([253.0, 253.0, 258.0]))
+    svf = np.array([1.0, 1.0, 0.7])
+    snow = np.array([True, False, False])
+    depth = np.array([0.5, 0.0, 0.0])
+    t_base = np.array([273.15, 262.0, 266.0])
+    p = cooling.CoolingParams()
+    eps = np.where(snow, p.eps_snow, p.eps_soil)
+    ts, h, g, ld, lu = cooling.solve_surface(t_a, e, svf, snow, depth, t_base, p)
+    emitted = eps * cooling.SIGMA * ts ** 4
+    assert np.allclose(emitted - eps * ld - h - g, 0.0, atol=0.05)
+    assert np.allclose(lu, emitted + (1.0 - eps) * ld)              # upwelling = emitted + reflected
+    assert np.allclose((lu - ld) - (h + g), 0.0, atol=0.05)         # the net longwave loss is what H + G resupply
+    # a black surface (eps = 1) is the balance with nothing reflected
+    black = p.with_(eps_snow=1.0, eps_soil=1.0)
+    tsb, hb, gb, ldb, lub = cooling.solve_surface(t_a, e, svf, snow, depth, t_base, black)
+    assert np.allclose(cooling.SIGMA * tsb ** 4 - ldb - hb - gb, 0.0, atol=0.05)
+    assert np.allclose(lub, cooling.SIGMA * tsb ** 4)
+    assert np.all(tsb < ts) and np.all(hb > h)                      # grey radiates its deficit away more slowly
 
 
 def test_open_water_warms_the_air():

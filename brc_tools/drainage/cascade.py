@@ -44,7 +44,7 @@ class Node:
     cell_area_m2: float
     throat_stage_m: np.ndarray          # absolute stages at which the exit throat's area is given
     throat_area_m2: np.ndarray
-    downstream: str | None = None       # the node the outflow enters; None = leaves the system
+    downstream: str | None = None       # the node the outflow enters (must be in the cascade); None = leaves the system
     closure_factor: float = 1.0         # hydraulics.STRATIFIED_FACTOR for a stratified pool
     v0_m3: float = 0.0
     d0_j: float = 0.0
@@ -92,6 +92,7 @@ class CascadeParams:
     theta0_k: float = 270.0
     rho: float = 1.0
     day_loss: float = 0.5               # share of a pool's deficit the day removes (1 = gone by sunset)
+    day_length_h: float = 10.0          # hours of ``is_day`` over which ``day_loss`` is removed
     min_dtheta_k: float = 0.2           # floor on the pool deficit used for g' (a pool cannot drain itself warm)
 
 
@@ -119,19 +120,28 @@ class CascadeResult:
     def delivered_j(self, name: str) -> float:
         """Heat deficit that left ``name`` through its exit over the run."""
         k = self.column(name)
-        return float(np.trapezoid(self.phi_out_w[:, k], self.t_s))
+        trapezoid = getattr(np, "trapezoid", None) or np.trapz      # NumPy < 2.0 has only trapz
+        return float(trapezoid(self.phi_out_w[:, k], self.t_s))
 
 
 def _order(nodes: list[Node]) -> list[int]:
-    """Indices upstream-first (a node after everything that drains into it)."""
+    """Indices upstream-first (a node after everything that drains into it).  Names must be
+    unique and every ``downstream`` one of them: a misspelt name would otherwise send that
+    node's outflow out of the system without a word."""
     idx = {n.name: i for i, n in enumerate(nodes)}
+    if len(idx) != len(nodes):
+        raise ValueError(f"node names must be unique: {[n.name for n in nodes]}")
+    for n in nodes:
+        if n.downstream is not None and n.downstream not in idx:
+            raise ValueError(f"node {n.name!r}: downstream {n.downstream!r} is not a node of the cascade "
+                             f"(use None for an exit that leaves the system)")
     depth = {}
 
     def d(i, seen=()):
         if i in depth:
             return depth[i]
         down = nodes[i].downstream
-        if down is None or down not in idx:
+        if down is None:
             depth[i] = 0
         else:
             if idx[down] in seen:
@@ -150,9 +160,12 @@ def integrate(nodes: list[Node], s_slope_w_m2: dict[str, np.ndarray], s_pool_w_m
     ``s_slope_w_m2[name]`` and ``s_pool_w_m2[name]`` are the cooling rates (W m-2, the air's
     loss to the surface) over each node's slopes and under its pool at the forcing times;
     they are interpolated linearly.  ``is_day(t)`` (optional, t in seconds) marks the hours
-    in which a pool decays: at the rate that leaves ``1 - day_loss`` of it after a day
-    of ``is_day`` hours (10 h assumed).  Explicit Euler with step ``dt``; the outflow of a
-    step is capped at the volume present.
+    in which a pool decays: at the rate that leaves ``1 - day_loss`` of it after
+    ``day_length_h`` hours of ``is_day``.  Explicit Euler with step ``dt``; the outflow of
+    a step is capped at the volume present.  A pool that drains away inside a step takes
+    the deficit it gained during that step (its ``P_pool``) out with it, into the node
+    below (or out of the system), so the heat deficit is conserved; that step's
+    ``phi_out_w`` includes it.
     """
     p = params
     idx = {n.name: i for i, n in enumerate(nodes)}
@@ -163,7 +176,7 @@ def integrate(nodes: list[Node], s_slope_w_m2: dict[str, np.ndarray], s_pool_w_m
     v = np.array([n.v0_m3 for n in nodes], dtype=np.float64)
     d = np.array([n.d0_j for n in nodes], dtype=np.float64)
     rcp = p.rho * CP
-    decay = 0.0 if p.day_loss <= 0.0 else (-np.log(max(1.0 - p.day_loss, 1e-6)) / (10.0 * 3600.0))
+    decay = 0.0 if p.day_loss <= 0.0 else (-np.log(max(1.0 - p.day_loss, 1e-6)) / (p.day_length_h * 3600.0))
     rec_t, rec = [], {k: [] for k in ("stage", "vol", "def", "dth", "q", "phi", "sup")}
     for step in range(nstep + 1):
         t = t0 + step * dt
@@ -197,18 +210,25 @@ def integrate(nodes: list[Node], s_slope_w_m2: dict[str, np.ndarray], s_pool_w_m
                     j = idx[n.downstream]
                     dv[j] += qi
                     dd[j] += phi[i]
+        v_new = v + dv * dt
+        v_new = np.where(v_new > 1e-9 * v, v_new, 0.0)        # drained to rounding error: empty
+        d_new = np.maximum(d + dd * dt, 0.0)
+        for i in order:                                       # upstream first, so a chain of emptied pools passes it on
+            if v_new[i] == 0.0 and d_new[i] > 0.0:            # emptied inside the step: its last P_pool leaves with it
+                phi[i] += d_new[i] / dt
+                if nodes[i].downstream is not None:
+                    d_new[idx[nodes[i].downstream]] += d_new[i]
+                d_new[i] = 0.0
         if step % record_every == 0:
             rec_t.append(t)
             for key, arr in (("stage", stage), ("vol", v), ("def", d), ("dth", np.where(v > 0, dth, 0.0)),
                              ("q", q), ("phi", phi), ("sup", sup)):
                 rec[key].append(arr.copy())
-        v = np.maximum(v + dv * dt, 0.0)
-        d = np.maximum(d + dd * dt, 0.0)
+        v, d = v_new, d_new
         if decay and is_day is not None and is_day(t):
             f = np.exp(-decay * dt)
             v *= f
             d *= f
-        d = np.where(v > 0.0, d, 0.0)
     out = {k: np.asarray(a) for k, a in rec.items()}
     return CascadeResult(t_s=np.asarray(rec_t), names=[n.name for n in nodes], stage_m=out["stage"], volume_m3=out["vol"],
                          deficit_j=out["def"], dtheta_k=out["dth"], q_out_m3s=out["q"], phi_out_w=out["phi"],

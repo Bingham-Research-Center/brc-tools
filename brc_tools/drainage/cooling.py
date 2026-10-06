@@ -6,12 +6,15 @@ from the ground beneath.  ``solve_surface`` solves that balance for the surface
 temperature and returns the fluxes, per cell, for arrays of air temperature, humidity,
 sky-view factor and snow cover:
 
-    eps * sigma * Ts^4 = L_down + H + G
+    eps * sigma * Ts^4 = eps * L_down + H + G
     L_down = SVF * eps_clear(Ta, ea) * sigma * Ta^4 + (1 - SVF) * sigma * Ta^4
     H      = rho * cp * C_HN * f(Ri_b) * U * (Ta - Ts),   f = 1 / (1 + coef * Ri_b)
     G      = k * (T_base - Ts) / d
 
-with the Prata (1996) clear-sky emissivity and the Louis (1979) stable damping.  The
+A grey surface absorbs ``eps`` of what it receives as it emits ``eps`` of a black body
+(Kirchhoff) and reflects the rest, so the upwelling longwave is
+``L_up = eps * sigma * Ts^4 + (1 - eps) * L_down`` and ``L_up - L_down = H + G``.
+The clear-sky emissivity is Prata (1996) and the stable damping Louis (1979).  The
 constants are the assumptions: ``CoolingParams`` holds a central value for each, and the
 two that dominate -- the slope-layer wind ``U`` and the neutral transfer coefficient
 ``C_HN`` -- have no default that can be defended to better than a factor of two, because
@@ -83,7 +86,8 @@ def solve_surface(t_a, e_hpa, svf, snow, snow_depth_m, t_base, params: CoolingPa
     the temperature at the base of the pack or of the soil layer.  ``wind_ms`` (an array,
     e.g. an analysed 10 m wind) replaces the single ``params.u_ms``.  Returns
     ``(Ts, H, G, L_down, L_up)`` in K and W m-2, with ``H`` positive where the AIR loses
-    heat to the surface.
+    heat to the surface; ``L_up`` includes the reflected ``(1 - eps) * L_down``, so the
+    net longwave loss ``L_up - L_down`` equals ``H + G``.
     """
     p = params
     t_a = np.asarray(t_a, dtype=float)
@@ -99,14 +103,14 @@ def solve_surface(t_a, e_hpa, svf, snow, snow_depth_m, t_base, params: CoolingPa
         f = 1.0 / (1.0 + p.ri_coef * ri)
         h = ch0 * f * d_t
         g = k_over_d * (t_base - ts)
-        resid = eps_s * SIGMA * ts ** 4 - l_down - h - g
+        resid = eps_s * SIGMA * ts ** 4 - eps_s * l_down - h - g       # absorbs eps of L_down, reflects the rest
         d_resid = 4.0 * eps_s * SIGMA * ts ** 3 + ch0 * f + k_over_d
         ts = ts - resid / d_resid
     d_t = t_a - ts
     ri = np.clip(G / t_a * d_t * p.z_ref_m / u ** 2, 0.0, None)
     h = ch0 * d_t / (1.0 + p.ri_coef * ri)
     g = k_over_d * (t_base - ts)
-    return ts, h, g, l_down, eps_s * SIGMA * ts ** 4
+    return ts, h, g, l_down, eps_s * SIGMA * ts ** 4 + (1.0 - eps_s) * l_down
 
 
 def open_water_flux(t_water_k, t_air_k, e_air_hpa, wind_ms, *, pressure_hpa: float = 800.0, c_h: float = 1.5e-3,
