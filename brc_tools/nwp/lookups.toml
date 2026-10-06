@@ -949,6 +949,9 @@ elevation_m = 3718          # highest summit of the eastern Uintas
 # rim above a 1841 m reservoir). They now exist as LANDMARKS below (kind = "landmark",
 # gnis_id) with the USGS GNIS primary point as the citable source and the 30 m DEM for the
 # elevation -- label-only waypoints that never join a waypoint_groups member list.
+# Blue Mountain is the exception: GNIS files the plateau as the Yampa Plateau (that is
+# yampa_plateau), and its only "Blue Mountain" in the pull is the Moffat County settlement
+# (Populated Place 201958), so there is no blue_mountain waypoint.
 # ---------------------------------------------------------------------------
 
 # The trench, north to south.
