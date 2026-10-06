@@ -115,7 +115,7 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 | `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI (`api/` clients) | aviation only |
 | `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
-| `BRC_TOOLS_{HERBIE,HRRR,MODIS,AQS}_CACHE`, `BRC_TOOLS_BASEMAP_DIR`, `BRC_TOOLS_LOCK_DIR`, `BRC_TOOLS_HTTP_IPV4_ONLY` | cache/lock-dir overrides + CHPC IPv4 workaround; defaults live in each module (basemap staged once via `scripts/fetch_basemap.dtn.slurm`) | optional |
+| `BRC_TOOLS_{HERBIE,HRRR,MODIS,AQS,GOES,TERRAIN}_CACHE`, `BRC_TOOLS_BASEMAP_DIR`, `BRC_TOOLS_LOCK_DIR`, `BRC_TOOLS_HTTP_IPV4_ONLY` | cache/lock-dir overrides + CHPC IPv4 workaround; defaults live in each module (basemap staged once via `scripts/fetch_basemap.dtn.slurm`) | optional |
 
 All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var
 only** today (the helper also accepts an optional `~/.config/<svc>/api_key` fallback, but

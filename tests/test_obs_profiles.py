@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import warnings
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -36,10 +38,38 @@ def test_pressure_fit_falls_back_to_the_standard_slope_with_too_few_stations():
     fit = op.fit_pressure_height(z, p)
     assert fit.n == 2 and np.isnan(fit.rms_hpa)
     assert op.pressure_at(1550.0, fit) == pytest.approx(op.standard_pressure_hpa(1550.0) * 1.01, rel=2e-3)
-    empty = op.fit_pressure_height(z, [np.nan, np.nan])
+    with pytest.warns(UserWarning, match="standard atmosphere"):
+        empty = op.fit_pressure_height(z, [np.nan, np.nan])
     assert empty.n == 0
     assert op.pressure_at(2000.0, empty) == pytest.approx(op.standard_pressure_hpa(2000.0), rel=2e-3)
 
+
+
+def test_pressure_in_pa_is_refused_not_silently_misread():
+    """Regression: Synoptic gives Pa. Passed as hPa, every report failed the 3 % check, the
+    fit fell back to the standard atmosphere without a word, and a heat deficit given the
+    same pressures came out 27 times too large."""
+    z = np.array([1420.0, 1500, 1610, 1700, 1850, 2100])
+    p_hpa = 860.0 * np.exp(-(z - 1420.0) / 7600.0)
+    with pytest.raises(ValueError, match="Pa"):
+        op.fit_pressure_height(z, p_hpa * 100.0)
+    with pytest.raises(ValueError, match="Pa"):
+        op.potential_temperature(-5.0, 85000.0)
+    theta = np.where(z < 2000.0, 280.0, 285.0)
+    with pytest.raises(ValueError, match="Pa"):
+        op.heat_deficit(z, theta, z_ref_m=2000.0, pressure_hpa=p_hpa * 100.0)
+    # hPa, including a sea-level pressure filed as station pressure, is still accepted
+    assert op.fit_pressure_height(z, np.r_[p_hpa[:-1], 1024.0]).n == z.size - 1
+    assert op.heat_deficit(z, theta, z_ref_m=2000.0, pressure_hpa=p_hpa) is not None
+
+
+def test_pressure_fit_warns_only_when_nothing_usable_is_left():
+    z = np.array([1500.0, 1600.0, 1700.0])
+    with pytest.warns(UserWarning, match="no usable station pressure"):
+        op.fit_pressure_height(z, [1024.0, 1023.0, np.nan])           # all sea-level: all rejected
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        op.fit_pressure_height(z, op.standard_pressure_hpa(z))         # a fallback with n = 3 is quiet
 
 def test_potential_temperature():
     assert op.potential_temperature(0.0, 1000.0) == pytest.approx(273.15)
@@ -70,6 +100,17 @@ def test_pseudo_profile_bins_by_elevation():
     assert prof["n"].tolist() == [2, 2, 3]
     assert prof["median"].tolist() == [271.0, 275.0, 286.0]
     assert op.pseudo_profile(z, v, bin_m=100.0, min_count=3)["z"].tolist() == [2050.0]
+
+
+def test_pseudo_profile_keeps_a_station_on_an_exact_bin_edge():
+    """Regression: the top edge was rounded up with ceil, so a highest station at an exact
+    multiple of bin_m sat ON it, past the last half-open bin, and the rim station -- the
+    reference level -- vanished from the profile."""
+    prof = op.pseudo_profile([1450.0, 1520.0, 2100.0], [270.0, 272.0, 285.0], bin_m=100.0)
+    assert prof["z"].tolist() == [1450.0, 1550.0, 2150.0]           # half-open: 2100 opens [2100, 2200)
+    assert prof["n"].tolist() == [1, 1, 1] and prof["median"][-1] == 285.0
+    # an explicit z_max is the excluded top of the range, as before
+    assert op.pseudo_profile([1450.0, 2100.0], [270.0, 285.0], bin_m=100.0, z_max=2100.0)["z"].tolist() == [1450.0]
 
 
 def test_two_layer_fit_finds_the_pool_top():
@@ -129,6 +170,40 @@ def test_drainage_metrics_onset_before_sunset_and_calm_handling():
     assert night.fraction_down == pytest.approx(70 / 85, abs=0.01)
     assert op.drainage_metrics(t[:3], s[:3], d[:3], (270.0, 330.0), sunset=sunset, sunrise=sunrise) is None
 
+
+
+def test_calm_reports_without_direction_add_nothing_to_the_along_component():
+    """Regression: a calm with NaN direction was projected as wind FROM the north (0 deg), so
+    every calm report pulled mean_along toward a northerly."""
+    sunset, sunrise = datetime(2025, 1, 27, 0, 30), datetime(2025, 1, 27, 14, 30)
+    minutes = np.arange(0, 14 * 60 + 1, 10)
+    calm = minutes % 20 == 0
+    speed = np.where(calm, 0.25, 2.0)
+    direction = np.where(calm, np.nan, 90.0)          # moving air blows straight across a N-S valley
+    t, s, d = _series(sunset, minutes, speed, direction)
+    night = op.drainage_metrics(t, s, d, (150.0, 210.0), sunset=sunset, sunrise=sunrise)
+    assert night.calm_fraction == pytest.approx(calm.mean())
+    assert night.mean_along == pytest.approx(0.0, abs=1e-12)      # was -0.25 * calm fraction
+
+
+def test_aware_times_are_read_as_utc_once_and_quietly():
+    """Regression: aware datetimes went to numpy one by one, a UserWarning per element."""
+    sunset, sunrise = datetime(2025, 1, 27, 0, 30), datetime(2025, 1, 27, 14, 30)
+    minutes = np.arange(-180, 14 * 60 + 1, 10)
+    speed = np.where(minutes < 40, 1.0, 2.0)
+    direction = np.where(minutes < 40, 120.0, 310.0)
+    t, s, d = _series(sunset, minutes, speed, direction)
+    naive = op.drainage_metrics(t, s, d, (280.0, 340.0), sunset=sunset, sunrise=sunrise)
+    denver = ZoneInfo("America/Denver")
+    as_utc = [sunset.replace(tzinfo=timezone.utc) + timedelta(minutes=int(m)) for m in minutes]
+    aware = [x.astimezone(denver) for x in as_utc]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        got = op.drainage_metrics(aware, s, d, (280.0, 340.0), sunset=sunset.replace(tzinfo=timezone.utc).astimezone(denver),
+                                  sunrise=sunrise.replace(tzinfo=timezone.utc))
+        cooled = op.nightly_cooling(aware, np.linspace(0.0, -10.0, minutes.size), sunset=aware[18], sunrise=as_utc[-1])
+    assert got == naive
+    assert cooled is not None and cooled["cooling_k"] > 0
 
 def test_nightly_cooling():
     sunset, sunrise = datetime(2025, 1, 27, 0, 30), datetime(2025, 1, 27, 14, 30)
