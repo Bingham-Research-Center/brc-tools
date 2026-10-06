@@ -209,8 +209,8 @@ def fetch_abi(files: list[AbiFile], dest_dir: str | Path | None = None, *, sessi
     """Download ``files`` into ``dest_dir``; a file already present at the listed size is kept.
 
     ``dest_dir`` defaults to :func:`default_cache_dir` (``$BRC_TOOLS_GOES_CACHE``, else
-    ``~/.cache/brc-tools/goes``), so a relative path never lands a download in the
-    checkout. Failed downloads are retried ``retries`` times, each retry logged.
+    ``~/.cache/brc-tools/goes``), so by default no download lands in the checkout (an
+    explicit relative ``dest_dir`` still resolves against the working directory). Failed downloads are retried ``retries`` times, each retry logged.
     """
     import requests
 

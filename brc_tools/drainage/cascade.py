@@ -92,8 +92,8 @@ class CascadeParams:
     theta0_k: float = 270.0
     rho: float = 1.0
     day_loss: float = 0.5               # share of a pool's deficit the day removes (1 = gone by sunset)
-    day_length_h: float = 10.0          # hours of ``is_day`` over which ``day_loss`` is removed
     min_dtheta_k: float = 0.2           # floor on the pool deficit used for g' (a pool cannot drain itself warm)
+    day_length_h: float = 10.0          # hours of ``is_day`` over which ``day_loss`` is removed (last: keeps positional order)
 
 
 @dataclass

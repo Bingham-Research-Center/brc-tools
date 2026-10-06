@@ -221,7 +221,8 @@ def sunset_profile(
     drag the datum down), ``"median"`` or ``"mean"``.  ``"max"`` is always at least
     the pooled floor mean the ub-wx prototype used (``catchment_budget.py``,
     ``theta[(agl <= 500) & floor].mean()``, which gave the September 314.9 K);
-    pass ``"mean"`` to reproduce that datum.
+    ``"mean"`` comes close to that datum but weights columns equally, where the pooled
+    mean weights each column by its number of levels below 500 m AGL.
 
     The profile is the floor-mean theta in ``dz_m`` bins of height ASL from the
     lowest floor terrain up to ``top_m``, floored at the mixed-layer value and made

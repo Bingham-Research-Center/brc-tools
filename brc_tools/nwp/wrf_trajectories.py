@@ -36,6 +36,7 @@ naive UTC, as in ``wrf_output``; an aware ``t0`` is converted.  The integrator i
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -128,13 +129,22 @@ def stream_times(run_dir: str | Path, domain: int, stream: str = "wrfout") -> li
     listed once per frame, at that frame's time from ``Times``, and :func:`load_frame`
     picks the frame by its time.  A one-frame file keeps the time in its name.  A time that
     two files both hold (a restart writes a new file starting at a time the old one already
-    has) is listed once, from the first file by name.
+    has) is listed once, from the first file by name.  A file that cannot be opened (a run
+    still writing it) is listed at its filename time with a ``RuntimeWarning``.
     """
     from brc_tools.nwp import wrf_output as wo
 
     out: list[tuple[datetime, Path]] = []
     for stamp, p in _stream_files(run_dir, domain, stream):
-        ds = wo.open_wrfout(p)
+        try:
+            ds = wo.open_wrfout(p)
+        except OSError as e:
+            # a run still writing (or a truncated file) must not stop the whole listing:
+            # keep the filename time, as before multi-frame support, and say so
+            warnings.warn(f"{p.name} could not be opened ({e}); listed at its filename time only",
+                          RuntimeWarning, stacklevel=2)
+            out.append((stamp, p))
+            continue
         try:
             out.extend((t, p) for t in _frame_times(ds, p, stamp))
         finally:

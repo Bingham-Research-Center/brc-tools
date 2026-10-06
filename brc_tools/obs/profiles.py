@@ -47,7 +47,7 @@ FT_TO_M = 0.3048
 _KAPPA = 287.05 / 1004.0
 _G, _RD, _CP = 9.80665, 287.05, 1004.0
 # No surface pressure on Earth reaches 1100 hPa, and no station pressure in Pa falls below
-# 30000; a median above this can only be Pa.
+# 30000; any value above this can only be Pa.
 _MAX_PLAUSIBLE_HPA = 2000.0
 
 
@@ -61,8 +61,9 @@ def _hpa(pressure, name: str = "pressure_hpa") -> np.ndarray:
     """
     p = np.asarray(pressure, dtype=float)
     finite = p[np.isfinite(p)]
-    if finite.size and float(np.median(finite)) > _MAX_PLAUSIBLE_HPA:
-        raise ValueError(f"{name} looks like Pa, not hPa (median {float(np.median(finite)):.0f}); "
+    # any one value, not the median: a single Pa report among hPa ones gives theta ~75 K
+    if finite.size and float(finite.max()) > _MAX_PLAUSIBLE_HPA:
+        raise ValueError(f"{name} looks like Pa, not hPa (max {float(finite.max()):.0f}); "
                          "Synoptic and WRF report Pa -- divide by 100 before passing it here")
     return p
 

@@ -131,7 +131,9 @@ def nights(start: date, end: date, lat: float, lon: float, *, utc_offset_h: floa
     The sunset of local day *d* is the first one after local noon of *d* and before local
     noon of *d + 1*: one continuous 24-hour window per local day, so every sunset falls in
     exactly one window and no night is lost or counted twice however the sunset sits
-    against 00 UTC. Wherever the sun sets before local midnight (everywhere outside a
+    against 00 UTC -- provided ``utc_offset_h`` is roughly the site's solar zone, so that
+    local noon is far from any sunset. An offset hours off (or a polar site whose sunset
+    comes near local noon) can put two sunsets in one window and lose the second. Wherever the sun sets before local midnight (everywhere outside a
     polar summer) the label is simply the local date of the sunset. The sunrise is the
     first one after that sunset (within 48 h; none -- a polar night -- drops the night).
 

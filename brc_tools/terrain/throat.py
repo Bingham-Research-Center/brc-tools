@@ -41,7 +41,8 @@ def _as_mask(shape, seed, which: str) -> np.ndarray:
                          "the cut round a single cell is smaller than the throat.  Pass the basin, e.g. a disc of "
                          "cells round depressions.lowest_cell reaching well past the throat's width")
     if np.count_nonzero(seed) < 2:
-        raise ValueError(f"{which} is a single cell: pass the basin as a mask reaching well past the throat's width")
+        what = "empty" if not seed.any() else "a single cell"
+        raise ValueError(f"{which} is {what}: pass the basin as a mask reaching well past the throat's width")
     return seed
 
 

@@ -192,6 +192,17 @@ def _one_minute_run(tmp_path):
     return tmp_path
 
 
+def test_a_file_still_being_written_does_not_stop_the_listing(tmp_path):
+    """Opening every file to count frames must not let one truncated file (a run still
+    writing) break the listing: it is listed at its filename time, with a warning."""
+    run = _one_minute_run(tmp_path)
+    last = sorted(run.glob("auxhist2_d02_*"))[-1]
+    last.write_bytes(last.read_bytes()[: last.stat().st_size // 3])
+    with pytest.warns(RuntimeWarning, match="could not be opened"):
+        listing = wt.stream_times(run, 2, "auxhist2")
+    assert [t for t, _ in listing] == [T0 + timedelta(seconds=60 * m) for m in range(3)]
+
+
 def _multi_frame_file(path, times, u_values, *, with_times=True):
     """One auxhist-style file holding a frame per entry of ``times``, frame n with U = u_values[n], V = 0."""
     import xarray as xr

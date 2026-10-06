@@ -58,6 +58,9 @@ def test_pressure_in_pa_is_refused_not_silently_misread():
     theta = np.where(z < 2000.0, 280.0, 285.0)
     with pytest.raises(ValueError, match="Pa"):
         op.heat_deficit(z, theta, z_ref_m=2000.0, pressure_hpa=p_hpa * 100.0)
+    # one Pa report among hPa ones is caught too (the median would let it through: theta ~75 K)
+    with pytest.raises(ValueError, match="Pa"):
+        op.potential_temperature([-5.0, -5.0, -5.0], [850.0, 85000.0, 845.0])
     # hPa, including a sea-level pressure filed as station pressure, is still accepted
     assert op.fit_pressure_height(z, np.r_[p_hpa[:-1], 1024.0]).n == z.size - 1
     assert op.heat_deficit(z, theta, z_ref_m=2000.0, pressure_hpa=p_hpa) is not None

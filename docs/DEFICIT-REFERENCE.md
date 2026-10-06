@@ -32,9 +32,10 @@ the pre-sunset hour:
 **Which statistic reproduces which number.** The September 2025 datum that closed
 the ub-wx catchment budgets, 314.9 K at 23Z (the last hour of the mixed-layer
 maximum *in time*), came from the prototype's pooled floor **mean**
-(`theta[(agl <= 500) & floor].mean()`). `ml_stat="mean"` reproduces it; the
-default `"max"` is always at least that warm and has not yet been checked against a
-run. Choose before the first sidecar of record, and say which in its `ml_stat`.
+(`theta[(agl <= 500) & floor].mean()`). `ml_stat="mean"` comes close (it averages
+per-column means, so each column counts once rather than by its number of levels
+below 500 m AGL); the default `"max"` is always at least as warm as either and has
+not yet been checked against a run. Choose before the first sidecar of record, and say which in its `ml_stat`.
 
 The deficit against it is *cooling since the profile was taken, at that height*:
 materially conserved under adiabatic motion, and on a clear day the residual layer
