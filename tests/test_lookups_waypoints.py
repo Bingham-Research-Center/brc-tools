@@ -38,6 +38,19 @@ def test_waypoints_carry_coordinates_in_range(lookups):
         assert -115.0 <= wp["lon"] <= -104.0, f"{name} longitude {wp['lon']} is out of region"
 
 
+def test_landmarks_never_join_a_group(lookups):
+    """GNIS landmarks (``kind = "landmark"``) are map labels with no station behind them.
+    ``ObsSource`` indexes ``["reference_stid"]`` for every group member, so one landmark
+    in a group raises KeyError for the whole group."""
+    waypoints = lookups["waypoints"]
+    joined = {
+        group: [n for n in members if waypoints.get(n, {}).get("kind") == "landmark"]
+        for group, members in lookups["waypoint_groups"].items()
+    }
+    joined = {g: ns for g, ns in joined.items() if ns}
+    assert not joined, f"landmarks listed in waypoint_groups: {joined}"
+
+
 def test_groups_have_no_duplicate_members(lookups):
     dupes = {
         group: sorted({n for n in members if members.count(n) > 1})

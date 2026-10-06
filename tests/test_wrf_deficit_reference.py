@@ -25,7 +25,7 @@ def ds():
 @pytest.fixture
 def floor(ds):
     hgt = wo.surface_field(ds, "HGT")
-    return hgt < hgt.min() + 60.0          # the three lowest columns of the west edge
+    return hgt < hgt.min() + 60.0          # the lowest terrain: 12 cells in the western three grid columns
 
 
 def _analytic_H(ds, ref_k, cap_agl_m):
@@ -132,6 +132,45 @@ def test_json_round_trip(ds, floor, tmp_path):
     assert dr.SunsetProfile.from_json(prof.to_dict()).case == "gigawatts"
     with pytest.raises(ValueError):
         dr.SunsetProfile.from_json({**prof.to_dict(), "schema": 99})
+
+
+def test_from_json_accepts_text_and_reports_a_missing_file(ds, floor, tmp_path):
+    prof = dr.sunset_profile(ds, floor, time=datetime(2025, 1, 26, 23, 30), top_m=3000.0)
+    text = prof.to_json()
+    assert len(text) > 300          # long enough that Path(text) used to raise ENAMETOOLONG
+    np.testing.assert_allclose(dr.SunsetProfile.from_json(text).theta_k, prof.theta_k)
+    with pytest.raises(FileNotFoundError):
+        dr.SunsetProfile.from_json(tmp_path / "absent.json")
+
+
+def test_sidecar_night_defaults_to_the_evening_date():
+    # the doc's example: valid 2025-01-27T00Z belongs to the night of the 26th
+    prof = dr.SunsetProfile(z_asl_m=[1500.0, 2000.0], theta_k=[280.0, 284.0],
+                            valid_time=datetime(2025, 1, 27, 0, 0), mixed_layer_theta_k=280.0,
+                            ml_depth_m=500.0, top_m=2000.0, case="gigawatts")
+    assert prof.sidecar_name() == "theta_ref_gigawatts_20250126.json"
+    assert dr.SunsetProfile(**{**prof.__dict__, "valid_time": datetime(2025, 1, 26, 23, 0)}
+                            ).sidecar_name() == "theta_ref_gigawatts_20250126.json"
+
+
+@pytest.mark.parametrize("z, theta, msg", [
+    ([1000.0, 2000.0, 3000.0], [300.0, 290.0, 295.0], "non-decreasing"),
+    ([1000.0, np.nan, 3000.0], [280.0, 281.0, 282.0], "finite"),
+    ([1000.0, 2000.0, 3000.0], [280.0, np.nan, 282.0], "finite"),
+])
+def test_profile_rejects_inversions_and_nan(z, theta, msg):
+    # a hand-edited sidecar must not slip a NaN or an inversion into every budget
+    with pytest.raises(ValueError, match=msg):
+        dr.SunsetProfile(z_asl_m=z, theta_k=theta, valid_time=datetime(2025, 1, 27),
+                         mixed_layer_theta_k=280.0, ml_depth_m=500.0, top_m=3000.0)
+
+
+def test_ml_stat_max_is_at_least_mean(ds, floor):
+    t = datetime(2025, 1, 26, 23, 30)
+    hi = dr.sunset_profile(ds, floor, time=t, top_m=3000.0, ml_stat="max")
+    lo = dr.sunset_profile(ds, floor, time=t, top_m=3000.0, ml_stat="mean")
+    assert hi.mixed_layer_theta_k >= lo.mixed_layer_theta_k
+    assert np.all(hi.theta_k >= lo.theta_k)
 
 
 def test_catchment_terms_production_from_hfx(ds):

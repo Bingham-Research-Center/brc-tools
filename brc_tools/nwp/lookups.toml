@@ -1168,7 +1168,7 @@ green_river_sources = [
 
 [gates.lake_fork]
 kind          = "rim"
-a             = [40.39295, -110.41324]
+a             = [40.39377, -110.36937]
 b             = [40.39552, -110.27188]
 mouth         = [40.39426, -110.34256]
 upstream      = [40.39858, -110.34216]
@@ -1183,6 +1183,7 @@ catchment_km2 = 795.3
 huc10         = "Pigeon Water Creek-Lake Fork River"
 label         = "Pigeon Water Creek-Lake Fork River: 795 km2 behind the 2000 m crossing, mouth 8040 m wide at +150 m"
 source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+note          = "west end clipped from [40.39295, -110.41324] to where lake_fork_2 crosses it (2026-10-06): the two 12 km lines crossed, so air would have been counted at both"
 
 [gates.duchesne_farm_creek]
 kind          = "rim"
@@ -1583,7 +1584,7 @@ source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim cros
 [gates.lake_fork_2]
 kind          = "rim"
 a             = [40.31298, -110.4337]
-b             = [40.4053, -110.36017]
+b             = [40.39377, -110.36937]
 mouth         = [40.35915, -110.39696]
 upstream      = [40.3608, -110.4026]
 azimuth_deg   = 121.0
@@ -1597,6 +1598,7 @@ catchment_km2 = 101.6
 huc10         = "Pigeon Water Creek-Lake Fork River"
 label         = "Pigeon Water Creek-Lake Fork River: 102 km2 behind the 2000 m crossing, mouth 8040 m wide at +150 m"
 source        = "D8 on USGS 3DEP 1 as (30 m), perpendicular gate at the rim crossing; ub-wx drainage-canyons-gigawatts 2026-09-14"
+note          = "NE end clipped from [40.4053, -110.36017] to where it crosses lake_fork (2026-10-06); its +100 m width hit the 8 km search window, i.e. this mouth opens into the Lake Fork valley"
 
 [gates.port_green_river_out]
 kind          = "port"

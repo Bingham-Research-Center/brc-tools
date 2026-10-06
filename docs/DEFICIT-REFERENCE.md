@@ -16,17 +16,25 @@ datum.
 `sunset_profile(ds, floor_mask, time=...)` builds `theta_ref(z)` from one wrfout at
 the pre-sunset hour:
 
-- **below the mixed-layer top**: the mixed-layer potential temperature over the
-  receiving floor -- per column the mean theta in the lowest `ml_depth_m`
-  (500 m), reduced over the floor columns by `ml_stat` (`max` by default, so a
-  floor cell that is already shaded cannot drag the datum down). This is the
-  temperature the drainage air had before the slopes started cooling; on the
-  September 2025 night it was the 23Z value (314.9 K), the last hour of the
-  mixed-layer maximum, and it was the datum that closed the catchment budgets.
-- **above it**: the floor-mean theta in 25 m bins of height ASL, floored at the
-  mixed-layer value and made non-decreasing. A single value over 2 km of relief
-  counts ambient stratification as deficit (the 100 GW pre-sunset spikes of the
-  first budgets); a profile does not.
+- **the floor**: the mixed-layer potential temperature over the receiving floor
+  -- per column the mean theta in the lowest `ml_depth_m` (500 m), reduced over
+  the floor columns by `ml_stat` (`max` by default, so a floor cell that is
+  already shaded cannot drag the datum down). This is the temperature the
+  drainage air had before the slopes started cooling.
+- **the profile**: the floor-mean theta in 25 m bins of height ASL, floored at
+  that mixed-layer value and made non-decreasing. A single value over 2 km of
+  relief counts ambient stratification as deficit (the 100 GW pre-sunset spikes of
+  the first budgets); a profile does not. Inside a well-mixed layer the floor is
+  what the profile reads; it is *not* forced to the mixed-layer value where the
+  floor-mean bin is warmer (a superadiabatic surface layer, a capping stable
+  layer), because over a sloping floor there is no single mixed-layer top in ASL.
+
+**Which statistic reproduces which number.** The September 2025 datum that closed
+the ub-wx catchment budgets, 314.9 K at 23Z (the last hour of the mixed-layer
+maximum *in time*), came from the prototype's pooled floor **mean**
+(`theta[(agl <= 500) & floor].mean()`). `ml_stat="mean"` reproduces it; the
+default `"max"` is always at least that warm and has not yet been checked against a
+run. Choose before the first sidecar of record, and say which in its `ml_stat`.
 
 The deficit against it is *cooling since the profile was taken, at that height*:
 materially conserved under adiabatic motion, and on a clear day the residual layer
@@ -51,8 +59,11 @@ undergone since seeding, with no reference at all.
 `cap_agl_m` above ground; `ref` is a `SunsetProfile` or a float. Box integration in
 height (not the frozen kernel's trapezoid in pressure) so catchment sums are
 additive in cell mass. `longwave_production_field` adds the radiative term when the
-run wrote `RTHRATLW` (the history name; `RTHRATENLW` is restart-only), which is what
-the September/November 2025 budgets could not close without.
+dataset holds `RTHRATLW`, which is what the September/November 2025 budgets could
+not close without. `RTHRATLW` is the netCDF name of the Registry state `RTHRATENLW`
+in every stream; WRF writes it to restarts by default and to a history stream only
+through `iofields` (`+:h:7:RTHRATLW` puts it in auxhist7, not the wrfout), so merge
+that stream onto the wrfout first or the term is silently `None`.
 `catchment_budget_terms` does one output time for many catchments and boxes with
 the transects reused.
 

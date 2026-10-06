@@ -62,6 +62,37 @@ def test_mouth_lies_near_the_line_midpoint(lookups, table):
         assert _km(mid, g.mouth) < 2.0, f"{n}: mouth is {_km(mid, g.mouth):.1f} km from the line's midpoint"
 
 
+def test_no_two_gate_lines_cross(lookups, table):
+    """Two flux planes that cross count the air between them twice in any rim total
+    (lake_fork and lake_fork_2 did, until both were clipped at the crossing).  Lines may
+    meet at an end point; they may not pass through each other."""
+    gs = gt.gates(lookups=lookups)
+
+    def xy(p, lat0):
+        return (p[1] * 111.32 * math.cos(math.radians(lat0)), p[0] * 110.54)
+
+    def cross(u, v):
+        return u[0] * v[1] - u[1] * v[0]
+
+    names = sorted(gs)
+    bad = []
+    for i, n1 in enumerate(names):
+        for n2 in names[i + 1:]:
+            g1, g2 = gs[n1], gs[n2]
+            lat0 = 0.25 * (g1.a[0] + g1.b[0] + g2.a[0] + g2.b[0])
+            a, b, c, d = (xy(p, lat0) for p in (g1.a, g1.b, g2.a, g2.b))
+            r, s = (b[0] - a[0], b[1] - a[1]), (d[0] - c[0], d[1] - c[1])
+            den = cross(r, s)
+            if abs(den) < 1e-12:
+                continue
+            qp = (c[0] - a[0], c[1] - a[1])
+            t, u = cross(qp, s) / den, cross(qp, r) / den
+            eps = 1e-3                      # a shared end point (to ~10 m) is a junction, not a crossing
+            if eps < t < 1 - eps and eps < u < 1 - eps:
+                bad.append(f"{n1} x {n2} at {t:.2f}/{u:.2f}")
+    assert not bad, f"gate lines cross: {bad}"
+
+
 def test_reader_filters_by_kind_and_exits_on_unknown(lookups, table):
     all_gates = gt.gates(lookups=lookups)
     assert len(all_gates) == len(table)
