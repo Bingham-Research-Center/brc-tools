@@ -111,8 +111,11 @@ Not an NWP source and deliberately **not** a `[models.*]` entry, so
 `tests/test_source_matrix.py` does not police it — but the wheel-check is recorded
 here because the convention is to write the decision down.
 
-Herbie is an NWP-archive library; it has no radar templates, so there is nothing to
-reuse and a direct fetch is the only option. `brc_tools/radar/nexrad.py` does it with
+Herbie is an NWP-archive library. Its one radar template, `herbie/models/nexrad.py`
+(2026.3.0), is a 2021 stub its author calls "just playing around": it needs the scan's
+exact second (no nearest-time search) and points only at the AWS `noaa-nexrad-level2`
+bucket, which refuses anonymous access (table below). So there is nothing to reuse and a
+direct fetch is the only option. `brc_tools/radar/nexrad.py` does it with
 `requests` plus `metpy.io.Level2File` (which decodes Archive II including its internal
 BZ2 chunks) — **no new dependency**. `pyart`, `nexradaws` and `boto3` were all
 considered and none installed.

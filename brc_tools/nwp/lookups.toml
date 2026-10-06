@@ -946,7 +946,7 @@ elevation_m = 3718          # highest summit of the eastern Uintas
 # Park, Deerlodge Park, Jones Hole, Red Canyon, Diamond Mountain and Blue Mountain were named
 # in that experiment's prose and NOT here, because there is no station at any of them and a
 # coordinate from recollection is not a source (a "Red Canyon" guess once landed on a 2116 m
-# rim above a 1841 m reservoir). They now exist as LANDMARKS below (kind = "landmark",
+# rim above a 1841 m reservoir). They now exist in the LANDMARKS block above (kind = "landmark",
 # gnis_id) with the USGS GNIS primary point as the citable source and the 30 m DEM for the
 # elevation -- label-only waypoints that never join a waypoint_groups member list.
 # Blue Mountain is the exception: GNIS files the plateau as the Yampa Plateau (that is
