@@ -57,10 +57,16 @@ class LinearWave:
     shape: tuple[int, int]  # the unpadded field shape
     rho0: float = RHO0
 
+    FIELDS = ("eta", "u", "v", "w", "p")
+
     def _back(self, f_hat: np.ndarray) -> np.ndarray:
         return np.fft.ifft2(f_hat).real[: self.shape[0], : self.shape[1]]
 
     def _eta_hat(self, z: float) -> np.ndarray:
+        if np.ndim(z) != 0:
+            # an array would broadcast against the 2-D spectrum and _back would then crop
+            # the wrong axes without complaint
+            raise TypeError("z must be a scalar height; use planes() for a stack of levels")
         return self.h_hat * np.exp(1j * self.m * z)
 
     def _k2(self) -> np.ndarray:
@@ -86,6 +92,43 @@ class LinearWave:
     def overturning(self, z: float) -> np.ndarray:
         """-d(eta)/dz: reaches 1 where the isentropes stand vertical."""
         return -self._back(1j * self.m * self._eta_hat(z))
+
+    def planes(self, zs, fields=("eta", "u", "v", "w"), *, window=None,
+               dtype=np.float32) -> dict[str, np.ndarray]:
+        """Fields on constant-height planes ``zs`` (m above the flat base), each returned as
+        ``(len(zs), ny_w, nx_w)`` in the solver's row order (south to north).
+
+        ``fields`` are names from ``FIELDS``: ``eta`` (m), ``u``/``v`` (u', v', m s-1), ``w``
+        (m s-1) and ``p`` (Pa).  ``window`` is a ``(row_slice, col_slice)`` pair, in that
+        same row order, cut after each inverse transform; the default keeps the whole
+        field.  One ``exp(i m z)`` per level serves every field, which is what makes a
+        volume affordable: the cost is one inverse transform per field per level."""
+        unknown = set(fields) - set(self.FIELDS)
+        if unknown:
+            raise ValueError(f"unknown fields {sorted(unknown)}; choose from {self.FIELDS}")
+        zs = np.atleast_1d(np.asarray(zs, dtype=float))
+        if zs.ndim != 1:
+            raise ValueError("zs must be a 1-D sequence of heights")
+        rows, cols = window if window is not None else (slice(None), slice(None))
+        k2 = self._k2()
+        out: dict[str, np.ndarray] = {}
+        for iz, z in enumerate(zs):
+            eh = self.h_hat * np.exp(1j * self.m * z)
+            q = -1j * self.m * self.sigma * eh / k2 if {"u", "v"} & set(fields) else None
+            for name in fields:
+                if name == "eta":
+                    f_hat = eh
+                elif name == "w":
+                    f_hat = 1j * self.sigma.real * eh
+                elif name == "p":
+                    f_hat = 1j * self.rho0 * self.sigma ** 2 * self.m * eh / k2
+                else:
+                    f_hat = (self.k if name == "u" else self.l) * q
+                plane = self._back(f_hat)[rows, cols]
+                if name not in out:
+                    out[name] = np.empty((zs.size,) + plane.shape, dtype=dtype)
+                out[name][iz] = plane
+        return out
 
 
 def linear_3d(h: np.ndarray, dx: float, U: float, V: float, N: float, *, dy: float | None = None,

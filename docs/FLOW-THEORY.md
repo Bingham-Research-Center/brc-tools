@@ -11,8 +11,9 @@ arguments, nothing a measurement. Tested against closed forms in `tests/test_flo
 | `mountainwave.layered_2d` | trapped lee waves and surface flow reversal along a transect | same, N piecewise constant, inversions as jumps |
 | `layer` | is a ridge a hydraulic control; how fast is the lee jet | one-layer reduced-gravity shallow water |
 | `leewaves` | does the profile trap a wave; how long is it | two-layer Scorer, inversion-capped (Vosper 2004) |
-| `seiche` | slowest free oscillations of a pool | reduced-gravity shallow-water eigenmodes |
+| `seiche` | slowest free oscillations of a pool; its response to a changing wind aloft, and the current that carries it | reduced-gravity shallow-water eigenmodes, forced |
 | `pool` | how far a wind aloft moves a pool's top | hydrostatic stagnant pool as a soft boundary |
+| `volume` | theta and wind in every cell of a terrain-following volume, for a renderer | the above composed by labels; one-way coupling |
 
 `terrain.skyview.horizon_angles` / `in_shadow` (same scan as `sky_view`, kept per
 azimuth) and `visualize.printsize` (figures drawn at their printed width) came in with it.
@@ -67,7 +68,42 @@ anomaly moves a 3 K inversion by 200 m. As a boundary for the flow aloft (2-D hy
 Z = iUN sgn k): ζ̂ = ĥ_out/(1 + Z/g′), η̂ = −(Z/g′) ζ̂, so Γ = UN/g′ sets how soft the pool
 is. Wedderburn number g′H²/(u*²L) < 1: the interface surfaces upwind.
 
-## 5. References
+## 5. Forced seiche and the voxel composition (`seiche`, `volume`)
+
+**Forced seiche.** A pressure p′ put on the interface by the flow aloft enters the pool's
+momentum equation; with η_f = −p′/(ρ₀g′), the stagnant pool's displacement,
+
+    ∂u/∂t = −g′∇(η − η_f),   ∂η/∂t = −∇·(Hu)   ⇒   η_tt = −L(η − η_f),   L = −g′∇·(H∇)
+
+L is the operator whose eigenvectors are the free modes (`basin_operator`), so each mode is
+a forced oscillator ä_n + 2γȧ_n + ω_n² a_n = ω_n² f_n with f_n = ⟨η_f, φ_n⟩/⟨φ_n, φ_n⟩
+(`project`; the equal-area raster makes the modes orthogonal in that plain product).
+`forced_response` integrates it exactly over each interval for forcing linear between
+knots, so the step size is free: a forcing that changes within one interval rings the mode
+as a step does, a ramp lasting a whole period leaves none. `lid_displacement` keeps
+M modes and adds the rest quasi-statically, η = Σaφ + (η_f − ⟨η_f⟩ − Σfφ) (the
+mode-acceleration form; the mean is removed only in a closed pool, which keeps its volume).
+Its steady limit is the stagnant pool's map. `pool_current` returns the depth-uniform current
+u = g′∇χ with Lχ = ∂η/∂t, which satisfies continuity face by face; for one mode it is
+g′∇φ ȧ/ω². Closure: linear long waves, no rotation, and one-way coupling — the flow aloft is
+solved with a rigid lid and never sees the interface move (at Γ = UN/g′ ≈ 0.6 the 2-D
+soft-boundary factor would trim the forcing by ~13 % and shift it ~30°).
+
+**Volume.** `volume` turns the closures into potential temperature and wind per cell.
+A parcel displaced by η came from z − η upstream, so θ = θ̄(z − η): aloft,
+θ = θ̄_aloft(max(z − η, z_inv)) with η from `LinearWave.planes` (constant-height planes, one
+inverse transform per field and level) interpolated onto each column. In the pool a column
+of undisturbed depth D₀ stretched to D carries labels z₀ = z_g + (z − z_g)D₀/D. Both are
+exact for their pictures and keep an inversion sharp. The pool-free reference is
+θ̄_aloft continued downward, against which a pool is its heat deficit (−Δθ at the lid,
+less with depth). `pool_extent` carries the lid onto dry ground connected to the pool
+(run-up and draw-down) and reports where it has reached the ground. The obstacle the
+flow aloft sees is `ridge_capped`, min(max(z − z_inv, 0), h_ridges): terrain above the lid
+times a footprint mask would end in a wall wherever a ridge's base stands above the lid,
+and the wall's spectrum rings. `nwp.wrf_write` writes the result in the wrfout layout,
+marked as theory.
+
+## 6. References
 
 Baines (1995) *Topographic Effects in Stratified Flows*, CUP. Doyle & Durran (2002) JAS 59,
 186. Houghton & Kasahara (1968) CPAM 21, 1. Lareau & Horel (2015) BLM 154, 291. Long (1954)

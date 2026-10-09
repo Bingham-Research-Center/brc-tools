@@ -17,12 +17,15 @@ Modules
                   the reduced-gravity shallow-water operator on a pool-depth map
 ``pool``          a cold pool under a wind: interface displacement by an imposed pressure,
                   the soft-boundary interaction number, Wedderburn number, Rossby radius
+``volume``        the above composed into theta and wind in every cell of a terrain-following
+                  volume: a pool at rest or ringing under a stratified wind (for renderers)
 
-numpy everywhere; ``seiche.basin_modes`` needs scipy.
+numpy everywhere; ``seiche`` (modes, forced response, currents) and
+``volume.pool_extent`` need scipy.
 """
 from __future__ import annotations
 
-__all__ = ["mountainwave", "layer", "leewaves", "seiche", "pool"]
+__all__ = ["mountainwave", "layer", "leewaves", "seiche", "pool", "volume"]
 
 G = 9.81            # m s-2
 THETA0 = 285.0      # K, reference potential temperature for reduced gravity

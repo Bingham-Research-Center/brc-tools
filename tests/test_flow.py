@@ -96,6 +96,24 @@ def test_layered_traps_waves_at_predicted_wavelength():
     assert lam_obs == pytest.approx(lam, rel=0.08)
 
 
+def test_planes_match_single_level_calls_and_reject_array_z():
+    dx = 500.0
+    y, x = np.mgrid[-24:24, -32:32] * dx
+    h = 200.0 * np.exp(-(x ** 2 + y ** 2) / (2 * 3e3 ** 2))
+    lw = mountainwave.linear_3d(h, dx, 8.0, 3.0, 0.01, pad=2)
+    zs = [0.0, 150.0, 900.0]
+    win = (slice(5, 40), slice(10, 50))
+    got = lw.planes(zs, ("eta", "u", "v", "w", "p"), window=win, dtype=np.float64)
+    for iz, z in enumerate(zs):
+        u, v = lw.uv(z)
+        for name, ref in (("eta", lw.eta(z)), ("u", u), ("v", v), ("w", lw.w(z)), ("p", lw.p(z))):
+            assert np.allclose(got[name][iz], ref[win], rtol=0, atol=1e-10)
+    with pytest.raises(TypeError):
+        lw.eta(np.array(zs))                          # would otherwise crop the wrong axes silently
+    with pytest.raises(ValueError):
+        lw.planes(zs, ("theta",))
+
+
 # ----------------------------------------------------------------- layer
 def test_critical_height_limits():
     assert layer.critical_height(1.0) == pytest.approx(0.0)
@@ -174,6 +192,104 @@ def test_soft_boundary_limits():
     assert np.ptp(soft["zeta"]) < 2.0                 # flat but for the mean level (k = 0)
     assert pool.interaction_number(10.0, 0.01, 0.1) == pytest.approx(1.0)
     assert pool.interface_displacement(20.0, 0.1) == pytest.approx(-200.0)
+
+
+def test_project_recovers_mode_amplitudes():
+    L, W, H, gp, dx = 20e3, 6e3, 200.0, 0.2, 250.0
+    depth = np.full((int(W / dx), int(L / dx)), H)
+    _, shapes = seiche.basin_modes(depth, dx, gp, n_modes=4)
+    field = 3.0 * shapes[0] - 2.0 * shapes[2]
+    assert np.allclose(seiche.project(field, shapes), [3.0, 0.0, -2.0, 0.0], atol=1e-8)
+    assert np.allclose(seiche.project(np.full(depth.shape, 5.0), shapes), 0.0, atol=1e-8)   # volume is no mode
+
+
+def test_forced_response_step_rings_as_one_minus_cosine():
+    T, F = 3600.0, 2.0
+    om = np.array([2 * np.pi / T])
+    t = np.concatenate([[0.0, 1e-6], np.linspace(1.0, 3 * T, 300)])
+    f = np.where(t > 0, F, 0.0)[:, None]
+    a, ad = seiche.forced_response(om, t, f)
+    assert np.allclose(a[2:, 0], F * (1 - np.cos(om[0] * t[2:])), atol=1e-6 * F)
+    assert np.allclose(ad[2:, 0], F * om[0] * np.sin(om[0] * t[2:]), atol=1e-6 * F * om[0])
+
+
+def test_forced_response_ramps_leave_the_textbook_ringing():
+    """A ramp lasting exactly one period leaves the mode at rest on the new forcing; one
+    lasting half a period leaves a free oscillation of amplitude 2F/pi."""
+    T, F = 3600.0, 1.0
+    om = np.array([2 * np.pi / T])
+    t = np.array([0.0, T, 2 * T, 3 * T])
+    a, ad = seiche.forced_response(om, t, np.array([0.0, F, F, F])[:, None])
+    assert np.allclose(a[1:, 0], F, atol=1e-9) and np.allclose(ad[1:, 0], 0.0, atol=1e-12)
+    t = np.concatenate([[0.0], T / 2 + np.linspace(0.0, 2 * T, 401)])
+    f = np.where(t >= T / 2, F, 0.0)
+    f[0] = 0.0
+    a, _ = seiche.forced_response(om, t, f[:, None])
+    assert np.max(np.abs(a[1:, 0] - F)) == pytest.approx(2 * F / np.pi, rel=1e-3)
+
+
+def test_forced_response_conserves_energy_and_matches_an_ode_solver():
+    from scipy.integrate import solve_ivp
+    rng = np.random.default_rng(3)
+    om = np.array([2 * np.pi / 5400.0, 2 * np.pi / 900.0])
+    t = np.cumsum(np.concatenate([[0.0], rng.uniform(60.0, 1500.0, 40)]))   # omega dt up to ~10
+    f = rng.normal(size=(t.size, 2))
+    gamma = 1e-4
+    a, ad = seiche.forced_response(om, t, f, damping=gamma)
+    for n in range(2):
+        rhs = lambda tt, y, n=n: [y[1], -2 * gamma * y[1] - om[n] ** 2 * (y[0] - np.interp(tt, t, f[:, n]))]  # noqa: E731
+        sol = solve_ivp(rhs, (t[0], t[-1]), [f[0, n], 0.0], t_eval=t, rtol=1e-10, atol=1e-12, max_step=30.0)
+        assert np.allclose(a[:, n], sol.y[0], atol=1e-6 * np.abs(f).max())
+    # undamped and held: E = adot^2 + omega^2 (a - F)^2 is constant
+    t2 = np.arange(0.0, 1000 * 600.0, 600.0)
+    f2 = np.concatenate([np.linspace(0, 3.0, 5), np.full(t2.size - 5, 3.0)])[:, None]
+    a2, ad2 = seiche.forced_response(om[:1], t2, f2)
+    e = ad2[4:, 0] ** 2 + om[0] ** 2 * (a2[4:, 0] - 3.0) ** 2
+    assert np.ptp(e) <= 1e-9 * e.max()
+
+
+def test_lid_displacement_at_equilibrium_is_the_forcing():
+    gp, dx = 0.2, 250.0
+    depth = np.full((24, 80), 150.0)
+    op = seiche.basin_operator(depth, dx, gp)
+    _, shapes = seiche.basin_modes(depth, dx, gp, n_modes=5)
+    yy, xx = np.mgrid[0:24, 0:80]
+    eta_f = 30.0 * np.sin(xx / 9.0) * np.cos(yy / 7.0) + 10.0
+    f = seiche.project(eta_f, shapes)
+    lid = seiche.lid_displacement(f, f, shapes, eta_f, op)
+    assert np.allclose(lid, eta_f - eta_f.mean(), atol=1e-9)     # a closed pool keeps its volume
+
+
+def test_pool_current_carries_the_rate_face_by_face():
+    rng = np.random.default_rng(7)
+    gp, dx = 0.2, 250.0
+    yy, xx = np.mgrid[0:12, 0:30]
+    depth = 100.0 + 3.0 * xx + 2.0 * yy
+    op = seiche.basin_operator(depth, dx, gp)
+    rate = rng.normal(size=depth.shape)
+    rate -= rate.mean()
+    ux, vy = seiche.pool_current(op, rate, centred=False)
+    div = (op.hx[:, 1:] * ux[:, 1:] - op.hx[:, :-1] * ux[:, :-1] + op.hy[1:] * vy[1:] - op.hy[:-1] * vy[:-1]) / dx
+    assert np.allclose(-div, rate, atol=1e-9 * np.abs(rate).max())
+    # one mode's rate is carried by g' grad(phi) / omega^2
+    periods, shapes = seiche.basin_modes(depth, dx, gp, n_modes=2)
+    phi = np.nan_to_num(shapes[0])
+    ux1, vy1 = seiche.pool_current(op, phi, centred=False)
+    om2 = (2 * np.pi / periods[0]) ** 2
+    assert np.allclose(ux1[:, 1:-1], gp * (phi[:, 1:] - phi[:, :-1]) / dx / om2, atol=1e-9)
+    assert np.allclose(vy1[1:-1], gp * (phi[1:] - phi[:-1]) / dx / om2, atol=1e-9)
+
+
+def test_pool_current_in_a_channel_matches_the_long_wave():
+    """Mode 1 of a closed channel: eta = cos(pi x / L), u = -(L / (pi H)) sin(pi x / L) per unit rate."""
+    H, gp, dx, n = 200.0, 0.2, 100.0, 200
+    depth = np.full((1, n), H)
+    op = seiche.basin_operator(depth, dx, gp)
+    x = (np.arange(n) + 0.5) * dx
+    L = n * dx
+    u, _ = seiche.pool_current(op, np.cos(np.pi * x / L)[None], centred=True)
+    exact = -(L / (np.pi * H)) * np.sin(np.pi * x / L)
+    assert np.max(np.abs(u[0] - exact)) < 0.01 * np.abs(exact).max()
 
 
 # ----------------------------------------------------------------- horizon (terrain.skyview)
