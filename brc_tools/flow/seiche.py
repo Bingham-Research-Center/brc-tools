@@ -37,13 +37,14 @@ def rossby_radius(gprime: float, H: float, lat_deg: float = 40.4) -> float:
     return float(np.sqrt(gprime * H) / f)
 
 
-def basin_modes(depth: np.ndarray, dx: float, gprime: float, n_modes: int = 6, *, seed=None):
+def basin_modes(depth: np.ndarray, dx: float, gprime: float, n_modes: int = 6, *, seed=None, open_mask=None):
     """The ``n_modes`` slowest seiche modes of the pool ``depth`` (m, NaN or <= 0 dry).
 
     Only the connected wet region containing ``seed`` (row, col) is solved -- the largest
-    one if ``seed`` is None.  Returns ``(periods_s, shapes)`` with ``shapes`` an
-    ``(n_modes, ny, nx)`` array of interface displacement normalised to max |eta| = 1 and
-    NaN outside the pool.
+    one if ``seed`` is None.  ``open_mask`` marks wet cells held at eta = 0: an open end
+    where the pool spills into a much larger one (the node at Merian's open end).  Returns
+    ``(periods_s, shapes)`` with ``shapes`` an ``(n_modes, ny, nx)`` array of interface
+    displacement normalised to max |eta| = 1 and NaN outside the pool.
     """
     from scipy import ndimage, sparse
     from scipy.sparse.linalg import eigsh
@@ -58,7 +59,9 @@ def basin_modes(depth: np.ndarray, dx: float, gprime: float, n_modes: int = 6, *
         keep = lab[seed]
         if keep == 0:
             raise ValueError("seed is dry")
-    wet = lab == keep
+    region = lab == keep
+    held = np.zeros_like(region) if open_mask is None else (np.asarray(open_mask, dtype=bool) & region)
+    wet = region & ~held
     idx = -np.ones(H.shape, dtype=np.int64)
     idx[wet] = np.arange(wet.sum())
     n = int(wet.sum())
@@ -78,6 +81,12 @@ def basin_modes(depth: np.ndarray, dx: float, gprime: float, n_modes: int = 6, *
         vals += [-wgt, -wgt]
         np.add.at(diag, ia, wgt)
         np.add.at(diag, ib, wgt)
+        # an unknown facing a held (eta = 0) cell drains through that face: diagonal only
+        lo = (slice(0, H.shape[0] - dj), slice(0, H.shape[1] - di))
+        hi = (slice(dj, None), slice(di, None))
+        for side, other in ((lo, hi), (hi, lo)):
+            face = wet[side] & held[other]
+            np.add.at(diag, idx[side][face], c0 * 0.5 * (H[side][face] + H[other][face]))
     A = sparse.coo_matrix((np.concatenate(vals + [diag]),
                            (np.concatenate(rows + [np.arange(n)]), np.concatenate(cols + [np.arange(n)]))),
                           shape=(n, n)).tocsc()
@@ -86,7 +95,7 @@ def basin_modes(depth: np.ndarray, dx: float, gprime: float, n_modes: int = 6, *
     w2, vec = eigsh(A, k=k, sigma=shift, which="LM")
     order = np.argsort(w2)
     w2, vec = w2[order], vec[:, order]
-    keep_modes = w2 > 1e-10 * float(diag.max())        # drop the constant (volume) mode
+    keep_modes = w2 > 1e-10 * float(diag.max())        # drop the constant (volume) mode, if closed
     w2, vec = w2[keep_modes][:n_modes], vec[:, keep_modes][:, :n_modes]
     periods = 2.0 * np.pi / np.sqrt(w2)
     shapes = np.full((w2.size,) + H.shape, np.nan)

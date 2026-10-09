@@ -155,6 +155,15 @@ def test_rectangular_pool_matches_merian():
     assert np.sign(s[3, 1]) == -np.sign(s[3, -2])       # mode 1: the ends move in opposition
 
 
+def test_open_ended_pool_matches_merian():
+    L, W, H, gp, dx = 20e3, 6e3, 200.0, 0.2, 250.0
+    depth = np.full((int(W / dx), int(L / dx) + 1), H)
+    held = np.zeros_like(depth, dtype=bool)
+    held[:, -1] = True                                   # the east end opens onto a big pool
+    periods, _ = seiche.basin_modes(depth, dx, gp, n_modes=2, open_mask=held)
+    assert periods[0] == pytest.approx(seiche.merian_period(L + dx / 2, H, gp, ends="open"), rel=0.02)
+
+
 def test_soft_boundary_limits():
     dx = 100.0
     x = (np.arange(1024) - 512) * dx
