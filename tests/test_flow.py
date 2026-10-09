@@ -280,6 +280,16 @@ def test_pool_current_carries_the_rate_face_by_face():
     assert np.allclose(vy1[1:-1], gp * (phi[1:] - phi[:-1]) / dx / om2, atol=1e-9)
 
 
+def test_cap_froude_limits_shoreline_currents_only():
+    u = np.array([3.0, 0.1, 0.0])
+    v = np.array([0.0, 0.0, 2.0])
+    depth = np.array([5.0, 100.0, 0.0])
+    cu, cv, capped = seiche.cap_froude(u, v, depth, gprime=0.2)
+    assert cu[0] == pytest.approx(1.0) and capped[0]            # c = sqrt(0.2 * 5) = 1 m s-1
+    assert cu[1] == 0.1 and not capped[1]                         # deep water untouched
+    assert cv[2] == 0.0 and capped[2]                             # no current at the shoreline itself
+
+
 def test_pool_current_in_a_channel_matches_the_long_wave():
     """Mode 1 of a closed channel: eta = cos(pi x / L), u = -(L / (pi H)) sin(pi x / L) per unit rate."""
     H, gp, dx, n = 200.0, 0.2, 100.0, 200

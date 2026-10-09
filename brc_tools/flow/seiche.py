@@ -276,5 +276,18 @@ def pool_current(op: BasinOperator, eta_rate: np.ndarray, *, centred: bool = Tru
     return u, v
 
 
+def cap_froude(u: np.ndarray, v: np.ndarray, depth: np.ndarray, gprime: float, max_froude: float = 1.0):
+    """Scale a depth-uniform current down to ``max_froude`` times the long-wave speed
+    sqrt(g' depth).  Linear long-wave theory needs |u| << c; next to a shoreline, where the
+    depth goes to zero, continuity asks for ever faster currents and the theory has broken
+    down, so the current there is shown at the speed the theory can still speak for.
+    Returns ``(u, v, capped)``."""
+    c = max_froude * np.sqrt(gprime * np.clip(np.asarray(depth, dtype=float), 0.0, None))
+    speed = np.hypot(u, v)
+    capped = speed > c
+    factor = np.where(capped, c / np.where(speed > 0, speed, 1.0), 1.0)
+    return u * factor, v * factor, capped
+
+
 def reduced_gravity(dtheta_k: float, theta0: float = 285.0, g: float = G) -> float:
     return g * dtheta_k / theta0
