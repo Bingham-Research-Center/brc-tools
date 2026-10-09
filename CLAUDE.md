@@ -36,6 +36,7 @@ brc_tools/        installable package
   utils/          lookups, small helpers, solar (sun times; nights that are one night long)
   terrain/        D8 catchments, basin floors, perpendicular gate lines on USGS 3DEP; sills, throats, model-grid terrain (optional extra `terrain`, env terrain-2026) — docs/TERRAIN-D8.md, docs/TERRAIN-THROATS.md
   drainage/       idealised cold-air drainage theory on that geometry (cooling, slope flow, throat hydraulics, basin cascade; numpy only) — docs/DRAINAGE-THEORY.md
+  flow/           idealised stratified flow over that geometry (linear mountain waves on a DEM, layered lee waves, layer hydraulics, pool seiches and soft-boundary response) — docs/FLOW-THEORY.md
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
   walkthroughs/   plain-language per-tool guides + glossary
@@ -60,6 +61,7 @@ figures/          generated output (gitignored)
 - `docs/TERRAIN-D8.md` — `brc_tools.terrain`: D8 routing, floors/rims/cuts, gate rules, validation; runs in `terrain-2026` via `scripts/terrain_pipeline.slurm`
 - `docs/TERRAIN-THROATS.md` — the rest of `brc_tools.terrain`: closed depressions, `sill_between`, minimum-cut throats, reach sections, `geo_em` on a `Grid` (and the geogrid seam cell: `LANDMASK` must be 0 or 1), slope limiting, river carving, matching catchments across grids, `[sinks.*]`
 - `docs/DRAINAGE-THEORY.md` — `brc_tools.drainage`: what each closure assumes (surface energy balance, Prandtl, layer drag balance, reduced-gravity hydraulics, the basin cascade); arithmetic on assumptions, never a measurement
+- `docs/FLOW-THEORY.md` — `brc_tools.flow`: linear and layered mountain waves, one-layer hydraulics, trapped-wave criteria, pool seiches and the soft-boundary pool; what each closure assumes
 - `docs/EVENT-DIAGNOSTICS.md` — `obs.profiles`, `satellite.goes`, `utils.solar`: a past night from stations, GOES LST and the sun
 - `docs/WRF-TRAJECTORIES.md` — `nwp.wrf_trajectories`: offline back/forward trajectories in model-index space
 - `docs/DEFICIT-REFERENCE.md` — the sunset-profile datum for heat-deficit budgets (`nwp.wrf_deficit_reference`), the two-datum error bar and the `theta_ref_*.json` sidecar consumed by brc-voxel-viz
