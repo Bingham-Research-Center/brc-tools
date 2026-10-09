@@ -103,3 +103,11 @@ def test_lowest_cell_finds_the_floor_near_a_point():
     grid = Grid(x0=500000.0, y1=4500000.0, res=100.0, ny=50, nx=50)
     lon, lat = grid.lonlat(28, 20)
     assert dp.lowest_cell(z, grid, float(lat), float(lon), radius_m=500.0) == (30, 22)
+
+
+def test_sill_between_with_inf_walls_terminates():
+    """inf cells are walls; they must not become the bisection's upper bound."""
+    z = np.full((5, 9), 10.0)
+    z[:, 4] = 50.0                      # a ridge between the two seeds, crossable at 50
+    z[0, :] = np.inf                    # an inf wall along one edge
+    assert dp.sill_between(z, (2, 1), (2, 7), tol=0.5) == pytest.approx(50.0, abs=0.5)

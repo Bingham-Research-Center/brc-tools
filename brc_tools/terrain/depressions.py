@@ -128,7 +128,7 @@ def sill_between(z: np.ndarray, seed_a, seed_b, *, tol: float = 1.0, z_max: floa
     """
     zz = np.where(np.isnan(z), np.inf, z)
     lo = max(_seed_floor(zz, seed_a), _seed_floor(zz, seed_b))
-    hi = float(np.nanmax(z)) if z_max is None else float(z_max)
+    hi = float(np.max(zz[np.isfinite(zz)])) if z_max is None else float(z_max)   # inf walls must not set the bound
     if not connected(zz <= hi, seed_a, seed_b):
         return float("inf")
     if connected(zz <= lo, seed_a, seed_b):
