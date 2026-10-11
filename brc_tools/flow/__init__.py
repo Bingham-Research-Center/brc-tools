@@ -17,6 +17,8 @@ Modules
                   the reduced-gravity shallow-water operator on a pool-depth map
 ``pool``          a cold pool under a wind: interface displacement by an imposed pressure,
                   the soft-boundary interaction number, Wedderburn number, Rossby radius
+``profile``       a sounding or analysis column reduced to the closures' layers: along-wind, N, an
+                  inversion found by a two-line fit
 ``volume``        the above composed into theta and wind in every cell of a terrain-following
                   volume: a pool at rest or ringing under a stratified wind (for renderers)
 

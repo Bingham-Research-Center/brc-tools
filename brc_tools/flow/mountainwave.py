@@ -263,6 +263,130 @@ def layered_2d(h: np.ndarray, dx: float, U: float, layers: list[Layer], z: np.nd
     return LayeredWave(x=np.arange(nx) * dx, z=zs, w=back(Wz), eta=back(eta_hat), u=back(u_hat), U=U)
 
 
+def layered_3d(h: np.ndarray, dx: float, U: float, V: float, layers: list[Layer], z: np.ndarray, *,
+               dy: float | None = None, theta0: float = THETA0, g: float = G, pad: int = 3,
+               eps: float | None = None, max_step: float = 50.0, fields=("eta", "u", "v", "w"),
+               window=None, dtype=np.float32, r_dtype=np.complex128) -> dict[str, np.ndarray]:
+    """``layered_2d`` over a terrain field: linear non-hydrostatic waves over ``h(x, y)``
+    (m above the flat base, rows south to north as ``linear_3d``) for a uniform wind
+    ``(U, V)`` and a stack of ``layers`` with inversions between them.
+
+    Per horizontal wavenumber (k, l), K^2 = k^2 + l^2 and sigma = U k + V l - i eps, the
+    vertical structure is the 2-D one with k^2 -> K^2 and U k -> sigma: in a layer of
+    buoyancy frequency N, m^2 = K^2 (N^2 / sigma^2 - 1); across an inversion of reduced
+    gravity g', the log-derivative R = w'/w jumps by g' K^2 / sigma^2; w(0) = i sigma h-hat.
+    The horizontal perturbation is irrotational: u-hat = k q, v-hat = l q, q = -sigma R eta-hat / K^2.
+    Returns ``fields`` (``eta`` m, ``u``/``v``/``w`` m s-1) on the constant heights ``z``
+    (m above the base), each ``(len(z), ny_w, nx_w)`` after the optional ``window``
+    ``(row_slice, col_slice)``.  ``eps`` defaults to 2 |(U, V)| / L along the shorter padded
+    side, as the 2-D solver; the downward sweep keeps one ``(py, px)`` array of ``r_dtype``
+    per ``max_step`` of height, which is the memory cost (complex64 halves it and lowers the
+    evanescent cap below from 12 to 6)."""
+    h = np.asarray(h, dtype=float)
+    if h.ndim != 2:
+        raise ValueError("h must be (ny, nx); layered_2d takes a transect")
+    zs = np.asarray(z, dtype=float)
+    if zs.ndim != 1 or zs[0] != 0.0 or np.any(np.diff(zs) <= 0):
+        raise ValueError("z must start at 0 and increase")
+    tops = np.array([lay.top for lay in layers], dtype=float)
+    if not np.isinf(tops[-1]) or np.any(np.diff(tops[:-1]) <= 0) or (len(tops) > 1 and tops[0] <= 0):
+        raise ValueError("layer tops must be positive, increasing, and the last inf")
+    unknown = set(fields) - {"eta", "u", "v", "w"}
+    if unknown:
+        raise ValueError(f"unknown fields {sorted(unknown)}")
+    interfaces = tops[:-1]
+    ny, nx = h.shape
+    dy = dx if dy is None else dy
+    py, px = ny * pad, nx * pad
+    hp = np.zeros((py, px))
+    hp[:ny, :nx] = h
+    k1 = 2.0 * np.pi * np.fft.fftfreq(px, d=dx)
+    l1 = 2.0 * np.pi * np.fft.fftfreq(py, d=dy)
+    k, l = np.meshgrid(k1, l1)
+    K2 = k ** 2 + l ** 2
+    speed = float(np.hypot(U, V))
+    eps = 2.0 * speed / min(px * dx, py * dy) if eps is None else eps
+    sig = U * k + V * l - 1j * eps
+    safe_K2 = np.where(K2 > 0, K2, np.inf)
+
+    def m_of(j: int) -> np.ndarray:
+        m = _branch(layers[j].N ** 2 * K2 / sig ** 2 - K2)
+        return np.where(np.abs(m) < 1e-12, 1e-12 + 0j, m)
+
+    ms = [m_of(j) for j in range(len(layers))]
+    zmax = max(float(zs[-1]), float(interfaces[-1]) if interfaces.size else 0.0)
+    levels = np.unique(np.concatenate([zs, interfaces, np.arange(0.0, zmax, max_step), [zmax]]))
+    nlev = levels.size
+    seg_layer = np.searchsorted(interfaces, 0.5 * (levels[:-1] + levels[1:]), side="right")
+    jump_at = {float(t): g * layers[j + 1].jump / theta0 for j, t in enumerate(interfaces) if layers[j + 1].jump}
+
+    R_above = [None] * nlev
+    R = 1j * ms[-1]
+    for idx in range(nlev - 1, -1, -1):
+        if idx < nlev - 1:
+            m = ms[seg_layer[idx]]
+            with np.errstate(all="ignore"):
+                t = np.tan(m * (levels[idx + 1] - levels[idx]))
+                R = (m * t + R) / (1.0 - (R / m) * t)
+        R = np.where(np.isfinite(R), R, 1j * ms[seg_layer[min(idx, nlev - 2)]])   # tan overflowed: the decaying branch
+        R_above[idx] = R.astype(r_dtype)
+        gp = jump_at.get(float(levels[idx]))
+        if gp:
+            R = R + gp * K2 / sig ** 2
+
+    cap = 12.0 if np.dtype(r_dtype) == np.dtype(np.complex128) else 6.0
+    rows, cols = window if window is not None else (slice(None), slice(None))
+    want = set(np.searchsorted(levels, zs).tolist())
+    out: dict[str, np.ndarray] = {}
+
+    def back(a: np.ndarray) -> np.ndarray:
+        return np.fft.ifft2(a).real[:ny, :nx][rows, cols]
+
+    def emit(iz: int, E: np.ndarray, Rz: np.ndarray) -> None:
+        """Fields from eta-hat ``E`` at a level where the log-derivative is ``Rz``: w = i sigma eta,
+        and the irrotational horizontal part u-hat = k q, v-hat = l q with q = -sigma R eta / K^2
+        (R = i m in a single layer gives linear_3d's q = -i m sigma eta / K^2)."""
+        q = -sig * Rz * E / safe_K2 if {"u", "v"} & set(fields) else None
+        for name in fields:
+            if name == "eta":
+                f_hat = E
+            elif name == "w":
+                f_hat = 1j * sig.real * E
+            else:
+                f_hat = (k if name == "u" else l) * q
+            plane = back(f_hat)
+            if name not in out:
+                out[name] = np.empty((zs.size,) + plane.shape, dtype=dtype)
+            out[name][iz] = plane
+
+    E = np.fft.fft2(hp)
+    E[K2 == 0] = 0.0
+    iz = 0
+    if 0 in want:
+        emit(iz, E, R_above[0])
+        iz += 1
+    for idx in range(1, nlev):
+        m = ms[seg_layer[idx - 1]]
+        d = levels[idx] - levels[idx - 1]
+        # cos(m d) + (R / m) sin(m d) in its exponential form.  Shooting upward, the growing
+        # branch exp(-i m d) carries the reflected wave, whose coefficient (1 - R / i m) is
+        # exact only to roundoff: once Im(m) d exceeds ~12 (6 in single precision) that roundoff times the growth
+        # outruns the field (a wavenumber across the wind, which the ground hardly forces,
+        # or a short evanescent wave), so there only the decaying branch is kept.
+        with np.errstate(all="ignore"):
+            Rm = R_above[idx - 1] / (1j * m)
+            up, down = np.exp(1j * m * d), np.exp(-1j * m * d)
+            full = 0.5 * ((1.0 + Rm) * up + (1.0 - Rm) * down)
+            decay = 0.5 * (1.0 + Rm) * up
+            factor = np.where(m.imag * d > cap, decay, full)
+            factor = np.where(np.isfinite(factor), factor, 0.0)
+            E = E * factor
+        if idx in want:
+            emit(iz, E, R_above[idx])
+            iz += 1
+    return out
+
+
 def ridge_numbers(U: float, N: float, h: float, a: float) -> dict[str, float]:
     """The dimensionless set for a ridge of height ``h`` and half-width ``a``:
     ``Nh_U`` (linear below ~0.5, overturning near 0.85-1), ``Na_U`` (>> 1 hydrostatic;
