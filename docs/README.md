@@ -32,6 +32,8 @@ Project documentation. Topical files only — agent context lives in
   limiting and river carving (`brc_tools.terrain`, second half).
 - **DRAINAGE-THEORY.md** — `brc_tools.drainage`: surface cooling, slope flow, throat hydraulics and the
   basin cascade, each with the closure it rests on and what is assumed rather than known.
+- **FLOW-THEORY.md** — `brc_tools.flow`: linear mountain waves on a DEM, layered lee waves and rotors,
+  one-layer hydraulics, pool seiches and the soft-boundary pool.
 - **EVENT-DIAGNOSTICS.md** — reading a past night from stations, GOES land-surface temperature and the
   sun (`brc_tools.obs.profiles`, `brc_tools.satellite.goes`, `brc_tools.utils.solar`).
 - **WRF-TRAJECTORIES.md** — offline back and forward trajectories from WRF output

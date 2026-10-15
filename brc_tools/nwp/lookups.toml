@@ -1087,7 +1087,144 @@ elevation_m = 1623          # 600 m model terrain; no survey, no station here
 # verification datum -- the observation is unofficial. KVEL, 3.3 km north, is
 # the official trace to verify against.
 
+# --- The Price lee (ub-wx price-windstorm, opened 2026-10-11): Castle Valley under the
+# Wasatch Plateau's east escarpment and the Book Cliffs. Elevations are the 30 m DEM
+# where marked, else the published figure; the experiment's T0 verifies them.
+[waypoints.price_airport]
+lat = 39.61389
+lon = -110.75056
+elevation_m = 1789          # 30 m DEM at the point (FAA field elevation 1816 m, Synoptic 1772 m)
+reference_stid = "KPUC"     # Carbon County Regional Airport ASOS: the windstorm record
+
+[waypoints.price]
+lat = 39.59940
+lon = -110.81070
+elevation_m = 1690
+kind = "landmark"          # label only: never a waypoint_groups member
+
+[waypoints.helper]
+lat = 39.68414
+lon = -110.85460
+elevation_m = 1770
+kind = "landmark"          # the foot of Price Canyon
+
+[waypoints.wellington]
+lat = 39.54250
+lon = -110.73570
+elevation_m = 1660
+kind = "landmark"
+
+[waypoints.castle_gate]
+lat = 39.73100
+lon = -110.87000
+elevation_m = 1860
+kind = "landmark"          # the mouth of Price Canyon through the Book Cliffs
+
+[waypoints.soldier_summit]
+lat = 39.92970
+lon = -111.08240
+elevation_m = 2271
+kind = "landmark"          # US-6 pass between Spanish Fork Canyon and Price Canyon
+
+# Stations round the Price lee (Synoptic metadata, 11 Oct 2026; elevations Synoptic's, m).
+# Crest sites ring Castle Valley: the Book Cliffs / West Tavaputs to the N and E (BRPU1,
+# UTICS, PC600), the Wasatch Plateau to the W (PC253, PC254, UTMPK), Patmos Ridge to the E.
+[waypoints.moroni]
+lat = 39.5266
+lon = -111.5872
+elevation_m = 1701
+kind = "landmark"          # Sanpete Valley floor: the upstream column for a westerly over the Wasatch Plateau
+
+[waypoints.bruin_point]
+lat = 39.60933
+lon = -110.28997
+elevation_m = 2973
+reference_stid = "BRPU1"    # RAWS on the West Tavaputs rim, 40 km E of KPUC, since 1997
+
+[waypoints.indian_canyon_summit]
+lat = 39.88570
+lon = -110.74790
+elevation_m = 2758
+reference_stid = "UTICS"    # UDOT US-191 summit, 30 km N of KPUC, since 2008
+
+[waypoints.price_3e]
+lat = 39.60801
+lon = -110.75075
+elevation_m = 1781
+reference_stid = "UTPU1"    # AgriMet beside KPUC, since 2013
+
+[waypoints.helper_us6]
+lat = 39.69345
+lon = -110.86270
+elevation_m = 1788
+reference_stid = "UTHLP"    # UDOT US-6 at Helper, since 2010
+
+[waypoints.castle_gate_rail]
+lat = 39.73480
+lon = -110.87207
+elevation_m = 1870
+reference_stid = "UR300"    # rail sensor at the mouth of Price Canyon, since 2012
+
+[waypoints.mounds]
+lat = 39.47945
+lon = -110.63307
+elevation_m = 1641
+reference_stid = "UR309"    # rail sensor 18 km SSE of KPUC, since 2012
+
+[waypoints.flattop_mountain]
+lat = 39.33611
+lon = -110.60142
+elevation_m = 1865
+reference_stid = "FTMU1"    # RAWS 33 km SSE of KPUC, since 1997
+
+[waypoints.ford_ridge]
+lat = 39.75591
+lon = -110.99180
+elevation_m = 2988
+reference_stid = "PC253"    # Wasatch Plateau rim NW of Price, since 2022
+
+[waypoints.the_elbow]
+lat = 39.65353
+lon = -111.12962
+elevation_m = 2906
+reference_stid = "PC254"    # Wasatch Plateau crest W of Price, since 2022
+
+[waypoints.patmos_ridge]
+lat = 39.63823
+lon = -110.34164
+elevation_m = 3064
+reference_stid = "PC252"    # Book Cliffs crest E of Price, since 2022
+
+[waypoints.orson_bedground]
+lat = 39.86103
+lon = -110.71848
+elevation_m = 2806
+reference_stid = "PC600"    # West Tavaputs N of Price, since Nov 2024
+
+[waypoints.monument_peak]
+lat = 39.61433
+lon = -111.17735
+elevation_m = 3167
+reference_stid = "UTMPK"    # Wasatch Plateau summit W of Price, since 2016
+
+[waypoints.east_carbon]
+lat = 39.55097
+lon = -110.38604
+elevation_m = 1988
+reference_stid = "PC069"    # Castle Valley floor E, since 2021
+
+[waypoints.kenilworth]
+lat = 39.68524
+lon = -110.80757
+elevation_m = 1970
+reference_stid = "PC155"    # bench under the Book Cliffs N of Price, since 2022
+
 [waypoint_groups]
+# Across the Price lee from the Book Cliffs crest to the Wasatch Plateau crest, NE -> SW:
+# the order a cross-barrier transect through KPUC meets them.
+price_lee = ["bruin_point", "patmos_ridge", "orson_bedground", "kenilworth", "price_3e", "price_airport",
+             "helper_us6", "castle_gate_rail", "mounds", "flattop_mountain", "ford_ridge", "the_elbow",
+             "monument_peak", "east_carbon", "indian_canyon_summit"]
 # W->E in the order the 01:20-01:50Z outflow crossed them, so a timing panel
 # reads left to right. PC266 is elevated and leads the floor stations.
 ashley_outflow = [
