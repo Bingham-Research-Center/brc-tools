@@ -233,3 +233,45 @@ Central registry at `brc_tools/nwp/lookups.toml`. Defines:
 - **[waypoint_groups]**: Named collections of waypoints
 - **[aliases]**: Canonical variable mappings — search strings per model, units, Synoptic equivalents
 - **[defaults]**: Cache settings, retry counts, validation flags
+
+### Preserved observation acquisition (research workers)
+
+`ObsSource.metadata`, `ObsSource.networks`, and `ObsSource.fetch_timeseries` accept
+`archive=Path`, `budget=Budget`, and Synoptic provider parameters. They return a
+`SynopticResult` containing the preserved payload, parsed frame, receipt and receipt
+path. The research time-series frame is long: sensor identity, original units,
+raw value, QC and sensor metadata stay attached. Existing `timeseries()` remains
+unchanged, including its historical pivot/alias behavior; it is not the research
+archive interface.
+
+`brc_tools.obs.research.result(receipt)` replays without network or credentials.
+Generic metadata conversion returns SI elevations while retaining original metadata.
+`brc_tools.obs.units.convert` uses declared units and returns explicit unsupported
+unit status. It never guesses pressure units from values.
+
+`brc_tools.obs.budget.Budget` is for a dedicated, single-threaded subprocess. Its
+transport context wraps the libraries' existing Requests transport, including
+SynopticPy's import-time token check. Defaults: at most eight requests per provider
+and batch, one in flight, 30 seconds after each completed request, 10/60 second
+connect/read timeouts, and no retries or automatic redirects. Request outcomes,
+including crashes and rejected responses, are persistent. Authorization, quota,
+HTTP errors and payload errors stop acquisition. A reviewed redirect can be
+acknowledged explicitly without resetting counts; this cannot clear other failures.
+The local lock does not coordinate jobs on another host or account-wide usage.
+
+Canonical archives retain scientific content without rounding, share compressed
+content-addressed station metadata, remove only the documented response timing
+fields, redact credentials and verify object/receipt hashes on replay. They are
+not original wire bytes. Archive and ledger roots are supplied by the caller.
+
+`brc_tools.api.soundings.archive.station_archive(..., year=2026)` caches a NOAA
+current-year ZIP once; `extract(receipt,start,end)` uses Siphon's parser offline,
+returns all decoded columns and SI winds, and separates a missing launch from a
+parse/request failure. Original ZIP bytes preserve fields and precision not carried
+by Siphon's normalized frame. The caller verifies the published current-year file
+before requesting it; this interface does not probe alternate years/providers.
+
+References checked 2026-11-10:
+[Synoptic limits](https://docs.synopticdata.com/services/api-performance-and-limits),
+[Synoptic errors](https://docs.synopticdata.com/services/errors),
+[NOAA IGRA](https://www.ncei.noaa.gov/products/weather-balloon/integrated-global-radiosonde-archive).

@@ -120,6 +120,20 @@ class ObsSource:
 
         return df
 
+    def metadata(self, *, archive, budget, **params):
+        """Preserved metadata result; caller supplies archive and request budget."""
+        from .research import fetch
+        return fetch("metadata", params, archive=archive, budget=budget)
+
+    def networks(self, *, archive, budget, **params):
+        from .research import fetch
+        return fetch("networks", params, archive=archive, budget=budget)
+
+    def fetch_timeseries(self, *, archive, budget, **params):
+        """Long sensor-preserving research result, using provider variable names."""
+        from .research import fetch
+        return fetch("timeseries", params, archive=archive, budget=budget)
+
     def align_with_nwp(self, obs_df: pl.DataFrame, nwp_df: pl.DataFrame) -> pl.DataFrame:
         """Tag source and concatenate obs + NWP point DataFrames for plotting."""
         obs_tagged = obs_df.with_columns(pl.lit("obs").alias("source"))
