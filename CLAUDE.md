@@ -27,6 +27,7 @@ hosts (`docs/CHPC-REFERENCE.md`, `docs/WEBSITE-INTEGRATION.md`).
 brc_tools/        installable package
   nwp/            NWPSource (Herbie), lookups.toml, staging/alignment/derived, WRF adapters + diagnostics — module-by-module: docs/API-REFERENCE.md
   obs/            ObsSource (SynopticPy wrapper), scanner (event detection), profiles (stations as theta-height profiles, drainage metrics) — docs/EVENT-DIAGNOSTICS.md
+  hydro/          token-free USGS Water Data (OGC API) and NRCS AWDB clients, cache-first — docs/API-REFERENCE.md
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
   visualize/      planview/timeseries panels; grid.py (brc-wrf seam); figure/curtain/tracer/time-height modules — docs/API-REFERENCE.md
   download/       Synoptic obs script, push_data uploader, HRRR helpers
@@ -117,6 +118,7 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 | `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI (`api/` clients) | aviation only |
 | `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
+| `BRC_HYDRO_CACHE` | USGS/NRCS raw pages + parquet (`brc_tools.hydro`); default `~/.cache/brc-tools/hydro`. Synoptic archive and ledger roots are caller-supplied (`obs.research`, `obs.budget`) | optional |
 | `BRC_TOOLS_{HERBIE,HRRR,MODIS,AQS,GOES,TERRAIN}_CACHE`, `BRC_TOOLS_BASEMAP_DIR`, `BRC_TOOLS_LOCK_DIR`, `BRC_TOOLS_HTTP_IPV4_ONLY` | cache/lock-dir overrides + CHPC IPv4 workaround; defaults live in each module (basemap staged once via `scripts/fetch_basemap.dtn.slurm`) | optional |
 
 All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var

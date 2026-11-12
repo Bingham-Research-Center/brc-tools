@@ -189,6 +189,12 @@ ne = [41.7, -107.8]
 sw = [39.05, -111.8]
 ne = [41.9, -107.4]
 
+# Soil/snow station sweeps: the wide box with the Wasatch cut off at 111.0 W, so the
+# Uinta crest and the Tavaputs rim are in and the Salt Lake / Provo sites are out.
+[regions.uinta_basin_east_of_wasatch]
+sw = [38.8, -111.0]
+ne = [41.7, -107.8]
+
 # The Green River watershed above Desolation Canyon -- Wind River and Wyoming Ranges to the
 # Book Cliffs, Wasatch Plateau to the Park Range and Flat Tops -- with a margin: every
 # surface from which air could drain to the Uinta Basin. The extent a "divide to divide"
@@ -2174,6 +2180,39 @@ hrrr = "SNOD:surface"
 gefs = "SNOD:surface"
 rrfs = "SNOD:surface"
 
+# ── Observation-only aliases (no .search table: no GRIB message is implied). ────
+# Synoptic names and units as the API reports them; convert at the daily-table
+# boundary (brc_tools.obs.daily), never here. Depth is sensor metadata, not an alias.
+# (snow_water_equiv already has an alias below, with its HRRR search.)
+
+[aliases.soil_temp]
+description    = "Soil temperature at a sensor depth (depth lives in the sensor metadata)"
+units          = "K"
+output_var     = "soil_temp"
+synoptic_name  = "soil_temp"
+synoptic_units = "C"
+
+[aliases.soil_moisture]
+description    = "Volumetric soil moisture; Synoptic reports % for SNOTEL/SCAN -- check UNITS per payload"
+units          = "m3 m-3"
+output_var     = "soil_moisture"
+synoptic_name  = "soil_moisture"
+synoptic_units = "%"
+
+[aliases.precip_accum]
+description    = "Accumulated precipitation since the gauge reset; cumulative -- difference it, never sum it"
+units          = "kg m-2"
+output_var     = "precip_accum"
+synoptic_name  = "precip_accum"
+synoptic_units = "mm"
+
+[aliases.solar_radiation]
+description    = "Downwelling shortwave at the surface"
+units          = "W m-2"
+output_var     = "solar_radiation"
+synoptic_name  = "solar_radiation"
+synoptic_units = "W/m**2"
+
 [aliases.cloud_cover_total]
 description = "Total cloud cover"
 units       = "%"
@@ -2628,7 +2667,7 @@ synoptic_units = "ppb"
 
 # ── Reserved prefixes (documentation only) ──────────────────────────────────
 # pm25_*, pm10_*, nox_*, co_*, so2_*, aod_*, refl_*, helicity_*,
-# uh_*, ltng_*, sw_down, lw_down, shf, lhf, soil_t_*, soil_m_*,
+# uh_*, ltng_*, sw_down, lw_down, shf, lhf,
 # ventrate, mxhgt
 
 # ── Defaults ────────────────────────────────────────────────────────────────

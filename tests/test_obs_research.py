@@ -248,3 +248,35 @@ def test_legacy_facade_remains_wide_without_live_import(monkeypatch):
     assert frame.height == 1 and "valid_time" in frame.columns
     assert "air_temp" in calls[0]["vars"]
     assert "temp_2m" in frame.columns or "temperature_2m" in frame.columns
+
+
+def test_station_hour_cap_is_a_bounded_parameter(tmp_path):
+    params = {"stid": ["KGCU1"], "vars": ["soil_temp"], "start": "2010-10-01T00:00:00+00:00", "end": "2015-10-01T00:00:00+00:00"}
+    # 43,848 station-hours: refused at the pilot default, accepted at the historical size
+    with pytest.raises(ValueError, match="station-hours"):
+        fetch("timeseries", params, archive=tmp_path, budget=None)
+    with pytest.raises(ValueError, match="1..100000"):
+        fetch("timeseries", params, archive=tmp_path, budget=None, max_station_hours=100_001)
+    # accepted size but nothing archived and no budget: the transport refuses (no network)
+    with pytest.raises(AttributeError):
+        fetch("timeseries", params, archive=tmp_path, budget=None, max_station_hours=50_000)
+
+
+def test_parse_false_replays_receipt_without_decoding(tmp_path, monkeypatch):
+    from brc_tools.obs import research
+    from brc_tools.obs.archive import digest, encode
+
+    params = {"stid": ["TEST"], "vars": ["air_temp"], "start": "2026-11-01T00:00:00+00:00", "end": "2026-11-02T00:00:00+00:00"}
+    path = preserve(tmp_path, payload(), "timeseries", params, {})
+    key = digest(encode(dict(service="timeseries", params=params, version=1)))
+    atomic(tmp_path / "requests" / f"{key}.json", encode({"receipt": str(path.relative_to(tmp_path))}))
+    assert research.request_key("timeseries", params) == key
+    assert research.receipt_of(tmp_path, "timeseries", params) == path
+    assert research.receipt_of(tmp_path, "timeseries", {**params, "vars": ["dew_point_temperature"]}) is None
+
+    def boom(*a, **k):
+        raise AssertionError("payload must not be decoded")
+
+    monkeypatch.setattr(research, "replay", boom)
+    r = fetch("timeseries", params, archive=tmp_path, budget=None, parse=False)
+    assert r.frame is None and r.payload is None and r.path == path and r.receipt["service"] == "timeseries"
