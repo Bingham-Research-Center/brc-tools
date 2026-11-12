@@ -200,6 +200,31 @@ and interpretation contracts.
 
 ---
 
+## brc_tools.hydro — Streamflow and snow-course records (token-free)
+
+Cache-first clients for two providers without a quota contract; the restraint is one
+request at a time, a pause between pages, raw pages written before parsing (with
+`.meta.json` sidecars), and derived parquet trusted only while its sidecar lists the
+same pages. Cache root: `BRC_HYDRO_CACHE`, else `~/.cache/brc-tools/hydro`.
+
+### nwis — USGS Water Data OGC API (`api.waterdata.usgs.gov`, the successor of the
+NWIS web services that close in February 2027)
+- `monitoring_locations(bbox, site_type_code="ST")` → sites with altitude (m), HUC and
+  drainage area (km2) converted from the API's feet and square miles.
+- `daily(site_id, parameter_code="00060", statistic_id="00003", start, end)` → daily
+  values with `value_m3s` for discharge; cursor paging, 5000 per page.
+- `water_year_summary(df, months=(4,5,6,7))` → volume, centroid date, peak per water year.
+
+### awdb — NRCS Air and Water Database REST (`wcc.sc.egov.usda.gov/awdbRestApi`)
+- `stations(states, networks=("SNTL","SCAN"), bbox=None)` → one cached request per
+  (state, network) with element lists narrowed to the six elements x DAILY (the API
+  rejects an unnarrowed element listing). `shef_id` is the Synoptic station id,
+  `data_time_zone` the station's data offset (-8 for SNOTEL).
+- `station_elements(stations)` → the authoritative sensor-depth table (`heightDepth`
+  inches below ground → `depth_cm`), which Synoptic's SNOTEL metadata lacks.
+- `daily(triplet, elements, begin, end)` → WTEQ/PREC mm, SNWD cm, STO/TOBS degC, SMS %,
+  with NRCS QC/QA flags.
+
 ## WRF & figure-engine modules (index)
 
 One-line map of the WRF-era modules; each row's owning doc carries the detail.
@@ -255,16 +280,41 @@ raw value, QC and sensor metadata stay attached. Existing `timeseries()` remains
 unchanged, including its historical pivot/alias behavior; it is not the research
 archive interface.
 
+`brc_tools.obs.research.fetch(..., max_station_hours=5000, parse=True)` bounds one
+time-series request (the pilot's 5000 by default, Synoptic's 100,000 at most) and,
+with `parse=False`, returns the receipt and path without decoding the payload -- a
+five-water-year hourly station is a few hundred thousand cells, which the one-dict-
+per-cell long frame would not survive on a small host. `request_key` and `receipt_of`
+expose the archive's request index.
 `brc_tools.obs.research.result(receipt)` replays without network or credentials.
+
+`brc_tools.obs.coverage` reads an archive back: `build_index(archive)` writes
+`coverage/windows.parquet` (one row per request x station: window and variables asked)
+and `coverage/index.parquet` (one row per station x sensor x UTC day: values and QC
+flags returned), incrementally and one object at a time. `plan_requests(stations,
+start_wy, end_wy, vars_for=...)` lists the water-year blocks not yet spanned by an
+archived window that asked for those variables; an empty answer is a legitimate answer
+and is not re-asked. `coverage_report` fills a station x water-year x variable grid.
+
+`brc_tools.obs.daily.build_daily(archive, out_dir, day_basis=("utc", "mst"))` is the
+time-zone boundary: per station parquet tables of daily n/mean/min/max per sensor, QC-
+flagged values dropped under a named policy and counted, the payload's unit kept verbatim
+beside an SI conversion through `obs.units.convert`, `mst` meaning fixed UTC-7. Part
+files per archived object make it resumable; overlapping windows keep the later request.
 Generic metadata conversion returns SI elevations while retaining original metadata.
 `brc_tools.obs.units.convert` uses declared units and returns explicit unsupported
 unit status. It never guesses pressure units from values.
 
 `brc_tools.obs.budget.Budget` is for a dedicated, single-threaded subprocess. Its
 transport context wraps the libraries' existing Requests transport, including
-SynopticPy's import-time token check. Defaults: at most eight requests per provider
-and batch, one in flight, 30 seconds after each completed request, 10/60 second
-connect/read timeouts, and no retries or automatic redirects. Request outcomes,
+SynopticPy's import-time token check. It carries a named **tier**: `pilot` (default;
+at most eight requests per provider and batch) or `historical` (at most 60 per batch
+and 300 per rolling 24 h, counted across every batch in the ledger). Both keep one
+request in flight, 30 seconds after each completed request, 10/60 second connect/read
+timeouts, and no retries or automatic redirects. `headroom()` reports what is left in
+the batch and the window without taking the lock; `acknowledge_empty_probe(reason)`
+clears a stop caused only by a *no data* answer (HTTP 200, RESPONSE_CODE 2, no quota
+wording), the case of a probe into history the token does not cover. Request outcomes,
 including crashes and rejected responses, are persistent. Authorization, quota,
 HTTP errors and payload errors stop acquisition. A reviewed redirect can be
 acknowledged explicitly without resetting counts; this cannot clear other failures.

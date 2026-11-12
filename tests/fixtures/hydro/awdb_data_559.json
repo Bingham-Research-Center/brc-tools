@@ -1,0 +1,313 @@
+[
+{
+"stationTriplet": "559:UT:SNTL",
+"data": [
+{
+"stationElement": {
+"elementCode": "PREC",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "in",
+"originalUnitCode": "in",
+"beginDate": "1978-10-01 00:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 5.3,
+"qcFlag": "E"
+},
+{
+"date": "2015-04-02",
+"value": 5.4,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 5.4,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "SMS",
+"ordinal": 1,
+"heightDepth": -2,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "pct",
+"originalUnitCode": "pct",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 25.1,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 24.8,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 25.0,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "SMS",
+"ordinal": 1,
+"heightDepth": -8,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "pct",
+"originalUnitCode": "pct",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 28.5,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 28.5,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 28.7,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "SMS",
+"ordinal": 1,
+"heightDepth": -20,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "pct",
+"originalUnitCode": "pct",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 16.3,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 16.2,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 15.7,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "SNWD",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "in",
+"originalUnitCode": "in",
+"beginDate": "1998-06-17 13:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 0,
+"qcFlag": "E"
+},
+{
+"date": "2015-04-02",
+"value": 3,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 3,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "STO",
+"ordinal": 1,
+"heightDepth": -2,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 38,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 34,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 35,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "STO",
+"ordinal": 1,
+"heightDepth": -8,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 40,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 36,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 36,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "STO",
+"ordinal": 1,
+"heightDepth": -20,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 38,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 36,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 36,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "TOBS",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2005-06-22 19:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 27.0,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 19.9,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 18.7,
+"qcFlag": "V"
+}
+]
+},
+{
+"stationElement": {
+"elementCode": "WTEQ",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "in",
+"originalUnitCode": "in",
+"beginDate": "1978-10-01 00:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+"values": [
+{
+"date": "2015-04-01",
+"value": 0.0,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-02",
+"value": 0.9,
+"qcFlag": "V"
+},
+{
+"date": "2015-04-03",
+"value": 0.9,
+"qcFlag": "E"
+}
+]
+}
+]
+}
+]

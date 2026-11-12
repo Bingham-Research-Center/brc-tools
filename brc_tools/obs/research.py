@@ -16,6 +16,11 @@ import polars as pl
 from .archive import atomic, digest, encode, preserve, replay
 from .budget import AcquisitionStopped
 
+#: Synoptic's documented hard cap for one Time Series request (station count x hours).
+MAX_STATION_HOURS = 100_000
+#: The pilot default; a historical pull passes a larger ``max_station_hours``.
+DEFAULT_STATION_HOURS = 5000
+
 SCHEMA = {
     "stid": pl.String,
     "time": pl.Datetime("us", "UTC"),
@@ -146,7 +151,9 @@ def result(path):
     return SynopticResult(payload, frame, receipt, Path(path))
 
 
-def fetch(service, params, *, archive, budget):
+def normalize_params(service, params):
+    """The request parameters as the archive keys them: credentials refused, explicit
+    station and variable lists required for a time series, times as UTC ISO strings."""
     if service not in {"metadata", "networks", "timeseries"}:
         raise ValueError("unsupported service")
     params = dict(params)
@@ -158,16 +165,58 @@ def fetch(service, params, *, archive, budget):
         if not params.get("stid") or not params.get("vars"):
             raise ValueError("explicit station and variable lists required")
         start, end = utc(params["start"]), utc(params["end"])
-        hours = (end - start).total_seconds() / 3600
-        if hours <= 0 or hours * len(params["stid"]) > 5000:
-            raise ValueError(
-                "pilot request exceeds 5000 station-hours or has invalid window"
-            )
         params.update(start=start.isoformat(), end=end.isoformat())
+    return params
+
+
+def request_key(service, params):
+    """The archive's request index key (``requests/<key>.json``) for a request."""
+    params = normalize_params(service, params)
+    return digest(encode({"service": service, "params": params, "version": 1}))
+
+
+def receipt_of(archive, service, params):
+    """The receipt path an identical earlier request left in the archive, or None."""
+    index = Path(archive) / "requests" / f"{request_key(service, params)}.json"
+    if not index.exists():
+        return None
+    return Path(archive) / json.loads(index.read_text())["receipt"]
+
+
+def fetch(
+    service,
+    params,
+    *,
+    archive,
+    budget,
+    max_station_hours=DEFAULT_STATION_HOURS,
+    parse=True,
+):
+    """Replay an identical archived request, else fetch once under ``budget``.
+
+    ``max_station_hours`` bounds one time-series request (stations x hours); the
+    default is the pilot's 5000 and the ceiling is Synoptic's 100,000. ``parse=False``
+    skips the long-frame parse (one Python dict per observation), which a 5-year hourly
+    station request would not survive on a small host; the receipt and path still come
+    back and ``result(path)`` parses later if wanted.
+    """
+    params = normalize_params(service, params)
+    if service == "timeseries":
+        if not 1 <= max_station_hours <= MAX_STATION_HOURS:
+            raise ValueError(
+                f"max_station_hours must lie in 1..{MAX_STATION_HOURS} (Synoptic's cap)"
+            )
+        start, end = utc(params["start"]), utc(params["end"])
+        hours = (end - start).total_seconds() / 3600
+        if hours <= 0 or hours * len(params["stid"]) > max_station_hours:
+            raise ValueError(
+                f"request exceeds {max_station_hours} station-hours or has an invalid window"
+            )
     key = digest(encode({"service": service, "params": params, "version": 1}))
     index = Path(archive) / "requests" / f"{key}.json"
     if index.exists():
-        return result(Path(archive) / json.loads(index.read_text())["receipt"])
+        path = Path(archive) / json.loads(index.read_text())["receipt"]
+        return result(path) if parse else unparsed(path)
     with (
         budget.transport(),
         contextlib.redirect_stdout(io.StringIO()),
@@ -195,4 +244,11 @@ def fetch(service, params, *, archive, budget):
         }
         path = preserve(archive, req.json, service, params, versions)
         atomic(index, encode({"receipt": str(path.relative_to(archive))}))
-    return result(path)
+    return result(path) if parse else unparsed(path)
+
+
+def unparsed(path):
+    """A SynopticResult carrying only the receipt and its path (no payload decode)."""
+    path = Path(path)
+    receipt = json.loads(path.read_bytes())
+    return SynopticResult(None, None, receipt, path)
