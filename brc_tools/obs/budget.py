@@ -102,9 +102,10 @@ class Budget:
             if e.get("utc_epoch", 0) >= cutoff
         ]
 
-    def headroom(self):
+    def headroom(self, want=1):
         """(left in this batch, left in the rolling window, seconds until the window
-        frees one request). Read-only; takes no lock; None where no cap applies."""
+        has room for ``want`` more requests). Read-only; takes no lock; the window
+        figures are None / 0.0 where no rolling cap applies."""
         state = self._read()
         in_batch = len(state["batches"].get(self.batch, []))
         left_batch = max(self.maximum - in_batch, 0)
@@ -112,12 +113,13 @@ class Budget:
             return left_batch, None, 0.0
         recent = sorted(e["utc_epoch"] for e in self._recent(state))
         left_window = max(self.rolling_cap - len(recent), 0)
-        if left_window > 0:
+        if left_window >= want:
             return left_batch, left_window, 0.0
-        # The oldest request inside the window frees the first slot.
-        oldest = recent[len(recent) - self.rolling_cap]
-        wait = oldest + 3600.0 * self.rolling_hours - self.clock()
-        return left_batch, 0, max(wait, 0.0)
+        # The k-th oldest request inside the window must expire first, k = the shortfall.
+        shortfall = want - left_window
+        k = min(shortfall, len(recent))
+        wait = recent[k - 1] + 3600.0 * self.rolling_hours - self.clock()
+        return left_batch, left_window, max(wait, 0.0)
 
     # -- operator reviews ---------------------------------------------------------
 

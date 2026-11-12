@@ -97,8 +97,10 @@ def test_rolling_window_counts_every_batch_and_frees_with_time(tmp_path, monkeyp
     # the stop was raised before a request was recorded, so the ledger is not 'stopped'
     state = json.loads((tmp_path / "synoptic.json").read_text())
     assert state["stopped"] is None and len(state["batches"]["new"]) == 1
+    # room for a whole batch of 60 needs the 60th-oldest in-window request to expire: 1 h away
+    assert b.headroom(want=60)[2] == pytest.approx(3600.0)
     now[0] += 3600.0 * 1.5  # the 299 entries at -23 h are now -24.5 h: window frees
-    assert b.headroom()[1] == 299
+    assert b.headroom()[1] == 299 and b.headroom(want=60)[2] == 0.0
     with b.transport():
         requests.get(URL)
 
