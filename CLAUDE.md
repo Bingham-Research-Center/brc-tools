@@ -5,8 +5,18 @@ observations (SynopticPy) and NWP model data (Herbie) on CHPC; pushes
 JSON to the BasinWX website. Package: **`brc_tools`** (underscore).
 Repo: **`brc-tools`** (hyphen).
 
+**Scope — this is the method library, not an operations repo.** brc-tools
+supplies the functions other repos call; BasinWX operations live in
+`ubair-website`, the pelican2013 study in `latex-jrl-mjd-mdpiair-2026`.
+BasinWX development leans on this repo heavily right now, and the CHPC obs
+cron imports this working tree directly — that is a deployment coupling to
+keep clean (stay on `main`, never dirty; feature work in a worktree), not a
+reason to treat brc-tools as BasinWX's operational folder. Operational
+config, secrets, deploys, and site behaviour belong to their own repos and
+hosts (`docs/CHPC-REFERENCE.md`, `docs/WEBSITE-INTEGRATION.md`).
+
 ## Current focus
-- **pelican2013 manuscript support** (final-draft push lives in `latex-jrl-mjd-mdpiair-2026`): figure engine + X8 deficit-transport diagnostics merged; the study's evidence packet pins an exact brc-tools SHA — treat `wrf_figures.py`/`wrf_output.py`/`visualize/*` as frozen unless the study repo asks.
+- **pelican2013 manuscript support**: the study (`latex-jrl-mjd-mdpiair-2026`) pins an exact brc-tools SHA — treat `wrf_figures.py`/`wrf_output.py`/`visualize/*` as frozen unless the study repo asks.
 - HRRR/RRFS → BasinWX operational ingest (GH #10). Strategy/status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures): `docs/CASE-STUDY-GUIDE.md`.
 - **WRF-input staging**: GRIB → scratch manifests/contracts for `brc-wrf`. Status, division of labour, cold-start SSOT: `docs/WRF-STAGING-STATE-PLAYBOOK.md`.
@@ -15,15 +25,18 @@ Repo: **`brc-tools`** (hyphen).
 ## Repo map
 ```
 brc_tools/        installable package
-  nwp/            NWPSource (Herbie), lookups.toml, staging/alignment/derived, and the WRF adapters + diagnostics (wrf_*, convective_env, forecast_funnel) — module-by-module: docs/API-REFERENCE.md
-  obs/            ObsSource (SynopticPy wrapper), scanner (event detection)
+  nwp/            NWPSource (Herbie), lookups.toml, staging/alignment/derived, WRF adapters + diagnostics — module-by-module: docs/API-REFERENCE.md
+  obs/            ObsSource (SynopticPy wrapper), scanner (event detection), profiles (stations as theta-height profiles, drainage metrics) — docs/EVENT-DIAGNOSTICS.md
   verify/         deterministic metrics (paired_scores, RMSE/bias/MAE)
-  visualize/      planview/timeseries panels; grid.py (brc-wrf seam); figure-engine, WRF-curtain, tracer-origin and time-height modules — see docs/API-REFERENCE.md
+  visualize/      planview/timeseries panels; grid.py (brc-wrf seam); figure/curtain/tracer/time-height modules — docs/API-REFERENCE.md
   download/       Synoptic obs script, push_data uploader, HRRR helpers
-  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB) + aqs (EPA AQS AirData bulk), both auth-free
-  radar/          4/3-Earth beam geometry + observed radar: iem.py (Level-III from Iowa State RIDGE — the route that works for historical cases) and nexrad.py (Level-II via MetPy). Observations, not NWP — sibling of satellite/
-  satellite/      MODIS context imagery (NASA CMR timing + GIBS corrected reflectance, cached, provenance sidecars)
-  utils/          lookups, small helpers
+  api/            external API clients: FlightAware, FR24, Perplexity, Mistral (shared _auth); soundings (IGRA2/Wyoming RAOB) + aqs (EPA AQS bulk), both auth-free
+  radar/          observed radar (not NWP): iem.py (Level-III via Iowa State RIDGE — the route that works for historical cases), nexrad.py (Level-II via MetPy), 4/3-Earth beam geometry
+  satellite/      MODIS context imagery (NASA CMR timing + GIBS corrected reflectance, cached, provenance sidecars); goes.py: GOES ABI L2 over HTTPS with parallax
+  utils/          lookups, small helpers, solar (sun times; nights that are one night long)
+  terrain/        D8 catchments, basin floors, perpendicular gate lines on USGS 3DEP; sills, throats, model-grid terrain (optional extra `terrain`, env terrain-2026) — docs/TERRAIN-D8.md, docs/TERRAIN-THROATS.md
+  drainage/       idealised cold-air drainage theory on that geometry (cooling, slope flow, throat hydraulics, basin cascade; numpy only) — docs/DRAINAGE-THEORY.md
+  flow/           idealised stratified flow over that geometry (linear mountain waves on a DEM, layered lee waves, layer hydraulics, pool seiches and soft-boundary response) — docs/FLOW-THEORY.md
 scripts/          operational scripts + case studies
 docs/             canonical project docs (see Doc map below)
   walkthroughs/   plain-language per-tool guides + glossary
@@ -36,17 +49,24 @@ figures/          generated output (gitignored)
 - `docs/README.md` — index of `docs/` (mirrors this map)
 - `docs/API-REFERENCE.md` / `docs/API-CLIENTS.md` — module reference / external API-client helpers
 - `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script
-- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload)
+- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload), Synoptic-token rotation surface
 - `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
 - `docs/ENVIRONMENT-SETUP.md` — conda/venv setup · `docs/CROSS-REPO-SYNC.md` — sibling-repo sync protocol
 - `docs/MODIS-CONTEXT-RENDERER.md` — portable NASA CMR/GIBS MODIS timing, rendering, cache, and provenance workflow
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-staging cold-start SSOT**, summary + full detail in one doc; two-stream draft `docs/WRF-GEFS-NAM-FIELD-MAP.md` (parked)
-- `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`brc_tools/nwp/wrf_figures.py` + `scripts/wrf_figures.py --config <case.toml>`). Per-study case TOMLs + the run/figure inventory live in the active study repo; SSOT index → `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`
-- `docs/WRF-WINDS.md` — the winds engine (`scripts/wrf_winds.py --config <case.toml>`; `/wrf-basin-winds` skill): five `--figure` families (`topdown`, `section`, `profile`, `view3d`, `tracers`) plus the separate tslist time–height engine `scripts/wrf_timeheight.py` — the family that answers *when*. **SSOT for `w_exag` and section fill/sign conventions** — defer to it, never restate. Per-case TOMLs live in the repo owning the case.
-- `docs/WRF-CONVECTIVE.md` — the convective engine (`scripts/wrf_convective.py --config <case.toml>`; `/wrf-convective` skill), third engine distinct from both above: reflectivity **sampled on a real WSR-88D's beam surfaces** with the observed IEM Level-III scan beside it, a derived `meso` family, MetPy parcel/shear/hodograph products, `auxhist` + `tslist` access. Observed-radar transport: `docs/nwp/NWP-SOURCE-MATRIX.md`.
-- `docs/FORECAST-FUNNEL.md` — NAM "forecast funnel" synoptic montage (`brc_tools/nwp/forecast_funnel.py` + `brc_tools/visualize/funnel.py` + `scripts/forecast_funnel.py`); `/basin-forecast-funnel` skill. NAM source auto-picks by init date (Herbie recent / NCEI pre-2017).
-- `docs/VISUAL-SUITE-SOP.md` — **how to produce a suite of WRF visuals, and the ways it goes wrong.** Engine-agnostic procedure (pick engine by question → smoke-test EVERY family at one time → narrow with `--figure`/`--domain`/`--start`/`--end` → DTN → check `.err` → promote keepers), plus the errors already found and fixed and the gaps still open. Read before a first sweep on a new case.
+- `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`scripts/wrf_figures.py --config <case.toml>`); per-case TOMLs + run/figure inventory live in the study repo owning the case (all three engines)
+- `docs/WRF-WINDS.md` — winds engine (`scripts/wrf_winds.py`; `/wrf-basin-winds` skill): five `--figure` families + the tslist time–height engine `scripts/wrf_timeheight.py`. **SSOT for `w_exag` and section fill/sign conventions — defer to it, never restate.**
+- `docs/WRF-CONVECTIVE.md` — convective engine (`scripts/wrf_convective.py`; `/wrf-convective` skill), third engine distinct from both above: reflectivity on a real WSR-88D's beam surfaces beside the observed IEM Level-III scan, `meso` family, MetPy parcel/shear products
+- `docs/TERRAIN-D8.md` — `brc_tools.terrain`: D8 routing, floors/rims/cuts, gate rules, validation; runs in `terrain-2026` via `scripts/terrain_pipeline.slurm`
+- `docs/TERRAIN-THROATS.md` — the rest of `brc_tools.terrain`: closed depressions, `sill_between`, minimum-cut throats, reach sections, `geo_em` on a `Grid` (and the geogrid seam cell: `LANDMASK` must be 0 or 1), slope limiting, river carving, matching catchments across grids, `[sinks.*]`
+- `docs/DRAINAGE-THEORY.md` — `brc_tools.drainage`: what each closure assumes (surface energy balance, Prandtl, layer drag balance, reduced-gravity hydraulics, the basin cascade); arithmetic on assumptions, never a measurement
+- `docs/FLOW-THEORY.md` — `brc_tools.flow`: linear and layered mountain waves, one-layer hydraulics, trapped-wave criteria, pool seiches and the soft-boundary pool; what each closure assumes
+- `docs/EVENT-DIAGNOSTICS.md` — `obs.profiles`, `satellite.goes`, `utils.solar`: a past night from stations, GOES LST and the sun
+- `docs/WRF-TRAJECTORIES.md` — `nwp.wrf_trajectories`: offline back/forward trajectories in model-index space
+- `docs/DEFICIT-REFERENCE.md` — the sunset-profile datum for heat-deficit budgets (`nwp.wrf_deficit_reference`), the two-datum error bar and the `theta_ref_*.json` sidecar consumed by brc-voxel-viz
+- `docs/FORECAST-FUNNEL.md` — NAM "forecast funnel" synoptic montage (`scripts/forecast_funnel.py`; `/basin-forecast-funnel` skill); NAM source auto-picks by init date
+- `docs/VISUAL-SUITE-SOP.md` — **how to produce a suite of WRF visuals, and the ways it goes wrong**; engine-agnostic procedure + known failure modes. Read before a first sweep on a new case.
 - `WISHLIST-TASKS.md` — prioritised backlog
 
 When editing a topic, edit its canonical doc above; do not duplicate into CLAUDE.md.
@@ -54,7 +74,7 @@ When editing a topic, edit its canonical doc above; do not duplicate into CLAUDE
 ## Key data-flow anchor (load-bearing — verify before changing)
 `brc_tools.download.push_data.send_json_to_server(server_address, fpath, file_data, API_KEY)`
 POSTs `multipart/form-data` to `{server_address}/api/upload/{file_data}`
-with headers `x-api-key` (32-char hex from `DATA_UPLOAD_API_KEY`) and
+with headers `x-api-key` (32–128-char hex from `DATA_UPLOAD_API_KEY`) and
 `x-client-hostname` (must end `.chpc.utah.edu`). Server URL resolves
 `BASINWX_API_URLS` (env, comma-sep for fan-out) → `~/.config/ubair-website/website_urls`
 → `website_url` (legacy). Health: `/api/health`.
@@ -93,11 +113,11 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 |-----|---------|-----------|
 | `DATA_UPLOAD_API_KEY` | BasinWX upload auth | for uploads |
 | `BASINWX_API_URLS` | BasinWX upload URL(s), comma-sep fan-out; overrides `~/.config/ubair-website/website_url(s)` | optional |
-| `SYNOPTIC_TOKEN` | Synoptic obs (also via `~/.config/SynopticPy/config.toml`) | for obs |
+| `SYNOPTIC_TOKEN` | Synoptic obs. Unset on CHPC — the token lives in `~/.config/SynopticPy/config.toml` (0600); rotation surface in `docs/CHPC-REFERENCE.md` | for obs |
 | `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI (`api/` clients) | aviation only |
 | `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
-| `BRC_TOOLS_{HERBIE,HRRR,MODIS,AQS}_CACHE`, `BRC_TOOLS_BASEMAP_DIR`, `BRC_TOOLS_LOCK_DIR`, `BRC_TOOLS_HTTP_IPV4_ONLY` | cache/lock-dir overrides + CHPC IPv4 workaround; defaults live in each module (basemap staged once via `scripts/fetch_basemap.dtn.slurm`) | optional |
+| `BRC_TOOLS_{HERBIE,HRRR,MODIS,AQS,GOES,TERRAIN}_CACHE`, `BRC_TOOLS_BASEMAP_DIR`, `BRC_TOOLS_LOCK_DIR`, `BRC_TOOLS_HTTP_IPV4_ONLY` | cache/lock-dir overrides + CHPC IPv4 workaround; defaults live in each module (basemap staged once via `scripts/fetch_basemap.dtn.slurm`) | optional |
 
 All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var
 only** today (the helper also accepts an optional `~/.config/<svc>/api_key` fallback, but
@@ -114,7 +134,7 @@ Use the dedicated **`brc-tools-2026`** env — fresh setup and the CHPC pip flag
 with no editable install; the failure only surfaces later in `brc-wrf`/`clyfar`.
 
 ## Related repos
-- `ubair-website` — Node.js receiver for uploads (data contract).
+- `ubair-website` — **owns BasinWX operations** (site, deploys, its own Synoptic token); Node.js receiver for our uploads (data contract).
 - `clyfar` — ozone forecast; imports `brc_tools.download.push_data`.
 - `brc-wrf` — WRF runs; consumes brc-tools staging (`manifest`/`contract` sidecars) + imports `brc_tools.visualize.grid`.
 - `latex-jrl-mjd-mdpiair-2026` — **active** pelican2013 WRF study + manuscript; owns the case TOMLs (`verification/config/figures/`) + run/figure inventory (SSOT for run/figure locations), consumes the brc-tools figure engine.

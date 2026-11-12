@@ -111,8 +111,11 @@ Not an NWP source and deliberately **not** a `[models.*]` entry, so
 `tests/test_source_matrix.py` does not police it — but the wheel-check is recorded
 here because the convention is to write the decision down.
 
-Herbie is an NWP-archive library; it has no radar templates, so there is nothing to
-reuse and a direct fetch is the only option. `brc_tools/radar/nexrad.py` does it with
+Herbie is an NWP-archive library. Its one radar template, `herbie/models/nexrad.py`
+(2026.3.0), is a 2021 stub its author calls "just playing around": it needs the scan's
+exact second (no nearest-time search) and points only at the AWS `noaa-nexrad-level2`
+bucket, which refuses anonymous access (table below). So there is nothing to reuse and a
+direct fetch is the only option. `brc_tools/radar/nexrad.py` does it with
 `requests` plus `metpy.io.Level2File` (which decodes Archive II including its internal
 BZ2 chunks) — **no new dependency**. `pyart`, `nexradaws` and `boto3` were all
 considered and none installed.
@@ -145,6 +148,30 @@ resampled by the NWS product generator onto a regular lat/lon grid, so this is n
 raw polar data; and the velocity product (`N0S`) is fetchable but its index scaling
 is **not** verified in `iem.py`, which refuses it rather than returning unscaled
 indices labelled m/s.
+
+## Out of Herbie's scope: GOES-R ABI (satellite)
+
+Not NWP and not a `[models.*]` entry either; recorded for the same reason as radar.
+
+Herbie has no GOES templates: `herbie/models/` in 2026.3.0 holds NWP sources (and
+`nexrad`), and the only GOES products it lists are NWP *simulated* imagery (`gfs`
+`goesimpgrb2`, `nam` `goes218`). The wheel for real ABI files is Blaylock's other package,
+**goes2go**, which reads the same public buckets through `s3fs`. Checked 2026-10-06 with the
+env python: **not installed** in `brc-tools-2026` (`import goes2go` → `ModuleNotFoundError`;
+`s3fs` and `boto3` absent too).
+
+`brc_tools/satellite/goes.py` therefore fetches directly over HTTPS from the public
+`noaa-goes16` … `noaa-goes19` buckets with `requests` -- **no new dependency** -- because it
+needs only an S3 `ListObjectsV2` listing of one product-hour prefix and single-file GETs.
+Navigation and parallax use the file's own `goes_imager_projection`, so nothing from
+goes2go's navigation or plotting layer is wanted. Which bucket a scan date maps to is
+`goes.OPERATIONAL` (West: GOES-17 from 2019-02-12, GOES-18 from 2023-01-04; East: GOES-16
+from 2017-12-18, GOES-19 from 2025-04-07); a date with no GOES-R ABI raises. No live bucket
+probe was run for this entry.
+
+**Revisit** if a case needs what goes2go already does and `goes.py` does not -- L1b
+radiances and RGB composites, mesoscale-sector selection, many products or long time series
+at once -- by adding goes2go to the env rather than growing `goes.py`.
 
 ## Enforcement
 

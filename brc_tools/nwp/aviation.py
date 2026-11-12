@@ -159,7 +159,16 @@ def _clean_dataset(ds: xr.Dataset) -> xr.Dataset:
     elif "valid_time" in ds.coords:
         ds = ds.rename({"valid_time": "time"})
     if "time" in ds.coords and "time" not in ds.dims:
-        ds = ds.expand_dims("time")
+        if ds["time"].ndim == 1:
+            # subh: the array dimension is `step` (4 x 15-min per hour) and the
+            # renamed `time` is a 1-D coord varying along it, so the axis needs
+            # swapping onto time, not a new length-1 axis bolted on. expand_dims
+            # here raised "time already exists as coordinate or variable name"
+            # and no crosswind file has ever been produced.
+            ds = ds.swap_dims({ds["time"].dims[0]: "time"})
+        else:
+            # sfc: scalar valid_time, so promote it to a real length-1 axis.
+            ds = ds.expand_dims("time")
     return ds
 
 

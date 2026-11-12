@@ -8,20 +8,17 @@ Usage:
 
 Requires:
     - DATA_UPLOAD_API_KEY environment variable
-    - ~/.config/ubair-website/website_url file with server URL
+    - upload URLs from BASINWX_API_URLS or ~/.config/ubair-website/website_urls
+      (first URL is the primary; the rest are best-effort mirrors)
 
 John Lawson, December 2025
 """
 import argparse
-import os
 import re
-import socket
 import sys
 from pathlib import Path
 
-import requests
-
-from .push_data import load_config
+from .push_data import load_config_urls, send_json_to_all
 
 
 def validate_outlook_filename(filepath: Path) -> bool:
@@ -50,52 +47,6 @@ def validate_outlook_content(filepath: Path) -> bool:
         return True
     except Exception as e:
         print(f"WARNING: Could not validate content: {e}")
-        return False
-
-
-def send_markdown_to_server(server_url: str, fpath: Path, api_key: str) -> bool:
-    """Upload markdown file to /api/upload/outlooks endpoint."""
-    endpoint = f"{server_url}/api/upload/outlooks"
-    hostname = socket.getfqdn()
-
-    headers = {
-        'x-api-key': api_key,
-        'x-client-hostname': hostname
-    }
-
-    # Health check first
-    try:
-        health_response = requests.get(f"{server_url}/api/health", timeout=10)
-        if health_response.status_code != 200:
-            print(f"WARNING: Health check returned {health_response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"WARNING: Health check failed: {e}")
-        # Continue anyway - health endpoint might not exist
-
-    # Upload file
-    print(f"Uploading {fpath.name} to {endpoint}...")
-    try:
-        with open(fpath, 'rb') as f:
-            files = {'file': (fpath.name, f, 'text/markdown')}
-            response = requests.post(
-                endpoint,
-                files=files,
-                headers=headers,
-                timeout=30,
-            )
-
-        if response.status_code == 200:
-            print(f"Successfully uploaded {fpath.name}")
-            print(f"Outlook should appear at: {server_url}/forecast_outlooks")
-            return True
-        else:
-            print(f"Upload failed ({response.status_code}): {response.text}")
-            return False
-    except requests.exceptions.Timeout:
-        print(f"Upload timed out after 30 seconds")
-        return False
-    except requests.exceptions.RequestException as e:
-        print(f"Upload error: {e}")
         return False
 
 
@@ -134,17 +85,23 @@ def main():
 
     # Load config
     try:
-        api_key, server_url = load_config()
+        api_key, server_urls = load_config_urls()
     except (ValueError, FileNotFoundError) as e:
         print(f"ERROR: Configuration error: {e}")
         print("\nSetup required:")
         print("  1. Set DATA_UPLOAD_API_KEY environment variable")
-        print("  2. Create ~/.config/ubair-website/website_url with server URL")
+        print("  2. Set BASINWX_API_URLS or create "
+              "~/.config/ubair-website/website_urls with the upload URL(s)")
         sys.exit(1)
 
-    # Upload
-    success = send_markdown_to_server(server_url, fpath, api_key)
-    sys.exit(0 if success else 1)
+    # Upload: primary must succeed; mirrors are best-effort.
+    try:
+        send_json_to_all(server_urls, str(fpath), "outlooks", api_key)
+    except RuntimeError as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
+    print(f"Outlook should appear at: {server_urls[0]}/forecast_outlooks")
+    sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -247,12 +247,16 @@ def export_latest_surface_layers(
     written_paths.append(index_path)
 
     if upload:
-        from brc_tools.download.push_data import load_config_urls, send_json_to_all
+        from brc_tools.download.push_data import (load_config_urls,
+                                                  send_bundle_to_all)
 
         api_key, config_urls = load_config_urls()
         urls = [server_url] if server_url else config_urls
-        for path in written_paths:
-            send_json_to_all(urls, str(path), upload_bucket, api_key)
+        # written_paths ends with the index, and send_bundle_to_all drops any
+        # host that already failed a run file -- so a host never gets an index
+        # advertising run files it rejected.
+        send_bundle_to_all(urls, [str(p) for p in written_paths],
+                           upload_bucket, api_key)
 
     return written_paths
 
