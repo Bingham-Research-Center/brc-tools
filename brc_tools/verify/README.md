@@ -1,9 +1,12 @@
-# Verification
-Evaluation of forecasts, etc., can be done with methods in this directory.
+# Forecast verification
 
-The information gain evaluation can be done with `infogain.py` using the class `InfoGain`, probably, eventually...
+For station and waypoint errors (bias, MAE, RMSE and correlation), use the
+[deterministic verification walkthrough](../../docs/walkthroughs/verify.md).
+The experimental `infogain.py` module implements a separate information-gain method.
 
-TODO:
-- [ ] Add more documentation on how to use the scripts
-- [ ] Add more methods for verification (Brier?)
-- [ ] Add integration with visualisations 
+For Clyfar ozone possibilities, follow the [scorecard manuscript’s current
+handoff](https://github.com/Bingham-Research-Center/forecast-verification-scorecard/blob/main/docs/clyfar-scoring.md).
+The manuscript owns the equations, reference evaluator and synthetic checks.
+The seasonal evaluation maintains the ozone adapter and records the method
+commit and evaluator hash. Keep shared transport, data access and deterministic
+verification here. Route changes to possibility scoring through the manuscript.
