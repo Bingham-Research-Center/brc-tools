@@ -795,7 +795,10 @@ reference_stid = "UTFRT"
 lat = 40.163
 lon = -110.402
 elevation_m = 1684
-reference_stid = "COOPDSNU1"
+# KU69 (Duchesne Municipal Airport, 3 km NE of town, ~90 m higher), not COOPDSNU1: the
+# COOP station reports once a day at most and sent nothing in 25 h on 2026-11-20, so the
+# hourly forecast had no measured trace. KU69 is also road-forecast's Duchesne station.
+reference_stid = "KU69"
 
 [waypoints.myton]
 lat = 40.193
