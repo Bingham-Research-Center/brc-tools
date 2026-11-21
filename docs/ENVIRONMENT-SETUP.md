@@ -45,7 +45,7 @@ repo root — it mirrors `pyproject.toml` and tracks a current Herbie release:
 mamba env create -f environment.yml   # creates env "brc-tools-2026"
 conda activate brc-tools-2026
 pip install -e . --no-deps            # install brc_tools itself (deps already solved)
-pytest tests/                          # validated 2026-07-27: 253 passed, 2 skipped on herbie 2026.3.0
+pytest tests/                          # 2026-11-20: 1052 passed, 11 skipped (herbie 2026.3.0 and 2026.10.0)
 ```
 
 On CHPC that `pip install -e .` needs two extra flags — `--no-build-isolation` (pypi.org is
@@ -63,6 +63,22 @@ an `ImportError` in `brc-wrf` or `clyfar` (both import `brc_tools` from their ow
 ```bash
 cd /tmp && python -c "import brc_tools, brc_tools.visualize.grid, brc_tools.download.push_data"
 ```
+
+**Two envs exist side by side on CHPC** (state 2026-11-20):
+
+| Env | Herbie | SynopticPy | polars / numpy / pandas | Runs |
+|---|---|---|---|---|
+| `brc-tools-2026` | 2026.3.0 | 2026.6.0 | 1.42 / 2.5.0 / 3.0.3 | the four HRRR crons, ub-wx, brc-wrf, the pelican2013 manuscript pin. **Do not upgrade in place.** |
+| `brc-tools-2026-11` | 2026.10.0 | 2026.10.0 | 2.1.0 / 2.5.5 / 3.1.1 | nothing yet. Built from `environment.yml` with the two Blaylock packages at their current releases; `brc_tools` installed editable. |
+
+`brc-tools-2026-11` is the only env that can fetch RRFS (the operational bucket needs
+Herbie ≥ 2026.9.2). `pytest tests/` there: **1052 passed, 11 skipped** on 2026-11-20, the
+same as `brc-tools-2026`, so the suite holds on polars 2. A live Synoptic pull was not
+exercised on it. **Activate it** (`conda activate`), do not call its `bin/python` bare:
+conda-forge's pyproj finds its database through `PROJ_DATA`, which only activation sets,
+and 25 tests fail with `proj_create: no database context specified` without it. The cron
+wrappers activate already. Moving a cron onto it is an ops decision:
+`docs/BRC-DATA-OPS-HANDOFF.md`.
 
 Prefer a fresh, dedicated env over reusing a shared/accreted one. The canonical list of
 dependencies is **`pyproject.toml`** (`[project.dependencies]`); `environment.yml` is the

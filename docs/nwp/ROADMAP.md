@@ -42,8 +42,16 @@ Rollout to BasinWX is staged; stage-by-stage status lives in **GitHub issue #10*
   so `product="subh"` collapses to hourly through NWPSource;
   `brc_tools/nwp/aviation.py` calls Herbie directly to preserve the 15-min axis.
   Folding that back into NWPSource is open.
-- **RRFS**: `[models.rrfs]` is configured in `lookups.toml`; operational use —
-  status: see GitHub #10.
+- **RRFS**: operational upstream since 2026-11 and fetchable through
+  `NWPSource("rrfs")` on Herbie ≥ 2026.10.0 (`[models.rrfs]` and the `rrfs` alias
+  searches were rebuilt against the live feed 2026-11-20; `tests/test_rrfs_aliases.py`
+  holds them to real index files). **Nothing RRFS is exported to BasinWX**: the four
+  model crons are all HRRR. What an RRFS product would take on the ops side is
+  written up in `docs/BRC-DATA-OPS-HANDOFF.md`.
+- **Wind frame**: `NWPSource.fetch` returns u/v as the GRIB has them and records the
+  grid the messages declare; `derived.rotate_winds_to_earth` turns them using that
+  grid and refuses when it is missing or has no formula (rotated lat-lon, polar
+  stereographic: RRFS North America and Alaska).
 - **Lagged-ensemble / GEFS probability workflows**: deferred until the
   single-run lane is fully deployed.
 
