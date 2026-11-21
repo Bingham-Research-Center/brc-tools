@@ -21,10 +21,12 @@ from brc_tools.nwp.source import load_lookups
 FIXTURES = Path(__file__).parent / "fixtures" / "rrfs"
 LOOKUPS = load_lookups()
 RRFS = LOOKUPS["models"]["rrfs"]
-#: Accumulations and hourly maxima have no window at the analysis hour (true of HRRR too).
+#: Accumulations and hourly maxima with no window at RRFS f000, as lookups.toml declares
+#: them (``absent_at_f00``). The test below holds that list to the index both ways: a
+#: declared alias must match nothing at f000, an undeclared one exactly one message.
 ABSENT_AT_F000 = {
-    "precip_1hr", "precip_total", "snowfall_1hr", "lightning",
-    "uphel_max_2to5km", "updraft_max", "wind_max_10m",
+    name for name, alias in LOOKUPS["aliases"].items()
+    if "rrfs" in alias.get("absent_at_f00", ())
 }
 
 

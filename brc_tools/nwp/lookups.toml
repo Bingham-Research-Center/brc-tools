@@ -2151,6 +2151,13 @@ description   = "1-hour accumulated precipitation"
 units         = "kg m-2"
 output_var    = "precip_1hr"
 synoptic_name = "precip_accum_one_hour"
+# Models whose f00 has no message for this alias: NWPSource skips the fetch there
+# instead of retrying a search that cannot match (the variable is NaN at f00).
+# Read off the live .idx 2026-11-21; tests/test_absent_at_f00.py pins it to fixtures.
+absent_at_f00 = ["hrrr", "rrfs"]
+# No GEFS search: GEFS has no hourly bucket. Its one APCP message per lead resets every
+# 6 h ("0-3", "0-6", "6-9", "6-12" hour acc; none at f000), so neither this alias nor
+# precip_total fits it. The old "0-1 hour acc" string matched no GEFS lead at all.
 # HRRR sfc carries TWO APCP messages from f02 on -- the run total ("0-N hour acc")
 # and the hourly bucket ("N-1-N hour acc") -- so a bare "APCP:surface" matches both
 # and Herbie returns a LIST of datasets. Anchor on the hourly bucket: at f01 that is
@@ -2159,15 +2166,16 @@ synoptic_name = "precip_accum_one_hour"
 # every lead, fetch `precip_total` and difference it along time instead.
 [aliases.precip_1hr.search]
 hrrr = 'APCP:surface:0-1 hour acc|APCP:surface:(?!0-)\d+-\d+ hour acc'
-gefs = "APCP:surface:0-1 hour acc"
 rrfs = 'APCP:surface:0-1 hour acc|APCP:surface:(?!0-)\d+-\d+ hour acc'   # same two-bucket layout as HRRR
 
 [aliases.precip_total]
 description   = "Run-total accumulated precipitation (init -> valid time)"
 units         = "kg m-2"
 output_var    = "precip_total"
+absent_at_f00 = ["rrfs"]
 # Anchored on the "0-N" bucket so it never collides with the hourly one above.
-# Present at every lead, including f00 (labelled "0-0 day acc fcst", all zeros).
+# HRRR carries it at every lead, including f00 ("0-0 day acc fcst", all zeros); RRFS
+# has no APCP at f000.
 [aliases.precip_total.search]
 hrrr = 'APCP:surface:0-\d+ (hour|day) acc'
 rrfs = 'APCP:surface:0-\d+ (hour|day) acc'
@@ -2179,6 +2187,7 @@ rrfs = 'APCP:surface:0-\d+ (hour|day) acc'
 description   = "Snowfall depth accumulated since the run began (HRRR ASNOW)"
 units         = "m"
 output_var    = "snowfall_1hr"
+absent_at_f00 = ["rrfs"]   # HRRR has "ASNOW:surface:0-0 day acc" at f00
 [aliases.snowfall_1hr.search]
 hrrr = "ASNOW:surface"
 rrfs = "ASNOW:surface"   # also a run total ("0-N hour acc"); absent at f000
@@ -2518,6 +2527,7 @@ rrfs = "VVCSH:0-6000 m above ground"
 description = "Hourly-maximum 2-5 km updraft helicity"
 units       = "m2 s-2"
 output_var  = "uphel_max_2to5km"
+absent_at_f00 = ["rrfs"]   # hourly maxima have no window at RRFS f000; HRRR writes one
 [aliases.uphel_max_2to5km.search]
 hrrr = "MXUPHL:5000-2000 m above ground"
 rrfs = "MXUPHL:5000-2000 m above ground"
@@ -2526,6 +2536,7 @@ rrfs = "MXUPHL:5000-2000 m above ground"
 description = "Hourly-maximum updraft vertical velocity (100-1000 hPa AGL)"
 units       = "m s-1"
 output_var  = "updraft_max"
+absent_at_f00 = ["rrfs"]
 [aliases.updraft_max.search]
 hrrr = "MAXUVV:100-1000 mb above ground"
 rrfs = "MAXUVV:100-1000 mb"
@@ -2534,6 +2545,7 @@ rrfs = "MAXUVV:100-1000 mb"
 description = "Hourly-maximum 10 m wind speed (distinct from the GUST diagnostic)"
 units       = "m s-1"
 output_var  = "wind_max_10m"
+absent_at_f00 = ["rrfs"]
 [aliases.wind_max_10m.search]
 hrrr = "WIND:10 m above ground"
 rrfs = "WIND:10 m above ground"
@@ -2542,6 +2554,7 @@ rrfs = "WIND:10 m above ground"
 description = "Lightning flash rate"
 units       = "flashes km-2 s-1"
 output_var  = "lightning"
+absent_at_f00 = ["rrfs"]
 [aliases.lightning.search]
 hrrr = "LTNG:entire atmosphere"
 rrfs = "LTNG:entire atmosphere"
