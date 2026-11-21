@@ -96,17 +96,17 @@ Synoptic token until the 2026-08-26 rotation.
 */5 * * * * /bin/bash -c 'source ~/.bashrc_basinwx && source ~/software/pkg/miniforge3/etc/profile.d/conda.sh && conda activate clyfar-nov2025 && python ~/gits/brc-tools/brc_tools/download/get_map_obs.py >> ~/logs/obs.log 2>&1'
 
 # HRRR road forecast — hourly (website hard-rejects init_time > 3 h)
-20 * * * * ~/gits/brc-tools/scripts/cron/run_road_forecast_push.sh
+20 * * * * ~/gits/brc-data-ops/cron/run_road_forecast_push.sh
 
 # HRRR surface layers — 4× daily. PILOT since 2026-11-21 on env brc-tools-2026-11
 # (Herbie 2026.10.0); revert by dropping the CONDA_ENV= prefix.
-45 0,6,12,18 * * * CONDA_ENV=brc-tools-2026-11 ~/gits/brc-tools/scripts/cron/run_hrrr_surface_push.sh
+45 0,6,12,18 * * * CONDA_ENV=brc-tools-2026-11 ~/gits/brc-data-ops/cron/run_hrrr_surface_push.sh
 
 # HRRR waypoint forecast — hourly
-50 * * * * ~/gits/brc-tools/scripts/cron/run_hrrr_waypoint_push.sh
+50 * * * * ~/gits/brc-data-ops/cron/run_hrrr_waypoint_push.sh
 
 # HRRR KVEL crosswind (15-min subh) — hourly
-55 * * * * ~/gits/brc-tools/scripts/cron/run_hrrr_kvel_crosswind_push.sh
+55 * * * * ~/gits/brc-data-ops/cron/run_hrrr_kvel_crosswind_push.sh
 
 # Clyfar forecasts — SEASONAL, comment out ~end of March, re-enable ~October
 15 3,9,15,21 * * * /bin/bash -c 'source ~/.bashrc_basinwx && export PATH=$PATH:/uufs/notchpeak.peaks/sys/installdir/slurm/std/bin && cd ~/gits/clyfar && sbatch scripts/submit_clyfar.sh >> ~/logs/clyfar_submit.log 2>&1'
@@ -114,12 +114,15 @@ Synoptic token until the 2026-08-26 rotation.
 
 **Times are notchpeak1 local time (America/Denver): the crontab sets no `CRON_TZ`.** The
 surface job's `45 0,6,12,18` is 07:45/13:45/19:45/01:45 UTC under MST and an hour earlier
-under MDT. This block matches `crontab -l` on notchpeak1 as read 2026-11-21 (six jobs; the
-crontab is the truth, this is a copy; dated backups of it are in
-`~/.cache/brc-tools/crontab-backups/`). Every model job is HRRR: nothing fetches or
-uploads RRFS. The wrappers default to `CONDA_ENV=brc-tools-2026`, whose Herbie
-(2026.3.0) cannot reach the operational RRFS feed; see
-`docs/BRC-DATA-OPS-HANDOFF.md` before pointing a cron at RRFS.
+under MDT. This block matches `crontab -l` on notchpeak1 as read 2026-11-21 (six jobs).
+**The crontab and the four HRRR wrappers belong to `brc-data-ops` since 2026-11-21**:
+its `crontab/notchpeak1.crontab` is the reviewed copy, its `cron/` holds the wrappers
+(each with a 40-min time limit), and its runbook covers backups and rollback. The
+wrappers `cd` into this tree and run `scripts/export_hrrr_*.py` and
+`python -m brc_tools.download.get_road_forecast`, so those CLIs are a seam: change
+them in step with brc-data-ops. Every model job is HRRR: nothing fetches or uploads
+RRFS. The wrappers default to `CONDA_ENV=brc-tools-2026`, whose Herbie (2026.3.0)
+cannot reach the operational RRFS feed.
 
 The repo checkout `~/gits/brc-tools` **is production** for these jobs — the
 obs cron imports from the working tree. Keep it on `main`, never dirty;
@@ -127,19 +130,17 @@ do feature work in a worktree.
 
 ## HRRR surface layer export (BasinWX)
 
-CLI: `scripts/export_hrrr_surface_layers.py`. Use `--server-url` to
-override the config-file URL — this is what lets dev/prod cron entries
-diverge. JSON stages to `~/.cache/brc-tools/basinwx` by default
-(`--output-dir` to override) before upload — it no longer lands in the
-repo checkout's `data/basinwx/`.
+CLI: `scripts/export_hrrr_surface_layers.py`. `--server-url` sends to one host
+instead of the fan-out, which is the `.dev`-only rehearsal route. JSON stages to
+`~/.cache/brc-tools/basinwx` by default (`--output-dir` to override) before upload,
+never into the repo checkout.
 
 ```bash
-30 * * * * source ~/.bashrc && conda activate brc-tools && cd ~/gits/brc-tools && \
-  python scripts/export_hrrr_surface_layers.py --upload \
-  --server-url https://basinwx.dev >> ~/logs/hrrr_upload_dev.log 2>&1
+conda activate brc-tools-2026 && cd ~/gits/brc-tools
+python scripts/export_hrrr_surface_layers.py --upload --server-url https://www.basinwx.dev
 ```
 
-Swap to `--server-url https://www.basinwx.com` for production.
+The scheduled job is brc-data-ops `cron/run_hrrr_surface_push.sh`.
 
 ## brc-tools-specific pitfalls
 

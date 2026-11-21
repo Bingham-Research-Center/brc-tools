@@ -35,14 +35,14 @@ mocked-Herbie/SynopticPy integration tests (`tests/test_nwp_source_integration.p
 ## Priority 2: Operational delivery
 
 Issue #10 is closed: four HRRR jobs upload on cron and RRFS is fetchable. What an RRFS
-product on BasinWX would take is ops work, parked in `docs/BRC-DATA-OPS-HANDOFF.md` for the
-planned `brc-data-ops` repo. Left here:
+product on BasinWX would take is ops work, now in the `brc-data-ops` repo (created
+2026-11-21; `docs/OPS-BACKLOG.md` there). Left here:
 
 - [ ] **Sub-hourly accumulations** — `NWPSource` keeps the `subh` 15-min axis (GH #82), but
   only for instantaneous fields: HRRR `subh` precip is 15-min buckets, RRFS's runs from the
   top of the hour, and no alias describes either. Needed only if a `subh` product wants precip.
 - [ ] Add structured logging to the operational script (replace print statements for scheduled/unattended runs).
-- [ ] **`.dev` deploy pull** — the `.dev` Linode still needs a deploy pull to close the `filelist.json` fossil; `.com` + `.dev` fan-out itself is live (2026-04-24).
+- [x] **`.dev` deploy pull** — done: website 1.7.9 on `.dev` (2026-11-21 09:43Z) stopped writing `observations/filelist.json` and removed it; nothing at CHPC reads it. `.com` follows with website 1.8.0.
 ## Priority 3: Analysis capability
 
 Extend the case study toolkit for deeper diagnostics.
@@ -72,7 +72,7 @@ here so the next cold-start agent knows to tackle it.
 - [ ] **Clyfar's winter job is live again** (crontab, since 2026-11-20) and fans out
   through `send_json_to_all`. Comment it out again around the end of March 2027.
 - [ ] **Cron runs in Mountain time, not UTC** (no `CRON_TZ`), so every model-tied job
-  shifts an hour against its cycle at each DST change. Decide in `brc-data-ops`.
+  shifts an hour against its cycle at each DST change. Decide in `brc-data-ops` (O5).
 - [ ] **UDOT camera scraper** (GH #53) — its branch was deleted 2026-11-21; the commit is
   kept as tag `archive/michael-image-gathering`.
 

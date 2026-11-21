@@ -42,4 +42,4 @@ Project documentation. Topical files only — agent context lives in
   (`brc_tools.nwp.wrf_deficit_reference`), the two-datum error bar and the `theta_ref_*.json` sidecar.
 - **nwp/NWP-SOURCE-MATRIX.md** — per-source download matrix (Herbie vs direct) + Herbie currency.
 - **nwp/ROADMAP.md** — HRRR/RRFS → BasinWX strategy/status (GH #10 lane).
-- **BRC-DATA-OPS-HANDOFF.md** — ops facts and decisions parked for the planned `brc-data-ops` repo (live crontab, RRFS cycle table, env cutover, rollout order).
+- *(moved)* the ops hand-off, the crontab copy and the cron wrappers live in the `brc-data-ops` repo since 2026-11-21.

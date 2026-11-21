@@ -30,9 +30,9 @@ Rollout to BasinWX is staged; stage-by-stage status lives in **GitHub issue #10*
 ### Operational today
 - **HRRR → BasinWX exports**: `scripts/export_hrrr_surface_layers.py`,
   `scripts/export_hrrr_waypoint_forecast.py`,
-  `scripts/export_hrrr_kvel_crosswind.py`, driven by the cron wrappers
-  `scripts/cron/run_hrrr_*.sh`. Cron host + deployment detail:
-  `docs/CHPC-REFERENCE.md`.
+  `scripts/export_hrrr_kvel_crosswind.py`, driven by the cron wrappers in the
+  `brc-data-ops` repo (`cron/run_hrrr_*.sh`, since 2026-11-21). Cron host +
+  deployment detail: `docs/CHPC-REFERENCE.md` and brc-data-ops.
 - **Obs cron**: `brc_tools/download/get_map_obs.py` writes to
   `~/.cache/brc-tools/map_obs` (moved out of the repo-local `data/` default).
 - **Rollout stages** (open PR lane, website-side dependencies): see GitHub #10.
@@ -46,7 +46,7 @@ Rollout to BasinWX is staged; stage-by-stage status lives in **GitHub issue #10*
   searches were rebuilt against the live feed 2026-11-20; `tests/test_rrfs_aliases.py`
   holds them to real index files). **Nothing RRFS is exported to BasinWX**: the four
   model crons are all HRRR. What an RRFS product would take on the ops side is
-  written up in `docs/BRC-DATA-OPS-HANDOFF.md`.
+  in brc-data-ops (`docs/HANDOFF-FROM-BRC-TOOLS-2026-11-20.md`, backlog item O9).
 - **Wind frame**: `NWPSource.fetch` returns u/v as the GRIB has them and records the
   grid the messages declare; `derived.rotate_winds_to_earth` turns them using that
   grid and refuses when it is missing or has no formula (rotated lat-lon, polar

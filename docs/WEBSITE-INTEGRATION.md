@@ -70,7 +70,7 @@ the other host's health check, and nothing tried it again. Since receipts began
 missing from *both* hosts were never made: on 18 and 19 Nov the HRRR fetch from AWS
 hung on read timeouts until the process was killed, so nothing reached the upload
 step. Re-sending a run that a whole cycle missed is an ops decision
-(`BRC-DATA-OPS-HANDOFF.md`), not something the uploader does.
+(brc-data-ops `docs/OPS-BACKLOG.md`), not something the uploader does.
 
 ## Schemas (compact)
 
@@ -129,7 +129,7 @@ pinned** at website `DATA_MANIFEST.json:487`; `product_type` enum is
 
 ## Producers and their cron wrappers
 
-| dataType / product | Producer | Wrapper (`scripts/cron/`) | Bucket |
+| dataType / product | Producer | Wrapper (brc-data-ops `cron/`) | Bucket |
 |---|---|---|---|
 | `road-forecast` | `brc_tools/download/get_road_forecast.py` | `run_road_forecast_push.sh` | `road-forecast` |
 | `forecast_hrrr_kvel_crosswind_*` | `scripts/export_hrrr_kvel_crosswind.py` | `run_hrrr_kvel_crosswind_push.sh` | `forecasts` |
@@ -142,8 +142,8 @@ writes the same schema with `"model": "rrfs"` to `forecast_rrfs_surface_layers_<
 and `forecast_rrfs_surface_layers_index.json`. One run (init 2026-11-21 00Z, f00–f18) was
 uploaded by hand to `https://www.basinwx.dev` on 2026-11-21; nothing on the site reads those
 names, and they are not in `DATA_MANIFEST.json`. It needs env `brc-tools-2026-11`. Do not
-schedule it or send it to `.com` before the manifest lists it:
-`docs/BRC-DATA-OPS-HANDOFF.md`.
+schedule it or send it to `.com` before the manifest lists it (brc-data-ops
+`docs/OPS-BACKLOG.md`, O9).
 
 `run_hrrr_waypoint_push.sh` is **not** the road-forecast job — it emits a
 different product into `forecasts`. Easy to conflate; don't.
