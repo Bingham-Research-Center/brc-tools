@@ -21,7 +21,7 @@ not built**.
 - HRRR/RRFS → BasinWX ingest (GH #10): four HRRR crons live, **nothing RRFS is exported**; RRFS v1 is fetchable (`NWPSource("rrfs")`). Follow-ups: #81 (NAM retired → forecast funnel), #82 (sub-hourly axis). Status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures): `docs/CASE-STUDY-GUIDE.md`.
 - **WRF-input staging**: GRIB → scratch manifests/contracts for `brc-wrf`. Status, division of labour, cold-start SSOT: `docs/WRF-STAGING-STATE-PLAYBOOK.md`.
-- Next up: the GEFS `_pl` product decision, then NWPSource's sub-hourly axis (#82). Backlog: `WISHLIST-TASKS.md`.
+- Next up: NWPSource's sub-hourly axis (#82); open decision: the GEFS `omega_pl` product. Backlog: `WISHLIST-TASKS.md`.
 
 ## Repo map
 ```

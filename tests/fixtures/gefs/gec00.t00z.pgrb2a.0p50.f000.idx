@@ -1,0 +1,71 @@
+1:0:d=2026112000:HGT:10 mb:anl:ENS=low-res ctl
+2:242457:d=2026112000:TMP:10 mb:anl:ENS=low-res ctl
+3:367219:d=2026112000:RH:10 mb:anl:ENS=low-res ctl
+4:432660:d=2026112000:UGRD:10 mb:anl:ENS=low-res ctl
+5:682591:d=2026112000:VGRD:10 mb:anl:ENS=low-res ctl
+6:910976:d=2026112000:HGT:50 mb:anl:ENS=low-res ctl
+7:1136206:d=2026112000:TMP:50 mb:anl:ENS=low-res ctl
+8:1262775:d=2026112000:RH:50 mb:anl:ENS=low-res ctl
+9:1347093:d=2026112000:UGRD:50 mb:anl:ENS=low-res ctl
+10:1592776:d=2026112000:VGRD:50 mb:anl:ENS=low-res ctl
+11:1828852:d=2026112000:HGT:100 mb:anl:ENS=low-res ctl
+12:2049729:d=2026112000:TMP:100 mb:anl:ENS=low-res ctl
+13:2170551:d=2026112000:RH:100 mb:anl:ENS=low-res ctl
+14:2322104:d=2026112000:UGRD:100 mb:anl:ENS=low-res ctl
+15:2568283:d=2026112000:VGRD:100 mb:anl:ENS=low-res ctl
+16:2808798:d=2026112000:HGT:200 mb:anl:ENS=low-res ctl
+17:3026477:d=2026112000:TMP:200 mb:anl:ENS=low-res ctl
+18:3146614:d=2026112000:RH:200 mb:anl:ENS=low-res ctl
+19:3364203:d=2026112000:UGRD:200 mb:anl:ENS=low-res ctl
+20:3525935:d=2026112000:VGRD:200 mb:anl:ENS=low-res ctl
+21:3685687:d=2026112000:HGT:250 mb:anl:ENS=low-res ctl
+22:3901879:d=2026112000:TMP:250 mb:anl:ENS=low-res ctl
+23:4017885:d=2026112000:RH:250 mb:anl:ENS=low-res ctl
+24:4252193:d=2026112000:UGRD:250 mb:anl:ENS=low-res ctl
+25:4414650:d=2026112000:VGRD:250 mb:anl:ENS=low-res ctl
+26:4579865:d=2026112000:HGT:300 mb:anl:ENS=low-res ctl
+27:4793900:d=2026112000:UGRD:300 mb:anl:ENS=low-res ctl
+28:4961769:d=2026112000:VGRD:300 mb:anl:ENS=low-res ctl
+29:5134127:d=2026112000:UGRD:400 mb:anl:ENS=low-res ctl
+30:5294385:d=2026112000:VGRD:400 mb:anl:ENS=low-res ctl
+31:5461942:d=2026112000:HGT:500 mb:anl:ENS=low-res ctl
+32:5700138:d=2026112000:TMP:500 mb:anl:ENS=low-res ctl
+33:5813859:d=2026112000:RH:500 mb:anl:ENS=low-res ctl
+34:6054240:d=2026112000:UGRD:500 mb:anl:ENS=low-res ctl
+35:6309375:d=2026112000:VGRD:500 mb:anl:ENS=low-res ctl
+36:6568793:d=2026112000:HGT:700 mb:anl:ENS=low-res ctl
+37:6804948:d=2026112000:TMP:700 mb:anl:ENS=low-res ctl
+38:6925165:d=2026112000:RH:700 mb:anl:ENS=low-res ctl
+39:7168099:d=2026112000:UGRD:700 mb:anl:ENS=low-res ctl
+40:7419156:d=2026112000:VGRD:700 mb:anl:ENS=low-res ctl
+41:7673040:d=2026112000:HGT:850 mb:anl:ENS=low-res ctl
+42:7917859:d=2026112000:TMP:850 mb:anl:ENS=low-res ctl
+43:8053291:d=2026112000:RH:850 mb:anl:ENS=low-res ctl
+44:8302190:d=2026112000:VVEL:850 mb:anl:ENS=low-res ctl
+45:8607341:d=2026112000:UGRD:850 mb:anl:ENS=low-res ctl
+46:8864357:d=2026112000:VGRD:850 mb:anl:ENS=low-res ctl
+47:9126142:d=2026112000:HGT:925 mb:anl:ENS=low-res ctl
+48:9380575:d=2026112000:TMP:925 mb:anl:ENS=low-res ctl
+49:9517680:d=2026112000:RH:925 mb:anl:ENS=low-res ctl
+50:9756292:d=2026112000:UGRD:925 mb:anl:ENS=low-res ctl
+51:10012876:d=2026112000:VGRD:925 mb:anl:ENS=low-res ctl
+52:10273242:d=2026112000:TMP:1000 mb:anl:ENS=low-res ctl
+53:10411186:d=2026112000:RH:1000 mb:anl:ENS=low-res ctl
+54:10633878:d=2026112000:UGRD:1000 mb:anl:ENS=low-res ctl
+55:10894157:d=2026112000:VGRD:1000 mb:anl:ENS=low-res ctl
+56:11152760:d=2026112000:HGT:1000 mb:anl:ENS=low-res ctl
+57:11419861:d=2026112000:PRES:surface:anl:ENS=low-res ctl
+58:11661023:d=2026112000:HGT:surface:anl:ENS=low-res ctl
+59:11805556:d=2026112000:TSOIL:0-0.1 m below ground:anl:ENS=low-res ctl
+60:11943556:d=2026112000:SOILW:0-0.1 m below ground:anl:ENS=low-res ctl
+61:12039456:d=2026112000:WEASD:surface:anl:ENS=low-res ctl
+62:12122631:d=2026112000:SNOD:surface:anl:ENS=low-res ctl
+63:12200758:d=2026112000:ICETK:surface:anl:ENS=low-res ctl
+64:12229710:d=2026112000:TMP:2 m above ground:anl:ENS=low-res ctl
+65:12470537:d=2026112000:RH:2 m above ground:anl:ENS=low-res ctl
+66:12689624:d=2026112000:UGRD:10 m above ground:anl:ENS=low-res ctl
+67:12948648:d=2026112000:VGRD:10 m above ground:anl:ENS=low-res ctl
+68:13203201:d=2026112000:PWAT:entire atmosphere (considered as a single layer):anl:ENS=low-res ctl
+69:13358458:d=2026112000:CAPE:180-0 mb above ground:anl:ENS=low-res ctl
+70:13501295:d=2026112000:CIN:180-0 mb above ground:anl:ENS=low-res ctl
+71:13652358:d=2026112000:PRMSL:mean sea level:anl:ENS=low-res ctl

@@ -129,6 +129,12 @@ class NWPSource:
             and an hour where nothing arrived is missing from ``time`` -- so
             read the hours back from ``time``, not from ``forecast_hours``.
             ``RuntimeError`` only when nothing arrived at all.
+
+            Every variable and hour must share one grid. GEFS ``_pl`` aliases read
+            the 0.5 deg ``atmos.5`` file and surface ones the 0.25 deg
+            ``atmos.25``, and GEFS hours above f240 switch to ``atmos.5``: a fetch
+            that mixes them raises ``ValueError`` naming the products -- fetch
+            them in separate calls (or pass ``product=``).
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -212,15 +218,30 @@ class NWPSource:
                 for future in as_completed(futures):
                     _record(futures[future], future.result)
 
-        # Group by fxx, merge, normalize, crop
+        # Group by fxx, merge, normalize, crop. join="exact": fields from files on
+        # different grids (GEFS atmos.25 is 0.25 deg, atmos.5 0.5 deg) must not be
+        # outer-joined onto a union grid -- that leaves the coarse field NaN on most
+        # points, and a nearest-point read of it NaN with no error.
+        item_product = {(i[0], i[3]): i[2] for i in work_items}
         results: dict[int, xr.Dataset] = {}
         for fxx in sorted(fxx_set):
             hour_ds = {k[1]: v for k, v in raw_results.items() if k[0] == fxx}
             if not hour_ds:
                 continue
-            ds_hour = xr.merge(
-                list(hour_ds.values()), combine_attrs="drop", compat="override"
-            )
+            try:
+                ds_hour = xr.merge(
+                    list(hour_ds.values()), combine_attrs="drop", compat="override",
+                    join="exact",
+                )
+            except ValueError as exc:
+                by_product: dict[str, list[str]] = {}
+                for name in sorted(hour_ds):
+                    by_product.setdefault(item_product[(fxx, name)], []).append(name)
+                raise ValueError(
+                    f"{self._model_key} f{fxx:03d}: these variables come from files on "
+                    f"different grids, {by_product}; fetch each product in its own "
+                    f"call ({exc})"
+                ) from exc
             ds_hour = normalize_coords(ds_hour, init_dt, fxx)
             if sw is not None and ne is not None:
                 ds_hour = crop_to_bbox(ds_hour, sw, ne, crop_method)
@@ -232,7 +253,15 @@ class NWPSource:
                 f"No data returned for {self._model_key} init={init_dt} "
                 f"hours={list(forecast_hours)} vars={variables}"
             )
-        out = xr.concat(hour_slices, dim="time", combine_attrs="drop")
+        try:
+            out = xr.concat(hour_slices, dim="time", combine_attrs="drop", join="exact")
+        except ValueError as exc:
+            by_hour = {fxx: sorted({p for (f, _), p in item_product.items() if f == fxx})
+                       for fxx in sorted(results)}
+            raise ValueError(
+                f"{self._model_key}: forecast hours come on different grids, {by_hour}; "
+                f"split the fetch at the product breakpoint or pass product= ({exc})"
+            ) from exc
         # One grid for the whole fetch, or none: a fetch that mixed grids, or whose
         # messages did not say, leaves the attrs off so a later rotation refuses.
         if len(grids) == 1 and None not in grids:

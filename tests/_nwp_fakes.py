@@ -86,7 +86,8 @@ PRS_LEVELS = (1000, 925, 850, 700, 500, 250)
 PRS_MESSAGES = {
     f"{var}:{lv} mb": (short, base - 0.05 * (1000 - lv))
     for lv in PRS_LEVELS
-    for var, short, base in (("TMP", "t", 290.0), ("UGRD", "u", 5.0), ("VGRD", "v", 1.0))
+    for var, short, base in (("TMP", "t", 290.0), ("UGRD", "u", 5.0), ("VGRD", "v", 1.0),
+                             ("HGT", "gh", 3000.0))
 }
 
 
@@ -112,17 +113,22 @@ def _idx_lines(messages: dict, fxx: int) -> list[tuple[str, str, str, float]]:
 # ── Herbie ───────────────────────────────────────────────────────────────
 
 
-def make_fake_herbie(grid: Grid, *, products: dict[str, dict] | None = None):
+def make_fake_herbie(grid: Grid, *, products: dict[str, dict] | None = None,
+                     grids: dict[str, Grid] | None = None):
     """Return a fresh ``FakeHerbie`` class bound to one grid (class state is per test).
 
     ``products`` maps Herbie product -> message table; default: ``sfc``/``2dfld``/
-    ``atmos.25``/``atmos.5`` serve the surface table, ``prs``/``prslev`` the pressure one.
+    ``atmos.25`` serve the surface table, ``prs``/``prslev`` the pressure one, and
+    ``atmos.5`` (GEFS pgrb2a) both. ``grids`` gives a product its own grid (GEFS
+    ``atmos.5`` is 0.5 deg where ``atmos.25`` is 0.25 deg); others use ``grid``.
     """
     tables = products or {
-        "sfc": SFC_MESSAGES, "2dfld": SFC_MESSAGES,
-        "atmos.25": SFC_MESSAGES, "atmos.5": SFC_MESSAGES,
+        "sfc": SFC_MESSAGES, "2dfld": SFC_MESSAGES, "atmos.25": SFC_MESSAGES,
+        "atmos.5": {**SFC_MESSAGES, **PRS_MESSAGES},
         "prs": PRS_MESSAGES, "prslev": PRS_MESSAGES,
     }
+    grid_for = dict(grids or {})
+    default_grid = grid
 
     class FakeHerbie:
         calls: list[dict] = []  # every constructor call's kwargs (+ "date")
@@ -162,6 +168,7 @@ def make_fake_herbie(grid: Grid, *, products: dict[str, dict] | None = None):
             return self._dataset(key, short, base)
 
         def _dataset(self, key, short, base):
+            grid = grid_for.get(self.product, default_grid)
             lat2d, lon180 = grid.lonlat_2d()
             values = field_value(base, self.fxx, lat2d, lon180)
             init = np.datetime64(self.date, "ns")

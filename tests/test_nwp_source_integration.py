@@ -356,3 +356,43 @@ def test_waypoint_payload_hours_follow_the_dataset(monkeypatch, caplog):
     for station in payload["stations"]:
         assert len(station["forecasts"]["temp_2m_c"]) == 3
     assert any("[2]" in r.getMessage() for r in caplog.records)
+
+
+# ── GEFS: two resolutions, one grid per fetch ────────────────────────────
+
+
+def _gefs_two_grids(monkeypatch):
+    """GEFS as it is: atmos.25 on 0.25 deg, atmos.5 (pgrb2a) on 0.5 deg."""
+    return _install(monkeypatch, regular_grid(), grids={"atmos.5": regular_grid(step=0.5)})
+
+
+def test_gefs_pressure_levels_come_from_the_half_degree_file(monkeypatch):
+    fake = _gefs_two_grids(monkeypatch)
+    src = NWPSource("gefs")
+    ds = src.fetch(INIT, [6], ["temp_pl", "height_pl"], levels=[700, 500], region="uinta_basin")
+
+    assert {c["product"] for c in fake.calls} == {"atmos.5"}
+    assert set(ds.data_vars) == {"temp_700", "temp_500", "height_700", "height_500"}
+    assert float(abs(ds.latitude.diff("latitude")).max()) == 0.5
+    assert np.isfinite(ds["temp_700"]).all()
+    df = src.extract_at_waypoints(ds, group="basin_full")
+    assert df["temp_700"].null_count() == 0
+
+
+def test_gefs_surface_and_pressure_levels_in_one_fetch_raise(monkeypatch):
+    """An outer join onto the 0.25 deg grid would leave temp_700 NaN on 3 points in 4."""
+    _gefs_two_grids(monkeypatch)
+    with pytest.raises(ValueError, match=r"different grids.*atmos\.25.*temp_2m.*atmos\.5.*temp_700"):
+        NWPSource("gefs").fetch(INIT, [6], ["temp_2m", "temp_pl"], levels=[700])
+
+
+def test_gefs_fetch_across_the_f240_breakpoint_raises(monkeypatch):
+    _gefs_two_grids(monkeypatch)
+    with pytest.raises(ValueError, match="split the fetch"):
+        NWPSource("gefs").fetch(INIT, [240, 246], ["temp_2m"])
+
+
+def test_gefs_long_range_reads_one_product_when_asked(monkeypatch):
+    fake = _gefs_two_grids(monkeypatch)
+    ds = NWPSource("gefs").fetch(INIT, [240, 246], ["temp_2m"], product="atmos.5")
+    assert {c["product"] for c in fake.calls} == {"atmos.5"} and ds.sizes["time"] == 2
