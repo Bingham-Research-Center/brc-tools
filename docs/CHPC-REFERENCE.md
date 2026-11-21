@@ -69,7 +69,7 @@ broken:
 | live previews → `/srv/ubair-website-preview-<user>/.env` | same var + `scripts/manage-previews.sh update <user>` |
 
 Install on CHPC without exposing the token on a command line:
-`~/gits/latex-poss-verif-clyfar/scripts/install_rotated_synoptic_token.py`
+`~/gits/preprint-clyfar-v0p9-five-winter/scripts/install_rotated_synoptic_token.py`
 (getpass prompt, atomic 0600 write, zero network calls). Then verify:
 
 ```bash
