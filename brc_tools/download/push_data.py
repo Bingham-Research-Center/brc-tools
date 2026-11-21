@@ -90,20 +90,85 @@ def _verify_visible(server_address, served_path):
         return False
 
 
-def _post_json_to_url(server_address, fpath, file_data, api_key, *, role="PRIMARY"):
-    """Upload one file to one server. Return True on HTTP 200.
+UPLOAD_ATTEMPTS_ENV = 'BASINWX_UPLOAD_ATTEMPTS'
+DEFAULT_UPLOAD_ATTEMPTS = 3
+# Seconds to wait before the 2nd, 3rd, ... attempt; the last value repeats.
+RETRY_DELAYS_S = (5, 20)
+# Statuses that mean "not now" rather than "no": nginx while the app restarts.
+RETRY_STATUSES = frozenset({502, 503, 504})
 
-    Named for its original JSON-only life; it now also carries the outlook
-    .md files, so the MIME type follows the file extension.
+# Hosts that used up every attempt on some file in this process. Each later file
+# gets one attempt at them, so an outage costs one round of retries per run, not
+# one per file (clyfar sends ~165 files a run through here). A success clears it.
+_EXHAUSTED_HOSTS = set()
 
-    Every exit writes a receipt (see _receipt) and every line is stamped.
+
+def _upload_attempts():
+    """Attempts per file and host: $BASINWX_UPLOAD_ATTEMPTS, default 3, at least 1."""
+    raw = os.environ.get(UPLOAD_ATTEMPTS_ENV, '').strip()
+    try:
+        return max(1, int(raw)) if raw else DEFAULT_UPLOAD_ATTEMPTS
+    except ValueError:
+        return DEFAULT_UPLOAD_ATTEMPTS
+
+
+def _transient(exc):
+    """True for a failure another try can cure: DNS, refused connection, timeout.
+
+    A TLS failure is a ConnectionError too, but it fails the same way every time.
     """
+    return (isinstance(exc, (requests.exceptions.ConnectionError,
+                             requests.exceptions.Timeout))
+            and not isinstance(exc, requests.exceptions.SSLError))
+
+
+def _post_json_to_url(server_address, fpath, file_data, api_key, *, role="PRIMARY"):
+    """Upload one file to one server, trying again after a transient failure.
+
+    Returns True on HTTP 200. Named for its original JSON-only life; it now also
+    carries the outlook .md files, so the MIME type follows the file extension.
+
+    A failed DNS lookup, a refused or timed-out connection, or a 502/503/504 is
+    tried again, up to $BASINWX_UPLOAD_ATTEMPTS times in all (default 3; 1 turns
+    retrying off), after the pauses in RETRY_DELAYS_S. Any other status is final:
+    the server would refuse the same bytes again. In the week to 2026-11-21, each
+    of the six files the website found on one host only had failed one DNS
+    lookup at the other and was never tried again.
+
+    Every attempt writes a receipt (see _receipt) and every line is stamped.
+    """
+    prefix = f"[{role} {server_address}]"
+    name = os.path.basename(fpath)
+    attempts = 1 if server_address in _EXHAUSTED_HOSTS else _upload_attempts()
+    for attempt in range(1, attempts + 1):
+        ok, transient = _upload_once(server_address, fpath, file_data, api_key,
+                                     role=role, attempt=attempt, attempts=attempts)
+        if ok:
+            _EXHAUSTED_HOSTS.discard(server_address)
+            return True
+        if not transient:
+            return False
+        if attempt < attempts:
+            delay = RETRY_DELAYS_S[min(attempt, len(RETRY_DELAYS_S)) - 1]
+            _say(f"{prefix} retrying {name} in {delay}s "
+                 f"(attempt {attempt + 1} of {attempts})")
+            time.sleep(delay)
+    if attempts > 1:
+        _EXHAUSTED_HOSTS.add(server_address)
+        _say(f"{prefix} ❌ gave up on {name} after {attempts} attempts; "
+             f"later files in this run get one attempt each")
+    return False
+
+
+def _upload_once(server_address, fpath, file_data, api_key, *, role, attempt, attempts):
+    """One health check and one POST. Returns (ok, transient)."""
     endpoint = f"{server_address}/api/upload/{file_data}"
     hostname = socket.getfqdn()
     headers = {'x-api-key': api_key, 'x-client-hostname': hostname}
     prefix = f"[{role} {server_address}]"
     name = os.path.basename(fpath)
-    receipt = dict(role=role, url=server_address, data_type=file_data, file=name)
+    receipt = dict(role=role, url=server_address, data_type=file_data, file=name,
+                   attempt=attempt)
     t0 = time.monotonic()
 
     def elapsed_ms():
@@ -116,7 +181,7 @@ def _post_json_to_url(server_address, fpath, file_data, api_key, *, role="PRIMAR
         _say(f"{prefix} health check failed: {e}")
         _receipt(**receipt, stage='health', ok=False, status=None,
                  error=str(e)[:300], elapsed_ms=elapsed_ms())
-        return False
+        return False, _transient(e)
 
     _say(f"{prefix} uploading {name} to {endpoint}")
     try:
@@ -131,24 +196,25 @@ def _post_json_to_url(server_address, fpath, file_data, api_key, *, role="PRIMAR
                 served_path = None
             visible = _verify_visible(server_address, served_path)
             note = "" if visible in (True, None) else f" (WARNING: not visible at {served_path} afterwards)"
-            _say(f"{prefix} ✅ uploaded {name}{note}")
+            tries = f" (attempt {attempt} of {attempts})" if attempt > 1 else ""
+            _say(f"{prefix} ✅ uploaded {name}{tries}{note}")
             _receipt(**receipt, stage='upload', ok=True, status=200,
                      verified=visible, elapsed_ms=elapsed_ms())
-            return True
+            return True, False
         _say(f"{prefix} ❌ upload failed ({response.status_code}): {response.text}")
         _receipt(**receipt, stage='upload', ok=False, status=response.status_code,
                  error=response.text[:300], elapsed_ms=elapsed_ms())
-        return False
+        return False, response.status_code in RETRY_STATUSES
     except requests.exceptions.Timeout:
         _say(f"{prefix} ❌ upload timed out after 30s")
         _receipt(**receipt, stage='upload', ok=False, status=None,
                  error='timeout after 30s', elapsed_ms=elapsed_ms())
-        return False
+        return False, True
     except requests.exceptions.RequestException as e:
         _say(f"{prefix} ❌ upload error: {e}")
         _receipt(**receipt, stage='upload', ok=False, status=None,
                  error=str(e)[:300], elapsed_ms=elapsed_ms())
-        return False
+        return False, _transient(e)
 
 
 def send_json_to_server(server_address, fpath, file_data, API_KEY):
