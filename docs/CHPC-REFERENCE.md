@@ -101,13 +101,21 @@ Synoptic token until the 2026-08-26 rotation.
 # HRRR surface layers — 4× daily
 45 0,6,12,18 * * * ~/gits/brc-tools/scripts/cron/run_hrrr_surface_push.sh
 
-# Clyfar forecasts — SEASONAL, disabled ~end of March, re-enable ~October
-# 15 3,9,15,21 * * * cd ~/gits/clyfar && sbatch scripts/submit_clyfar.sh
+# HRRR waypoint forecast — hourly
+50 * * * * ~/gits/brc-tools/scripts/cron/run_hrrr_waypoint_push.sh
 
-# Deliberately absent: run_hrrr_kvel_crosswind_push.sh (blocked on the
-# KVEL 16/34→17/35 runway rename, cross-repo) and
-# run_hrrr_waypoint_push.sh (no install requested).
+# HRRR KVEL crosswind (15-min subh) — hourly
+55 * * * * ~/gits/brc-tools/scripts/cron/run_hrrr_kvel_crosswind_push.sh
+
+# Clyfar forecasts — SEASONAL, comment out ~end of March, re-enable ~October
+15 3,9,15,21 * * * /bin/bash -c 'source ~/.bashrc_basinwx && export PATH=$PATH:/uufs/notchpeak.peaks/sys/installdir/slurm/std/bin && cd ~/gits/clyfar && sbatch scripts/submit_clyfar.sh >> ~/logs/clyfar_submit.log 2>&1'
 ```
+
+This block matches `crontab -l` on notchpeak1 as read 2026-11-20 (six jobs; the
+crontab is the truth, this is a copy). Every model job is HRRR: nothing fetches or
+uploads RRFS. The wrappers default to `CONDA_ENV=brc-tools-2026`, whose Herbie
+(2026.3.0) cannot reach the operational RRFS feed; see
+`docs/BRC-DATA-OPS-HANDOFF.md` before pointing a cron at RRFS.
 
 The repo checkout `~/gits/brc-tools` **is production** for these jobs — the
 obs cron imports from the working tree. Keep it on `main`, never dirty;

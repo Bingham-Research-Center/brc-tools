@@ -18,7 +18,8 @@ from herbie import Herbie
 
 from brc_tools.nwp._crop import nearest_point_value
 from brc_tools.nwp.derived import (
-    crosswind_kt, headwind_kt, rotate_winds_to_earth, wind_direction, wind_speed, KT_PER_MS,
+    HRRR_GRID, crosswind_kt, headwind_kt, rotate_winds_to_earth, wind_direction, wind_speed,
+    KT_PER_MS,
 )
 from brc_tools.nwp.source import load_lookups
 
@@ -67,8 +68,9 @@ def fetch_airport_winds(
 
     merged = xr.concat(slices, dim="time", combine_attrs="drop")
     # HRRR u/v are grid-relative; the runway math and "deg_true" need east/north.
+    # HRRR_GRID is named outright because this function fetches model="hrrr" itself.
     for u_name, v_name in (("u10", "v10"), ("UGRD", "VGRD")):
-        merged = rotate_winds_to_earth(merged, u_name, v_name)
+        merged = rotate_winds_to_earth(merged, u_name, v_name, grid=HRRR_GRID)
     return merged.sortby("time")
 
 

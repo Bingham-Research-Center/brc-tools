@@ -59,6 +59,14 @@ Unit conversions: `temp_K_to_C`, `temp_C_to_K`, `pa_to_hpa`, `hpa_to_pa`.
 
 Wind: `wind_speed(u, v)`, `wind_direction(u, v)`, `wind_components(speed, dir)`.
 
+Wind frame: HRRR and RRFS u/v are **grid-relative** (about 8° off true north over the
+Basin). `NWPSource.fetch` leaves them so and copies the grid the GRIB declares onto
+`ds.attrs`; `rotate_winds_to_earth(ds, "wind_u_10m", "wind_v_10m")` turns them to
+east/north with that grid and marks them `wind_frame="earth"`. It raises if the dataset
+has no grid (`grid=WindGrid.from_grib_attrs(var.attrs)` or `grid=HRRR_GRID` to name one)
+or the grid has no formula yet (only Lambert and regular lat-lon do). Rotate before
+`add_wind_fields` if the direction is to be read as degrees true.
+
 Thermodynamics: `potential_temperature`, `saturation_vapor_pressure`, `mixing_ratio`, `theta_e`, `relative_humidity`.
 
 ---

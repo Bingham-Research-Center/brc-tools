@@ -15,7 +15,7 @@ dependencies:
   - pandas>=2.0
   - polars>=0.20
   - scipy>=1.10
-  - herbie-data>=2026.3.0      # bumped from >=2024 — RRFS S3 fix, requests/SSL, pandas 3.0
+  - herbie-data>=2026.10.0     # operational RRFS bucket + 2dfld product; <2026.9 points at the emptied prototype feed
   - matplotlib-base>=3.7       # headless (Agg); lighter than full matplotlib
   - cartopy>=0.22
   - requests>=2.31

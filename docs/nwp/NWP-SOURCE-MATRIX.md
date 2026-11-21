@@ -24,7 +24,7 @@ those results as historical evidence only unless they are refreshed under
 |---|---|---|---|---|---|
 | `hrrr` | operational forecast | `NWPSource.fetch()` | **Herbie** `model="hrrr"` | ✅ yes | `subh` (15-min) resolves as hourly through NWPSource — `normalize_coords` drops the GRIB time axis; call Herbie directly if 15-min is needed |
 | `gefs` | operational ensemble | `NWPSource.fetch()` | **Herbie** `model="gefs"` | ✅ yes | 0–360° lon → shift-then-sel crop; product breakpoint `atmos.25`→`atmos.5` above f240 |
-| `rrfs` | experimental | `NWPSource.fetch()` | **Herbie** `model="rrfs"` | ✅ yes | evolving product names |
+| `rrfs` | operational forecast (v1, from 2026-11) | `NWPSource.fetch()` | **Herbie** `model="rrfs"`, **≥ 2026.10.0** | ✅ yes | CONUS 3 km = HRRR's grid exactly. Surface fields are in `2dfld`; `prslev` is pressure levels only. Hourly files exist only for 00/03/…/21Z (f084 at 00/06/12/18Z, f018 otherwise); every hour publishes `subh` (15-min, f001–f018) alone. No native levels. Cycle table + lags: `[models.rrfs]` in `lookups.toml` |
 | `gefs_reforecast` | WRF forcing (historical ens) | `wrf_staging.stage_reforecast()` | **Herbie** `Herbie.download()`, `model="gefs_reforecast"` | ✅ yes | per-variable file layout; 700 hPa pressure split (`_pres` / `_pres_abv700mb`); specific humidity only; 10 m winds = `ugrd_hgt`; **no land-sea mask, no snow**; members c00/p01–p04; `Days:1-10`/`10-16` buckets |
 | `nam_analysis` | WRF forcing/filler (2013) | `wrf_staging.stage_nam_analysis()` | **Direct NCEI HTTP GET** (`requests`) | ❌ **no** | Herbie `nam` has only `aws`/`nomads` (operational, recent) — no NCEI-historical `namanl_218`. grib1 `.grb`; 6-hourly; whole file; carries land-mask/SST/skin/4-layer soil/snow |
 | `rap_analysis` | WRF forcing (Pelican hot-swap) | `wrf_staging.stage_rap_analysis()` → shared `stage_nam_analysis` | **Direct NCEI HTTP GET** (`requests`) | ⚠️ **intended but broken upstream** (see below) | grib2 `.grb2`; hourly; whole file; ~12 MB/cycle |
@@ -90,9 +90,22 @@ Beyond the bug, `nam_analysis`, `rap_analysis`, and `gfs_analysis` deliberately 
 |---|---|---|
 | Required WRF-staging env (`brc-tools-2026`) | **2026.3.0** | Mar 2026 |
 | Inherited env observed in Codex (`clyfar-nov2025`) | **2025.11.3** | Nov 2025 |
-| Latest (conda-forge + PyPI) | **2026.3.0** | Mar 2026 |
+| Side-by-side env built 2026-11-20 (`brc-tools-2026-11`) | **2026.10.0** | Oct 2026 |
+| Latest (conda-forge + PyPI), checked 2026-11-20 | **2026.10.0** | Oct 2026 |
 
-What updating `2025.11.3 → 2026.3.0` would buy:
+What `2026.3.0 → 2026.10.0` buys (release notes read 2026-11-20):
+- **2026.9.0 / 2026.9.2** — RRFS/REFS templates moved to the operational bucket
+  (`noaa-rrfs-ops-pds`) and NOMADS; `2dfld` and `subh` products registered after NOAA split
+  the files; a `refs` (ensemble) template added. **`NWPSource("rrfs")` cannot fetch anything
+  on 2026.3.0**: its template builds `noaa-rrfs-pds/rrfs_a/…`, a prefix that now lists zero
+  keys. Also: HTTP Range responses validated on subset downloads, GEFS/URMA/Canadian fixes.
+- **2026.10.0** — ECMWF IFS 0.1° open data. Unreleased on `main` (2026-11-17): the RRFS/REFS
+  NOMADS path corrected (#566); the AWS path we use is unaffected.
+- **NAM is gone**: `noaa-nam-pds` has no keys after `nam.20261103` (retired with RRFS v1,
+  NWS SCN 26-48, along with HREF/SREF/HiresW). Herbie's `nam` template still resolves older
+  dates. HRRR is still publishing.
+
+What updating `2025.11.3 → 2026.3.0` bought:
 - **2026.3.0** — RRFS template fixed to the current S3 bucket layout (#511). **We use `rrfs`** — the
   pinned version may already mis-resolve it.
 - **2026.1.0** — Pandas 3.0 inventory parsing; drops Py3.10 / adds 3.14; new NOAA AIWP models

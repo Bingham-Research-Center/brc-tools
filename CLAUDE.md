@@ -6,18 +6,19 @@ JSON to the BasinWX website. Package: **`brc_tools`** (underscore).
 Repo: **`brc-tools`** (hyphen).
 
 **Scope — this is the method library, not an operations repo.** brc-tools
-supplies the functions other repos call; BasinWX operations live in
-`ubair-website`, the pelican2013 study in `latex-jrl-mjd-mdpiair-2026`.
-BasinWX development leans on this repo heavily right now, and the CHPC obs
-cron imports this working tree directly — that is a deployment coupling to
-keep clean (stay on `main`, never dirty; feature work in a worktree), not a
-reason to treat brc-tools as BasinWX's operational folder. Operational
-config, secrets, deploys, and site behaviour belong to their own repos and
-hosts (`docs/CHPC-REFERENCE.md`, `docs/WEBSITE-INTEGRATION.md`).
+supplies the functions other repos call; the BasinWX site lives in
+`ubair-website`, the pelican2013 study in `latex-jrl-mjd-mdpiair-2026`. The
+CHPC crons import this working tree directly — a deployment coupling to keep
+clean (stay on `main`, never dirty; feature work in a worktree), not ownership.
+A **`brc-data-ops`** repo is planned to drive the 24/7 Clyfar, LLM-forecast and
+BasinWX cycles. Until it exists: generic download/processing changes land here;
+anything ops-specific (cron timing, env cutover, which product feeds which page,
+site contract) is **flagged and written into `docs/BRC-DATA-OPS-HANDOFF.md`,
+not built**.
 
 ## Current focus
 - **pelican2013 manuscript support**: the study (`latex-jrl-mjd-mdpiair-2026`) pins an exact brc-tools SHA — treat `wrf_figures.py`/`wrf_output.py`/`visualize/*` as frozen unless the study repo asks.
-- HRRR/RRFS → BasinWX operational ingest (GH #10). Strategy/status: `docs/nwp/ROADMAP.md`.
+- HRRR/RRFS → BasinWX ingest (GH #10): four HRRR crons live, **nothing RRFS is exported**; RRFS v1 is fetchable (`NWPSource("rrfs")`). Follow-ups: #81 (NAM retired → forecast funnel), #82 (sub-hourly axis). Status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures): `docs/CASE-STUDY-GUIDE.md`.
 - **WRF-input staging**: GRIB → scratch manifests/contracts for `brc-wrf`. Status, division of labour, cold-start SSOT: `docs/WRF-STAGING-STATE-PLAYBOOK.md`.
 - Next up: NWPSource / ObsSource integration tests. Backlog: `WISHLIST-TASKS.md`.
@@ -53,7 +54,8 @@ figures/          generated output (gitignored)
 - `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
 - `docs/ENVIRONMENT-SETUP.md` — conda/venv setup · `docs/CROSS-REPO-SYNC.md` — sibling-repo sync protocol
 - `docs/MODIS-CONTEXT-RENDERER.md` — portable NASA CMR/GIBS MODIS timing, rendering, cache, and provenance workflow
-- `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix
+- `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix, Herbie versions, what each upgrade bought
+- `docs/BRC-DATA-OPS-HANDOFF.md` — ops facts and decisions parked for `brc-data-ops`: live crontab table, RRFS cycle/lag table, env cutover, rollout order
 - `docs/WRF-STAGING-STATE-PLAYBOOK.md` — **WRF-staging cold-start SSOT**, summary + full detail in one doc; two-stream draft `docs/WRF-GEFS-NAM-FIELD-MAP.md` (parked)
 - `docs/WRF-FIGURE-ENGINE.md` — dataset-agnostic figure engine (`scripts/wrf_figures.py --config <case.toml>`); per-case TOMLs + run/figure inventory live in the study repo owning the case (all three engines)
 - `docs/WRF-WINDS.md` — winds engine (`scripts/wrf_winds.py`; `/wrf-basin-winds` skill): five `--figure` families + the tslist time–height engine `scripts/wrf_timeheight.py`. **SSOT for `w_exag` and section fill/sign conventions — defer to it, never restate.**
@@ -99,6 +101,8 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
 - **Heavy jobs run on SLURM, not login nodes.** Ship a `scripts/*.slurm` wrapper (see `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly — the login env doesn't carry. Details + study-repo wrappers: `docs/CHPC-REFERENCE.md`.
 - **Don't reinvent NWP downloads — check Herbie first.** Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`); a hand-rolled GET is the exception and must justify why Herbie doesn't fit.
+- **NWP winds are grid-relative until rotated.** `NWPSource.fetch` returns HRRR/RRFS u/v along the grid axes (~8° off north here) and records the GRIB's grid on `ds.attrs`; `derived.rotate_winds_to_earth` reads it, and raises when there is none. Never hard-code a model's projection.
+- **Check a model feed against its live `.idx`, not memory.** NOAA renames products and splits files (RRFS, 2026); an alias search must match exactly one message — `tests/test_rrfs_aliases.py` pins that to real index files; do the same for a new source.
 - **Units**: NWP temps in K, MSLP in Pa, wind in m/s. Obs already in C / Pa / m/s (Synoptic returns Pa for pressure; units are per-alias in `lookups.toml` `synoptic_units`). Convert at the boundary (e.g. Pa→hPa) only for display.
 - **Lookups** (`brc_tools/nwp/lookups.toml`) is the source of truth for models, regions, waypoints, waypoint groups, variable aliases. Grep it — at 40 KB it is never worth reading whole — and don't duplicate its contents into docs.
 - **Navigate, don't dredge.** Ingest high-value tokens, not whole trees. Never blind-`cat`/read entire figure, GRIB, or `run_*` output dirs (the WRF archive is ~30 GB of near-duplicate PNGs) — `ls | wc -l` or glob first, then read the one file you need; load a doc/TOML only when its topic is in play (see Doc map). For WRF run/figure locations + completeness, read the SSOT index `../latex-jrl-mjd-mdpiair-2026/verification/figures/archive-inventory.md`, not the archive tree.
@@ -119,19 +123,26 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
 | `BRC_TOOLS_{HERBIE,HRRR,MODIS,AQS,GOES,TERRAIN}_CACHE`, `BRC_TOOLS_BASEMAP_DIR`, `BRC_TOOLS_LOCK_DIR`, `BRC_TOOLS_HTTP_IPV4_ONLY` | cache/lock-dir overrides + CHPC IPv4 workaround; defaults live in each module (basemap staged once via `scripts/fetch_basemap.dtn.slurm`) | optional |
 
-All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — **env var
-only** today (the helper also accepts an optional `~/.config/<svc>/api_key` fallback, but
-no client wires it yet); `FR24_API_KEY` is reserved for the skeleton FlightRadar24 client.
+All `api/` clients resolve keys via `brc_tools.api._auth.load_api_key(VAR)` — env var only
+today; `FR24_API_KEY` is reserved for the skeleton FlightRadar24 client.
 
 ## Testing
 ```
 pytest tests/
 cd /tmp && python -c "import brc_tools, brc_tools.visualize.grid"   # editable install present?
 ```
-Use the dedicated **`brc-tools-2026`** env — fresh setup and the CHPC pip flags
-(`--no-build-isolation --no-user`) are in `docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
+Use the dedicated **`brc-tools-2026`** env (crons + manuscript pin run on it; never upgrade
+it in place). RRFS needs Herbie ≥ 2026.10.0: use the side-by-side **`brc-tools-2026-11`**,
+**activated** (its pyproj needs `PROJ_DATA`). Setup, CHPC pip flags, env state:
+`docs/ENVIRONMENT-SETUP.md`. Not bare `python`.
 **Verify the import from OUTSIDE the checkout** — a cwd-inside-the-repo test passes even
 with no editable install; the failure only surfaces later in `brc-wrf`/`clyfar`.
+
+## Agent mechanics on CHPC
+- **Worktrees**: `~/gits/brc-tools-wt/<name>` (`git worktree add … -b <branch> --no-track origin/main`). A sandboxed shell cannot write there: use Edit/Write, or run unsandboxed.
+- **`gh issue view N`** dies on a Projects-classic error: add `--json title,body,comments`. `gh pr merge` needs `--admin` — the owner's call, not an agent's.
+- **`crontab -l`** (notchpeak1) and SLURM need the sandbox off. The crontab is the truth; `docs/CHPC-REFERENCE.md` copies it.
+- **NOAA buckets list over HTTPS** (`https://<bucket>.s3.amazonaws.com/?list-type=2&prefix=…`): read one `.idx`, byte-range one message, never a whole file.
 
 ## Related repos
 - `ubair-website` — **owns BasinWX operations** (site, deploys, its own Synoptic token); Node.js receiver for our uploads (data contract).
@@ -139,6 +150,7 @@ with no editable install; the failure only surfaces later in `brc-wrf`/`clyfar`.
 - `brc-wrf` — WRF runs; consumes brc-tools staging (`manifest`/`contract` sidecars) + imports `brc_tools.visualize.grid`.
 - `latex-jrl-mjd-mdpiair-2026` — **active** pelican2013 WRF study + manuscript; owns the case TOMLs (`verification/config/figures/`) + run/figure inventory (SSOT for run/figure locations), consumes the brc-tools figure engine.
 - `wrf-nudge-ozone-air2026` — frozen/read-only predecessor of the above; case TOMLs were copied byte-for-byte into the active repo. Do not use.
+- `brc-data-ops` — **planned**, not yet created: will own the 24/7 cycles (see Scope).
 - `brc-knowledge` — canonical CHPC infra + validated Slurm run scripts (referenced, not imported).
 - `preprint-clyfar-v0p9` — LaTeX manuscript.
 
