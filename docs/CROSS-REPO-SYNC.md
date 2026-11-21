@@ -2,6 +2,21 @@
 
 **Purpose:** Prevent drift between code, documentation, and technical report across 4 repositories.
 
+> **Status 2026-11-21: the principle holds, several specifics below do not.** Checked against
+> the repos as they are:
+> - The working set is larger than four: `brc-ffion` (LLM forecast text), `brc-knowledge`
+>   (CHPC infra) and a planned **`brc-data-ops`** (to own the 24/7 Clyfar, LLM-forecast and
+>   BasinWX cycles) also carry state that must agree.
+> - This file exists only here and in `preprint-clyfar-v0p9`; `clyfar` has no
+>   `.env.example`, no `test_integration.py` and no `CONTRADICTIONS-REPORT.md` (that file is
+>   in the preprint repo only), and uses `AGENTS.md`, not `AGENT-INDEX.md`.
+> - `ubair-website` has no `chpc-deployment/cron_templates/`, `CHPC-IMPLEMENTATION.md` or
+>   `INTEGRATION_GUIDE.md`. The live cron list is copied in `docs/CHPC-REFERENCE.md`; the
+>   website-side contract is `ubair-website/docs/WEBSITE-BRCTOOLS-CONTRACT.md` and its open
+>   items `WEBSITE-BRCTOOLS-OPEN-ASKS.md`.
+> - `clyfar` is maintenance-frozen: scenario steps that begin "implement in clyfar first"
+>   no longer describe how a new product arrives.
+
 ## The 4 Repositories
 
 1. **clyfar** (`~/gits/clyfar`)

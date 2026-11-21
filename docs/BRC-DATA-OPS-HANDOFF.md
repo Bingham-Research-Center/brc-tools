@@ -14,7 +14,7 @@ before acting on it.
 **Nothing from RRFS.** No script, cron wrapper or website dataType mentions it. The
 live crontab has six jobs; the four model jobs are all HRRR.
 
-| Cron (UTC) | Wrapper / command | Source | Sent to BasinWX |
+| Cron (notchpeak1 local time) | Wrapper / command | Source | Sent to BasinWX |
 |---|---|---|---|
 | `*/5 * * * *` | `brc_tools/download/get_map_obs.py` (env `clyfar-nov2025`) | Synoptic | map observations + metadata |
 | `20 * * * *` | `scripts/cron/run_road_forecast_push.sh` | HRRR `sfc` | road forecast (`road-forecast`) |
@@ -22,6 +22,12 @@ live crontab has six jobs; the four model jobs are all HRRR.
 | `50 * * * *` | `scripts/cron/run_hrrr_waypoint_push.sh` | HRRR `sfc`, f00–f18 | `forecast_hrrr_waypoints_*`: temperature, dewpoint, wind speed/direction, RH, MSLP, rain at named waypoints |
 | `55 * * * *` | `scripts/cron/run_hrrr_kvel_crosswind_push.sh` | HRRR `subh` (15-min) | `forecast_hrrr_kvel_crosswind_*`: runway cross/headwind and gust at KVEL |
 | `15 3,9,15,21 * * *` | `sbatch clyfar/scripts/submit_clyfar.sh` | GEFS (in `clyfar`) | Clyfar ozone forecasts (seasonal) |
+
+**The crontab has no `CRON_TZ`, so these fire in Mountain time, not UTC.** `45 0,6,12,18`
+is 07:45, 13:45, 19:45 and 01:45 UTC in winter (MST) and one hour earlier in UTC terms in
+summer (MDT). Every job tied to a model cycle therefore moves by an hour against that cycle
+twice a year: Clyfar's `15 3,9,15,21` is 4 h 15 min after a GEFS cycle in MST and 3 h 15 min
+in MDT. Decide in `brc-data-ops` whether to set `CRON_TZ=UTC`.
 
 The waypoint and KVEL jobs were live while `docs/CHPC-REFERENCE.md` still listed them
 as "deliberately absent"; that doc now matches the crontab.
@@ -84,8 +90,11 @@ Done in brc-tools (generic, merged with this hand-off):
 
 Not done, on purpose:
 
-- No RRFS export script, cron wrapper or upload. The payload builders, filenames and
-  index files still say `hrrr`.
+- No RRFS cron and no RRFS product on `.com`. One draft exists: the surface-layers
+  exporter takes `--model rrfs` and writes `forecast_rrfs_surface_layers_*` with
+  `"model": "rrfs"`. It was run once by hand (init 2026-11-21 00Z, f00–f18) and uploaded to
+  `https://www.basinwx.dev` only; the site stores it and shows it nowhere. The waypoint and
+  KVEL builders still say `hrrr`.
 - `NWPSource` still collapses a sub-hourly file to its top-of-hour step
   (`normalize_coords` drops the GRIB time axis). The KVEL job reads HRRR `subh` through
   Herbie directly for that reason; an RRFS `subh` product needs the same route or that
@@ -101,13 +110,17 @@ Each item is yours to decide; none is started.
    2026.10.0 (which brings polars 2 and numpy ≥ 2.5.3); its test results are in
    `docs/ENVIRONMENT-SETUP.md`. `brc-tools-2026` was not touched: the pelican2013
    manuscript pins against it. Each wrapper takes `CONDA_ENV` from the environment, so
-   one cron line can be moved at a time. The obs cron is separate again
+   one cron line can be moved at a time. **Started 2026-11-21:** the surface-layers line
+   now carries `CONDA_ENV=brc-tools-2026-11` (crontab backup in
+   `~/.cache/brc-tools/crontab-backups/`); its payload matched the old env's for the same
+   run. The other three HRRR jobs are unchanged. The obs cron is separate again
    (`clyfar-nov2025`, numpy < 2).
 2. **Which RRFS file feeds which product.** Surface layers (4× daily) map cleanly onto
    the 00/06/12/18Z `2dfld` runs. The hourly waypoint product does not: either update it
    every 3 h from `2dfld`, or build it hourly from `subh` (no RH there, so derive it
    from temperature and dewpoint). KVEL crosswind maps onto `subh` on every cycle.
-3. **Cron minutes.** With the lags in section 2: an f000–f018 pull is safe from about
+3. **Cron minutes.** Times here are after the UTC init; the crontab runs in local time
+   (section 1), so convert. With the lags in section 2: an f000–f018 pull is safe from about
    HH+2:30 at 00/06/12/18Z and HH+2:00 at 03/09/15/21Z; an f084 pull from about
    HH+3:45; a `subh` pull from about HH+2:20. The road-forecast receiver rejects
    `init_time` older than 3 h, which RRFS would hit on most hours; that limit is
@@ -133,7 +146,9 @@ Each item is yours to decide; none is started.
 ## 5. A rollout order that keeps HRRR untouched
 
 1. Move one HRRR cron to `brc-tools-2026-11` and watch a day of uploads (no RRFS yet).
+   *Started 2026-11-21 with surface layers.*
 2. Add an RRFS surface-layers export beside the HRRR one, uploading to `.dev` only.
+   *Exporter flag exists and one hand run is on `.dev`; no wrapper, no schedule.*
 3. Compare RRFS and HRRR waypoint series against the Synoptic obs already collected
    (`brc_tools.verify.paired_scores`) before any page shows RRFS.
 4. Add the manifest entries, promote to `.com`.

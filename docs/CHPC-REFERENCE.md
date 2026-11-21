@@ -98,8 +98,9 @@ Synoptic token until the 2026-08-26 rotation.
 # HRRR road forecast — hourly (website hard-rejects init_time > 3 h)
 20 * * * * ~/gits/brc-tools/scripts/cron/run_road_forecast_push.sh
 
-# HRRR surface layers — 4× daily
-45 0,6,12,18 * * * ~/gits/brc-tools/scripts/cron/run_hrrr_surface_push.sh
+# HRRR surface layers — 4× daily. PILOT since 2026-11-21 on env brc-tools-2026-11
+# (Herbie 2026.10.0); revert by dropping the CONDA_ENV= prefix.
+45 0,6,12,18 * * * CONDA_ENV=brc-tools-2026-11 ~/gits/brc-tools/scripts/cron/run_hrrr_surface_push.sh
 
 # HRRR waypoint forecast — hourly
 50 * * * * ~/gits/brc-tools/scripts/cron/run_hrrr_waypoint_push.sh
@@ -111,8 +112,11 @@ Synoptic token until the 2026-08-26 rotation.
 15 3,9,15,21 * * * /bin/bash -c 'source ~/.bashrc_basinwx && export PATH=$PATH:/uufs/notchpeak.peaks/sys/installdir/slurm/std/bin && cd ~/gits/clyfar && sbatch scripts/submit_clyfar.sh >> ~/logs/clyfar_submit.log 2>&1'
 ```
 
-This block matches `crontab -l` on notchpeak1 as read 2026-11-20 (six jobs; the
-crontab is the truth, this is a copy). Every model job is HRRR: nothing fetches or
+**Times are notchpeak1 local time (America/Denver): the crontab sets no `CRON_TZ`.** The
+surface job's `45 0,6,12,18` is 07:45/13:45/19:45/01:45 UTC under MST and an hour earlier
+under MDT. This block matches `crontab -l` on notchpeak1 as read 2026-11-21 (six jobs; the
+crontab is the truth, this is a copy; dated backups of it are in
+`~/.cache/brc-tools/crontab-backups/`). Every model job is HRRR: nothing fetches or
 uploads RRFS. The wrappers default to `CONDA_ENV=brc-tools-2026`, whose Herbie
 (2026.3.0) cannot reach the operational RRFS feed; see
 `docs/BRC-DATA-OPS-HANDOFF.md` before pointing a cron at RRFS.

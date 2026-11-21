@@ -32,13 +32,13 @@ It is a NAM **analysis** (f00), so the valid time equals the init time.
 
 | Init date | Source | How |
 |-----------|--------|-----|
-| ≥ 2020-03 | `herbie` | Herbie operational `nam` model (`product="awphys"`, AWS/NOMADS). Herbie-native (the repo's preferred route). `awphys` ships **RH** (not SPFH) on pressure levels, so specific humidity is derived from RH + T. |
+| 2020-03 … 2026-11-03 | `herbie` | Herbie operational `nam` model (`product="awphys"`, AWS/NOMADS). Herbie-native (the repo's preferred route). `awphys` ships **RH** (not SPFH) on pressure levels, so specific humidity is derived from RH + T. |
 | ≤ 2017-04 | `ncei` | Auth-free NCEI historical grib1 `namanl_218` via `wrf_staging.stage_nam_analysis`. Uses SPFH when present, else derives it from RH + T. |
 | 2017-04 … 2020-03 | — | **Unwired** — raises with a clear message. No post-2017 NCEI grib2 template exists yet (see Follow-ups). Use a recent or pre-2017 init for testing. |
+| after 2026-11-03 | — | **No source: NAM was retired** (NWS SCN 26-48). `noaa-nam-pds` ends at `nam.20261103`; the auto-pick still says `herbie` and the fetch fails with a file-not-found (GH #81). |
 
-Override with `--source herbie|ncei`. Herbie's operational archive reaches back to roughly
-2020-02 on AWS (`noaa-nam-pds`) and only the last ~week on NOMADS; a very old "recent" init
-may still miss.
+Override with `--source herbie|ncei`. Herbie's NAM archive on AWS (`noaa-nam-pds`) runs from
+roughly 2020-02 to 2026-11-03.
 
 ## Usage
 
@@ -74,6 +74,9 @@ two, plus `tfp_threshold` in `visualize/funnel.plot_synoptic_panel`, if the zone
 busy or too sparse.
 
 ## Follow-ups (not yet built)
+
+- **A successor source for inits after 2026-11-03** (GH #81): RRFS North America 13 km or
+  GFS 0.25°. Until then the funnel is a historical-case tool.
 
 - **Post-2017 NCEI grib2 NAM template** to close the 2017–2020 auto-pick gap
   (`nam_218_<date>_<hhmm>_000.grb2`, a new `[models.*]` block in `lookups.toml`).

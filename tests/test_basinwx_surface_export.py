@@ -117,3 +117,69 @@ def test_build_surface_index_preserves_run_metadata():
     assert index_payload["product"] == "surface_layers_index"
     assert index_payload["runs"][0]["filename"].endswith(".json")
     assert INDEX_FILENAME.endswith(".json")
+
+
+# --- one exporter, more than one model ----------------------------------------
+
+
+def test_hrrr_names_are_unchanged_by_default():
+    from brc_tools.nwp import basinwx
+
+    init = dt.datetime(2026, 11, 20, 12, tzinfo=dt.timezone.utc)
+    assert basinwx._surface_filename(init) == "forecast_hrrr_surface_layers_20261120_1200Z.json"
+    assert basinwx._index_filename() == INDEX_FILENAME
+    assert build_surface_index([])["model"] == "hrrr"
+
+
+def test_rrfs_gets_its_own_files_and_model_label():
+    from brc_tools.nwp import basinwx
+
+    init = dt.datetime(2026, 11, 20, 12, tzinfo=dt.timezone.utc)
+    assert basinwx._surface_filename(init, "rrfs") == (
+        "forecast_rrfs_surface_layers_20261120_1200Z.json"
+    )
+    assert basinwx._index_filename("rrfs") == "forecast_rrfs_surface_layers_index.json"
+    assert build_surface_index([], model="rrfs")["model"] == "rrfs"
+    prepared = prepare_surface_dataset(_sample_raw_dataset())
+    payload = build_surface_payload(
+        prepared, init_time=dt.datetime(2026, 4, 16, 0, tzinfo=dt.timezone.utc),
+        stride=1, model="rrfs",
+    )
+    assert payload["model"] == "rrfs"
+
+
+def test_latest_init_times_step_by_the_models_cycle_spacing():
+    from brc_tools.nwp import NWPSource
+    from brc_tools.nwp.basinwx import latest_init_times
+
+    now = dt.datetime(2026, 11, 20, 16, 30, tzinfo=dt.timezone.utc)
+    hrrr = latest_init_times(3, now=now, source=NWPSource("hrrr"))
+    assert [t.hour for t in hrrr] == [14, 13, 12]
+    # RRFS: hourly files only at 00/03/.../21Z, and a 3 h availability lag.
+    rrfs = latest_init_times(3, now=now, source=NWPSource("rrfs"))
+    assert [t.hour for t in rrfs] == [12, 9, 6]
+
+
+def test_unknown_model_is_refused_before_any_fetch(tmp_path):
+    import pytest
+
+    from brc_tools.nwp.basinwx import export_latest_surface_layers
+
+    with pytest.raises(ValueError, match="model must be one of"):
+        export_latest_surface_layers(output_dir=tmp_path, model="gefs")
+
+
+def test_snowfall_total_missing_at_the_analysis_hour_is_zero_not_null():
+    # RRFS has no ASNOW message at f000; later leads that are missing stay missing.
+    raw = _sample_raw_dataset()
+    raw["snowfall_1hr"] = raw["snowfall_1hr"].where(raw.time != raw.time[0])
+    init = dt.datetime(2026, 4, 16, 0, tzinfo=dt.timezone.utc)
+    assert np.isnan(prepare_surface_dataset(raw)["snowfall_1h_mm"].isel(time=0)).all()
+    fixed = prepare_surface_dataset(raw, init_time=init)["snowfall_1h_mm"]
+    assert (fixed.isel(time=0) == 0.0).all()
+    np.testing.assert_array_equal(
+        fixed.isel(time=1), prepare_surface_dataset(_sample_raw_dataset())["snowfall_1h_mm"].isel(time=1)
+    )
+    later = _sample_raw_dataset()
+    later["snowfall_1hr"] = later["snowfall_1hr"].where(later.time != later.time[1])
+    assert np.isnan(prepare_surface_dataset(later, init_time=init)["snowfall_1h_mm"].isel(time=1)).all()

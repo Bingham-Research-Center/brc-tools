@@ -65,6 +65,16 @@ class NWPSource:
 
     # ── public API ──────────────────────────────────────────────────────
 
+    @property
+    def model(self) -> str:
+        """The ``lookups.toml`` model key this source fetches (``"hrrr"``, ``"rrfs"``, ...)."""
+        return self._model_key
+
+    @property
+    def init_cadence_hours(self) -> int:
+        """Hours between the cycles ``latest_init`` steps through."""
+        return int(self._cfg["init_cadence_hours"])
+
     def fetch(
         self,
         init_time: str | datetime.datetime,

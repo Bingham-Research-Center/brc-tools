@@ -34,8 +34,11 @@ wrapper needed, and `.com` has been receiving both for months.
 
 **Accepted dataTypes** (anything else → 400):
 ```
-observations | metadata | outlooks | llm_outlooks | images | timeseries | forecasts | road-forecast
+observations | metadata | outlooks | llm_outlooks | images | forecasts | road-forecast | llm_forecasts | aircraft
 ```
+The list is `ubair-website/server/uploadPolicy.js` (`UPLOAD_DATA_TYPES`), read 2026-11-21 on
+`dev`. `timeseries` is gone. `llm_forecasts` and `aircraft` are new in website 1.7.3 and are
+dev-only until `.com` reports manifest 2.2.0 or later.
 
 ## Fan-out — `BASINWX_API_URLS`
 
@@ -92,8 +95,8 @@ partial data, not a failure.
 > derives series keys dynamically, but its column headers use
 > `Rwy + round(heading/10)`, which mislabels `179` as `Rwy18` — the coordinated
 > website release must switch to `Math.floor(heading/10)` (`179` → `Rwy17`,
-> `359` → `Rwy35`) alongside a **MAJOR `DATA_MANIFEST.json` bump**. Do not
-> install the kvel cron until both sides have shipped; brc-tools releases first.
+> `359` → `Rwy35`) alongside a **MAJOR `DATA_MANIFEST.json` bump**. Both sides have
+> since shipped and the kvel cron is installed (`55 * * * *`).
 
 **`forecast_hrrr_surface_layers_*`** — `POST /api/upload/forecasts`,
 filename `forecast_hrrr_surface_layers_<YYYYMMDD_HHMMZ>.json`. **Schema already
@@ -110,10 +113,21 @@ pinned** at website `DATA_MANIFEST.json:487`; `product_type` enum is
 | `forecast_hrrr_waypoints_*` | `scripts/export_hrrr_waypoint_forecast.py` | `run_hrrr_waypoint_push.sh` | `forecasts` |
 | observations + metadata | `brc_tools/download/get_map_obs.py` | *(direct crontab entry)* | `observations`, `metadata` |
 
+**RRFS draft (dev-only, hand-run, no cron).** `export_hrrr_surface_layers.py --model rrfs`
+writes the same schema with `"model": "rrfs"` to `forecast_rrfs_surface_layers_<init>.json`
+and `forecast_rrfs_surface_layers_index.json`. One run (init 2026-11-21 00Z, f00–f18) was
+uploaded by hand to `https://www.basinwx.dev` on 2026-11-21; nothing on the site reads those
+names, and they are not in `DATA_MANIFEST.json`. It needs env `brc-tools-2026-11`. Do not
+schedule it or send it to `.com` before the manifest lists it:
+`docs/BRC-DATA-OPS-HANDOFF.md`.
+
 `run_hrrr_waypoint_push.sh` is **not** the road-forecast job — it emits a
 different product into `forecasts`. Easy to conflate; don't.
 
-The conda env on notchpeak1 is **`brc-tools-2026`**. There is no `brc-tools` env;
+The wrappers default to conda env **`brc-tools-2026`** (road, waypoint and KVEL jobs). The
+surface-layers job runs on **`brc-tools-2026-11`** as a pilot since 2026-11-21, and the obs
+job on `clyfar-nov2025`. Schedules, in local time: `docs/CHPC-REFERENCE.md`. There is no
+`brc-tools` env;
 under `set -euo pipefail` a wrong name aborts the wrapper into its log with no
 other symptom.
 
@@ -164,7 +178,9 @@ This page is the **contract reference**, folded from the 2026-04-27 and
 Hard rules: temperatures in °C (not Kelvin); never invent dataTypes without a
 website-side PR; don't regress the observations channel.
 
-Known gap: `clyfar/export/to_basinwx.py` reads the singular `BASINWX_API_URL`
-at four sites, so forecasts/images/llm_outlooks reach `.com` alone — the clyfar
-fan-out PR must land **before ozone season (~Nov)**. (`push_outlook.py` was
-fixed 2026-08-13: it now fans out via `load_config_urls()`.)
+Wind components in every HRRR product are **earth-relative** (east/north) since
+brc-tools #78; #83 takes the rotation from the grid the GRIB declares.
+
+Closed gap: `clyfar/export/to_basinwx.py` now fans out through `send_json_to_all` and
+reads the plural `BASINWX_API_URLS` (the singular form is a last-resort fallback), so
+Clyfar's forecasts, images and LLM outlooks reach both hosts.

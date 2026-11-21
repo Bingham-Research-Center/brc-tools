@@ -26,6 +26,8 @@ pip install -e ".[dev]"   # + pytest, ruff, mypy, jupyter
 Conda/mamba (recommended on CHPC — curated, bundles the GRIB/cartopy stack):
 ```bash
 mamba env create -f environment.yml   # env "brc-tools-2026"; then: pip install -e . --no-deps
+# On CHPC two envs already exist: brc-tools-2026 (Herbie 2026.3.0) and brc-tools-2026-11
+# (Herbie 2026.10.0, needed for RRFS). Which runs what: docs/ENVIRONMENT-SETUP.md
 ```
 
 ## Quick usage
@@ -239,9 +241,8 @@ Full endpoint/auth/schema contract: [`docs/WEBSITE-INTEGRATION.md`](docs/WEBSITE
 `brc_tools.download.push_data.send_json_to_server(server, fpath, bucket, key)`
 retains its original single-URL signature because **the `clyfar` repo imports
 it directly**. New brc-tools code should use `send_json_to_all(urls, ...)`
-instead; the legacy function stays intact until `clyfar` migrates (tracked as
-a follow-up, needs a cross-repo PR per
-[`docs/CROSS-REPO-SYNC.md`](docs/CROSS-REPO-SYNC.md)).
+instead. `clyfar`'s exporter has migrated to `send_json_to_all`; its
+`setup-chpc.sh` smoke check still imports the legacy name, so the function stays.
 
 ## Open threads / TODO
 
@@ -262,7 +263,7 @@ is the intended design (Herbie is excellent and we lean on it heavily):
 - `rap_ncei` / `nam` didn't resolve our 2013 targets (RAP-130 lives under
   `…/access/historical/…`; Herbie's `nam` is operational-only).
 
-These are pinned to one version and may already differ upstream (latest is 2026.3.0) —
+These are pinned to one version and may already differ upstream (latest is 2026.10.0, checked 2026-11-20) —
 worth re-checking after each upgrade. Full per-source rationale:
 [`docs/nwp/NWP-SOURCE-MATRIX.md`](docs/nwp/NWP-SOURCE-MATRIX.md).
 

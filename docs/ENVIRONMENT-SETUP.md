@@ -69,12 +69,13 @@ cd /tmp && python -c "import brc_tools, brc_tools.visualize.grid, brc_tools.down
 | Env | Herbie | SynopticPy | polars / numpy / pandas | Runs |
 |---|---|---|---|---|
 | `brc-tools-2026` | 2026.3.0 | 2026.6.0 | 1.42 / 2.5.0 / 3.0.3 | the four HRRR crons, ub-wx, brc-wrf, the pelican2013 manuscript pin. **Do not upgrade in place.** |
-| `brc-tools-2026-11` | 2026.10.0 | 2026.10.0 | 2.1.0 / 2.5.5 / 3.1.1 | nothing yet. Built from `environment.yml` with the two Blaylock packages at their current releases; `brc_tools` installed editable. |
+| `brc-tools-2026-11` | 2026.10.0 | 2026.10.0 | 2.1.0 / 2.5.5 / 3.1.1 | the HRRR surface-layers cron, as a pilot since 2026-11-21. Built from `environment.yml` with the two Blaylock packages at their current releases; `brc_tools` installed editable. |
 
 `brc-tools-2026-11` is the only env that can fetch RRFS (the operational bucket needs
 Herbie ≥ 2026.9.2). `pytest tests/` there: **1052 passed, 11 skipped** on 2026-11-20, the
-same as `brc-tools-2026`, so the suite holds on polars 2. A live Synoptic pull was not
-exercised on it. **Activate it** (`conda activate`), do not call its `bin/python` bare:
+same as `brc-tools-2026`, so the suite holds on polars 2. A live Synoptic pull through
+`ObsSource` works on it (KVEL, 2026-11-21), and its surface-layers payload is identical to
+`brc-tools-2026`'s for the same HRRR run apart from the timestamp. **Activate it** (`conda activate`), do not call its `bin/python` bare:
 conda-forge's pyproj finds its database through `PROJ_DATA`, which only activation sets,
 and 25 tests fail with `proj_create: no database context specified` without it. The cron
 wrappers activate already. Moving a cron onto it is an ops decision:
