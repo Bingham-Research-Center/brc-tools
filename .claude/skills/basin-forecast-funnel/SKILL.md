@@ -21,10 +21,12 @@ Details + caveats: `docs/FORECAST-FUNNEL.md`.
 ## Steps
 1. **Pick the analysis init time** (ask the user): `'YYYY-MM-DD HHZ'` or `YYYYMMDDHH`,
    UTC. The NAM source is **auto-picked by date**:
-   - recent (>= 2020-03) → Herbie operational NAM (AWS/NOMADS);
+   - 2020-03 … 2026-11-03 → Herbie operational NAM (AWS/NOMADS);
    - pre-2017 (<= 2017-04) → NCEI historical grib1 `namanl_218`;
-   - the 2017–2020 window is **unwired** and errors out — use a recent or pre-2017 init
-     for testing (see `docs/FORECAST-FUNNEL.md` for the post-2017 grib2 follow-up).
+   - the 2017–2020 window is **unwired** and errors out (see `docs/FORECAST-FUNNEL.md` for
+     the post-2017 grib2 follow-up);
+   - **after 2026-11-03 there is no NAM** (retired; no successor wired, GH #81) — it errors
+     out, so tell the user the funnel is a historical-case tool for now.
    Override with `--source herbie|ncei` if you must.
 2. **Stage map overlays once (if not already cached):** city labels need the Natural-Earth
    `populated_places` layer alongside the existing ones — `sbatch scripts/fetch_basemap.dtn.slurm`

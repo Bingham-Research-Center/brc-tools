@@ -10,7 +10,8 @@ this module owns every xarray/GRIB/Herbie concern.
 
 Two download paths, auto-picked by init date (:func:`funnel_source_for`):
 
-* **herbie** — Herbie's operational ``nam`` model (AWS/NOMADS), for recent inits.
+* **herbie** — Herbie's operational ``nam`` model (AWS/NOMADS), for 2020-03 to
+  2026-11-03.  NAM was retired after that; later inits raise (no successor yet, GH #81).
   Herbie-native (the repo's preferred route); ``awphys`` ships RH (not SPFH) aloft, so
   specific humidity is derived from RH + T.
 * **ncei**  — the auth-free NCEI historical direct GET (:func:`~brc_tools.nwp.
@@ -42,10 +43,13 @@ from brc_tools.nwp.source import _parse_init_time, load_lookups
 LOG = logging.getLogger(__name__)
 
 # ── source auto-pick windows ────────────────────────────────────────────────
-# Herbie's operational NAM (AWS ``noaa-nam-pds`` back to ~2020-02, NOMADS ~last
-# week) covers recent inits; the NCEI grib1 ``namanl_218`` archive ends in 2017.
+# Herbie's operational NAM (AWS ``noaa-nam-pds`` back to ~2020-02) covers 2020-03 to its
+# retirement; the NCEI grib1 ``namanl_218`` archive ends in 2017.
 _HERBIE_MIN = dt.date(2020, 3, 1)
 _NCEI_MAX = dt.date(2017, 4, 1)
+# NWS SCN 26-48 retired NAM when RRFS v1 went operational: ``noaa-nam-pds`` has
+# ``nam.20261103/`` and nothing later (listed 2026-11-20). No successor is wired (GH #81).
+_NAM_LAST = dt.date(2026, 11, 3)
 
 # Herbie operational NAM: the 12 km CONUS (grid 218) full-physics file — analysis
 # at fxx=0 gives ``nam.tHHz.awphys00.tm00.grib2``.
@@ -126,12 +130,14 @@ class FunnelData:
 
 # ── source selection ────────────────────────────────────────────────────────
 def funnel_source_for(init_dt: dt.datetime) -> str:
-    """Return ``"herbie"`` or ``"ncei"`` for an init date, or raise on the gap.
+    """Return ``"herbie"`` or ``"ncei"`` for an init date, or raise where NAM has none.
 
-    Recent inits (>= 2020-03) use Herbie's operational NAM; pre-2017 inits use the
-    NCEI historical grib1 GET.  The 2017-04..2020-03 window has no wired template.
+    2020-03 .. 2026-11-03 use Herbie's operational NAM; pre-2017 inits use the NCEI
+    historical grib1 GET.  The 2017-04..2020-03 window has no wired template, and
+    after 2026-11-03 there is no NAM at all (retired).
     """
     d = init_dt.date()
+    _require_nam_exists(d)
     if d >= _HERBIE_MIN:
         return "herbie"
     if d <= _NCEI_MAX:
@@ -142,6 +148,17 @@ def funnel_source_for(init_dt: dt.datetime) -> str:
         "Test with a recent init (Herbie) or a pre-2017 init (NCEI). See "
         "docs/FORECAST-FUNNEL.md for the post-2017 grib2 follow-up."
     )
+
+
+def _require_nam_exists(d: dt.date) -> None:
+    """Raise, naming the retirement, for an init after the last NAM run."""
+    if d > _NAM_LAST:
+        raise ValueError(
+            f"No NAM for init {d:%Y-%m-%d}: NAM was retired after {_NAM_LAST:%Y-%m-%d} "
+            "(NWS SCN 26-48, replaced by RRFS v1) and the forecast funnel has no "
+            "successor source wired yet (GH #81). Use an init on or before "
+            f"{_NAM_LAST:%Y-%m-%d}."
+        )
 
 
 # ── small helpers ───────────────────────────────────────────────────────────
@@ -503,6 +520,7 @@ def fetch_funnel_fields(
     # Always fetch every level a panel needs, so a trimmed --levels can't starve one.
     needed = {int(lv) for lv in levels} | {int(s.level) for s in panels if s.level}
     levels = tuple(sorted(needed))
+    _require_nam_exists(init_dt.date())  # an explicit --source herbie cannot fetch it either
     chosen = funnel_source_for(init_dt) if source == "auto" else source
     LOG.info("forecast funnel: init %s, source=%s, levels=%s",
              init_dt.isoformat(), chosen, levels)

@@ -35,10 +35,11 @@ It is a NAM **analysis** (f00), so the valid time equals the init time.
 | 2020-03 … 2026-11-03 | `herbie` | Herbie operational `nam` model (`product="awphys"`, AWS/NOMADS). Herbie-native (the repo's preferred route). `awphys` ships **RH** (not SPFH) on pressure levels, so specific humidity is derived from RH + T. |
 | ≤ 2017-04 | `ncei` | Auth-free NCEI historical grib1 `namanl_218` via `wrf_staging.stage_nam_analysis`. Uses SPFH when present, else derives it from RH + T. |
 | 2017-04 … 2020-03 | — | **Unwired** — raises with a clear message. No post-2017 NCEI grib2 template exists yet (see Follow-ups). Use a recent or pre-2017 init for testing. |
-| after 2026-11-03 | — | **No source: NAM was retired** (NWS SCN 26-48). `noaa-nam-pds` ends at `nam.20261103`; the auto-pick still says `herbie` and the fetch fails with a file-not-found (GH #81). |
+| after 2026-11-03 | — | **No source: NAM was retired** (NWS SCN 26-48). `noaa-nam-pds` ends at `nam.20261103`. Raises before any download with a message naming the retirement, under `--source herbie` too (GH #81). |
 
 Override with `--source herbie|ncei`. Herbie's NAM archive on AWS (`noaa-nam-pds`) runs from
-roughly 2020-02 to 2026-11-03.
+roughly 2020-02 to 2026-11-03; the last day's later cycles may be missing, which Herbie then
+reports as file-not-found.
 
 ## Usage
 
