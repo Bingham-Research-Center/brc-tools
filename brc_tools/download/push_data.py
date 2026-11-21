@@ -132,7 +132,7 @@ def _post_json_to_url(server_address, fpath, file_data, api_key, *, role="PRIMAR
     tried again, up to $BASINWX_UPLOAD_ATTEMPTS times in all (default 3; 1 turns
     retrying off), after the pauses in RETRY_DELAYS_S. Any other status is final:
     the server would refuse the same bytes again. In the week to 2026-11-21, each
-    of the seven files the website found on one host only had failed one DNS
+    of the six files the website found on one host only had failed one DNS
     lookup at the other and was never tried again.
 
     Every attempt writes a receipt (see _receipt) and every line is stamped.

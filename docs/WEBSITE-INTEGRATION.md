@@ -62,7 +62,7 @@ Every attempt appends one line to `~/logs/basinwx/push_receipts.jsonl`
 (`BASINWX_RECEIPTS_LOG`; empty disables it), with `attempt`, `stage` (`health` or
 `upload`), `status`, `error` and `elapsed_ms`.
 
-**Why retries exist:** in the week to 2026-11-21, each of the seven files the website
+**Why retries exist:** in the week to 2026-11-21, each of the six files the website
 found on one host only had failed a single DNS lookup (`Name or service not known`) at
 the other host's health check, and nothing tried it again. Since receipts began
 (2026-09-28), DNS failures are 421 of the 822 failed attempts; the other 401 are
