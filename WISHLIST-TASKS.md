@@ -38,14 +38,15 @@ Issue #10 is closed: four HRRR jobs upload on cron and RRFS is fetchable. What a
 product on BasinWX would take is ops work, parked in `docs/BRC-DATA-OPS-HANDOFF.md` for the
 planned `brc-data-ops` repo. Left here:
 
-- [ ] **NWPSource sub-hourly time axis** (GH #82) — needed before any product can update from every RRFS cycle.
+- [ ] **Sub-hourly accumulations** — `NWPSource` keeps the `subh` 15-min axis (GH #82), but
+  only for instantaneous fields: HRRR `subh` precip is 15-min buckets, RRFS's runs from the
+  top of the hour, and no alias describes either. Needed only if a `subh` product wants precip.
 - [ ] Add structured logging to the operational script (replace print statements for scheduled/unattended runs).
 - [ ] **`.dev` deploy pull** — the `.dev` Linode still needs a deploy pull to close the `filelist.json` fossil; `.com` + `.dev` fan-out itself is live (2026-04-24).
 ## Priority 3: Analysis capability
 
 Extend the case study toolkit for deeper diagnostics.
 
-- [ ] HRRR/RRFS sub-hourly (15-min) through NWPSource — the KVEL cron reads HRRR `subh` hourly via Herbie directly; NWPSource still collapses it (GH #82).
 - [ ] GEFS ensemble workflows — spread, probability, lagged ensemble. Config exists; no analysis code yet.
 - [ ] **Synoptic USGS-HYDRO access** — the token lacks network `mnet_id=203`, so `stream_flow`/`gage_height` queries return zero. Email `support@synopticdata.com` to add it; the workaround is built: `brc_tools.hydro` (NWIS + AWDB clients, PR #75). Fact + evidence folded into `docs/CHPC-REFERENCE.md`. `scripts/inventory_streamflow_vernal.py` lights up once granted.
 

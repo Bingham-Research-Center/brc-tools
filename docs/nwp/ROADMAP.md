@@ -38,10 +38,9 @@ Rollout to BasinWX is staged; stage-by-stage status lives in **GitHub issue #10*
 - **Rollout stages** (open PR lane, website-side dependencies): see GitHub #10.
 
 ### Known limits / remaining
-- **HRRR sub-hourly**: `NWPSource.normalize_coords` discards the GRIB time axis,
-  so `product="subh"` collapses to hourly through NWPSource;
-  `brc_tools/nwp/aviation.py` calls Herbie directly to preserve the 15-min axis.
-  Folding that back into NWPSource is open.
+- **Sub-hourly** (#82, done): `NWPSource.fetch(product="subh")` keeps the 15-min
+  axis for HRRR and RRFS, and `aviation.py` (KVEL crosswind) fetches through it.
+  Instantaneous fields only; `subh` accumulations are not described by any alias yet.
 - **RRFS**: operational upstream since 2026-11 and fetchable through
   `NWPSource("rrfs")` on Herbie ≥ 2026.10.0 (`[models.rrfs]` and the `rrfs` alias
   searches were rebuilt against the live feed 2026-11-20; `tests/test_rrfs_aliases.py`

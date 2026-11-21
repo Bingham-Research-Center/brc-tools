@@ -95,10 +95,10 @@ Not done, on purpose:
   `"model": "rrfs"`. It was run once by hand (init 2026-11-21 00Z, f00–f18) and uploaded to
   `https://www.basinwx.dev` only; the site stores it and shows it nowhere. The waypoint and
   KVEL builders still say `hrrr`.
-- `NWPSource` still collapses a sub-hourly file to its top-of-hour step
-  (`normalize_coords` drops the GRIB time axis). The KVEL job reads HRRR `subh` through
-  Herbie directly for that reason; an RRFS `subh` product needs the same route or that
-  fix (brc-tools #82).
+- `NWPSource.fetch(product="subh")` returns the 15-min axis for HRRR and RRFS (brc-tools
+  #82), and the KVEL job now reads HRRR `subh` through it (payload checked identical to
+  the old direct-Herbie path on 2026-11-20 13Z). An RRFS `subh` product can use the same
+  call; RRFS `subh` starts at f001.
 
 ## 4. Ops decisions and actions
 

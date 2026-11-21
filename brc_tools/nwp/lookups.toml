@@ -31,7 +31,9 @@ wps_fg_name          = "HRRR"
 sfc  = { description = "Surface 2-D",           herbie_name = "sfc"  }
 prs  = { description = "Pressure levels 3-D",   herbie_name = "prs"  }
 nat  = { description = "Native hybrid levels",  herbie_name = "nat"  }
-subh = { description = "15-min sub-hourly sfc",  herbie_name = "subh" }
+# subhourly: one file per hour holds several valid times (15/30/45/60 min; f00 is the
+# analysis alone). NWPSource keeps each message's own valid time on the time axis.
+subh = { description = "15-min sub-hourly sfc",  herbie_name = "subh", subhourly = true }
 
 [models.gefs]
 herbie_model         = "gefs"
@@ -91,7 +93,8 @@ crop_method            = "lonlat_after_aux"
 # The prototype's natlev and testbed products are not published.
 "2dfld" = { description = "Surface + 2-D fields",                          herbie_name = "2dfld"  }
 prslev  = { description = "Pressure levels 3-D (no surface fields)",       herbie_name = "prslev" }
-subh    = { description = "15-min 2-D subset, every hourly cycle to f018", herbie_name = "subh"   }
+# subh starts at f001 (no f000 file); its top-of-hour step reads "1 hour fcst", not "60 min".
+subh    = { description = "15-min 2-D subset, every hourly cycle to f018", herbie_name = "subh", subhourly = true }
 
 [models.gefs_reforecast]
 # GEFSv12 Reforecast (Herbie model "gefs_reforecast"): the only Herbie-retrievable
@@ -2060,6 +2063,11 @@ synoptic_derived_from = ["wind_speed", "wind_direction"]
 hrrr = "UGRD:10 m above ground"
 gefs = "UGRD:10 m above ground"
 rrfs = "UGRD:10 m above ground"
+# A product-specific search wins over the model's (search_by_product.<model>.<product>).
+# HRRR subh also ships 5-min averages ("10-15 min ave fcst"; "0-0 day ave" at f00) of
+# 10 m wind: pin the instantaneous message. Pinned by tests/test_subhourly_aliases.py.
+[aliases.wind_u_10m.search_by_product]
+hrrr = { subh = 'UGRD:10 m above ground:(?:anl|\d+ min fcst):' }
 
 [aliases.wind_v_10m]
 description   = "v wind at 10 m: earth-relative from obs; NWP fetch is grid-relative until rotate_winds_to_earth"
@@ -2070,6 +2078,8 @@ synoptic_derived_from = ["wind_speed", "wind_direction"]
 hrrr = "VGRD:10 m above ground"
 gefs = "VGRD:10 m above ground"
 rrfs = "VGRD:10 m above ground"
+[aliases.wind_v_10m.search_by_product]
+hrrr = { subh = 'VGRD:10 m above ground:(?:anl|\d+ min fcst):' }   # see wind_u_10m
 
 [aliases.wind_speed_10m]
 description   = "Wind speed at 10 m (derived from U/V)"
