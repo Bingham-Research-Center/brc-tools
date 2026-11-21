@@ -40,6 +40,8 @@ trap 'rm -f "${RUN_LOG}"' EXIT
 rc=0
 {
   echo "[run_hrrr_surface_push] $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+  # Which env ran is otherwise invisible in the log -- a CONDA_ENV pilot can't be checked.
+  echo "[run_hrrr_surface_push] env=${CONDA_ENV} herbie=$(python -c 'import herbie; print(herbie.__version__)' 2>&1)"
   python scripts/export_hrrr_surface_layers.py --upload
 } > "${RUN_LOG}" 2>&1 || rc=$?
 

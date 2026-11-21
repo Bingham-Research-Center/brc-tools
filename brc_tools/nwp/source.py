@@ -141,7 +141,7 @@ class NWPSource:
                 actual_product = prod_key if prod_key else fxx_product
                 for alias_name, search_str, output_var in var_list:
                     alias_cfg = aliases[alias_name]
-                    if "derived_from" in alias_cfg:
+                    if "derived_from" in alias_cfg or self._absent_at(alias_cfg, fxx):
                         continue
                     for search, level_label in self._expand_search(
                         search_str, levels, alias_cfg
@@ -281,6 +281,16 @@ class NWPSource:
 
     # ── internal helpers ────────────────────────────────────────────────
 
+    def _absent_at(self, alias_cfg: dict, fxx: int) -> bool:
+        """True when this model's GRIB has no message for the alias at ``fxx``.
+
+        Accumulations and hourly maxima have no window at the analysis hour on some
+        models (``absent_at_f00`` in ``lookups.toml``). Skipping the fetch leaves the
+        variable NaN at f00 -- the same result as before, without a search that cannot
+        match being retried and logged as a failure.
+        """
+        return fxx == 0 and self._model_key in alias_cfg.get("absent_at_f00", ())
+
     def _fetch_hour_variables(self, init_dt, fxx, var_list, aliases, product, levels):
         """Fetch all requested variables for a single forecast hour."""
         retries = self._defaults.get("download_retries", 2)
@@ -290,6 +300,8 @@ class NWPSource:
             # Handle derived variables
             if "derived_from" in alias_cfg:
                 continue  # will be computed after all native vars are fetched
+            if self._absent_at(alias_cfg, fxx):
+                continue
 
             actual_searches = self._expand_search(search_str, levels, alias_cfg)
             for search, level_label in actual_searches:
