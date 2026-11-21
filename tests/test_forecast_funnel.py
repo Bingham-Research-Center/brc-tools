@@ -43,11 +43,11 @@ def test_funnel_source_for_gap_raises():
         funnel_source_for(dt.datetime(2018, 6, 1, 0))
 
 
-def test_funnel_source_for_after_nam_retirement_raises():
-    """GH #81: NAM ends at nam.20261103; later inits must say so, not 404 in Herbie."""
+def test_funnel_source_for_after_nam_retirement_is_gfs():
+    """GH #81: NAM ends at nam.20261103; later inits use GFS 0.25° (JRL, 2026-11-21)."""
     assert funnel_source_for(dt.datetime(2026, 11, 3, 18)) == "herbie"
-    with pytest.raises(ValueError, match="NAM was retired"):
-        funnel_source_for(dt.datetime(2026, 11, 4, 0))
+    assert funnel_source_for(dt.datetime(2026, 11, 4, 0)) == "gfs"
+    assert funnel_source_for(dt.datetime(2027, 1, 15, 12)) == "gfs"
 
 
 def test_explicit_herbie_source_after_retirement_raises_before_any_download(monkeypatch):
@@ -55,8 +55,41 @@ def test_explicit_herbie_source_after_retirement_raises_before_any_download(monk
         pytest.fail("fetched NAM for an init after its retirement")
 
     monkeypatch.setattr(ff, "_herbie_fetch_full", _no_download)
-    with pytest.raises(ValueError, match="NAM was retired.*GH #81"):
+    with pytest.raises(ValueError, match="NAM was retired.*source='gfs'"):
         fetch_funnel_fields("2026-11-20 00Z", source="herbie")
+
+
+def test_auto_after_retirement_fetches_gfs(monkeypatch):
+    captured = {}
+
+    def fake_gfs(init_dt, levels, cache_dir):
+        captured["init"] = init_dt
+        return _synthetic_full(levels)
+
+    monkeypatch.setattr(ff, "_gfs_fetch_full", fake_gfs)
+    monkeypatch.setattr(ff, "_herbie_fetch_full", lambda *a, **k: pytest.fail("NAM fetched"))
+    data = fetch_funnel_fields("2026-11-21 00Z")
+    assert data.source == "gfs" and "GFS 0.25" in data.model_label
+    assert captured["init"] == dt.datetime(2026, 11, 21, 0)
+    assert {p.key for p in data.panels} == {"1a", "1b", "1c", "1d"}
+
+
+def test_gfs_tidy_gives_the_nam_layout():
+    """GFS ships lat 90 -> -90 and lon 0..360; the funnel's gradients need rows northward."""
+    import xarray as xr
+
+    lat = np.array([50.0, 45.0, 40.0, 35.0])                 # southward, as GFS
+    lon = np.array([240.0, 250.0, 260.0, 270.0])             # 0..360, as GFS
+    gh = 5600.0 + 10.0 * lat[:, None] + 0.0 * lon[None, :]   # rises northward
+    ds = xr.Dataset({"gh": (("latitude", "longitude"), gh)},
+                    coords={"latitude": lat, "longitude": lon})
+    out = ff._gfs_tidy(ds)
+    assert list(out.latitude.values) == [35.0, 40.0, 45.0, 50.0]
+    assert list(out.longitude.values) == [-120.0, -110.0, -100.0, -90.0]
+    assert np.all(np.diff(out["gh"].values, axis=0) > 0)     # still rises with row index
+    lon2d, lat2d = ff._lonlat_2d(out)                        # 1-D coords become 2-D
+    assert lon2d.shape == lat2d.shape == (4, 4)
+    assert lat2d[0, 0] == 35.0 and lon2d[0, -1] == -90.0
 
 
 # ── humidity helper ─────────────────────────────────────────────────────────
