@@ -209,6 +209,55 @@ def relative_humidity(temp_K, dewpoint_K):
 
 
 # ---------------------------------------------------------------------------
+# Grid-relative -> earth-relative winds (HRRR)
+# ---------------------------------------------------------------------------
+
+#: HRRR's Lambert conformal grid, as its GRIB2 messages declare it (template 3.30):
+#: LoV 262.5 E, Latin1 = Latin2 = 38.5 N. Its u/v carry uvRelativeToGrid = 1: they are
+#: components along the grid's x and y axes, not east and north.
+HRRR_LCC_LOV_DEG = -97.5
+HRRR_LCC_LATIN_DEG = 38.5
+
+
+def grid_rotation_deg(lon, *, lov_deg=HRRR_LCC_LOV_DEG, latin_deg=HRRR_LCC_LATIN_DEG):
+    """Angle (degrees) from a tangent Lambert grid's y axis to true north, at ``lon``.
+
+    ``sin(latin) * (lon - lov)``: about -7.5 deg at Vernal, -8.6 deg at Daniels Summit.
+    Negative west of LoV, where true north leans toward the grid's +x.
+    """
+    dlon = (np.asarray(lon, dtype=float) - lov_deg + 180.0) % 360.0 - 180.0
+    return np.sin(np.radians(latin_deg)) * dlon
+
+
+def grid_to_earth_winds(u, v, lon, *, lov_deg=HRRR_LCC_LOV_DEG, latin_deg=HRRR_LCC_LATIN_DEG):
+    """Rotate grid-relative (u, v) on a tangent Lambert grid to (east, north) components.
+
+    Speed is unchanged; direction moves by ``grid_rotation_deg``. Works on numpy
+    arrays and xarray objects alike (``lon`` broadcasts against ``u`` and ``v``).
+    """
+    theta = np.radians(grid_rotation_deg(lon, lov_deg=lov_deg, latin_deg=latin_deg))
+    cos_t, sin_t = np.cos(theta), np.sin(theta)
+    return u * cos_t + v * sin_t, -u * sin_t + v * cos_t
+
+
+def rotate_winds_to_earth(ds, u_name, v_name, *, lon_name="longitude"):
+    """Rotate ``ds[u_name]``/``ds[v_name]`` from HRRR grid-relative to earth-relative.
+
+    Marks both variables ``attrs["wind_frame"] = "earth"`` and refuses to rotate them
+    twice. Returns ``ds`` unchanged if either component is missing.
+    """
+    if u_name not in ds or v_name not in ds:
+        return ds
+    if ds[u_name].attrs.get("wind_frame") == "earth":
+        return ds
+    u_e, v_e = grid_to_earth_winds(ds[u_name], ds[v_name], ds[lon_name])
+    for name, field in ((u_name, u_e), (v_name, v_e)):
+        attrs = dict(ds[name].attrs, wind_frame="earth")
+        ds[name] = field.transpose(*ds[name].dims).assign_attrs(attrs)
+    return ds
+
+
+# ---------------------------------------------------------------------------
 # Convenience: add derived fields to an xarray Dataset
 # ---------------------------------------------------------------------------
 

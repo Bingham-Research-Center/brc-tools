@@ -13,7 +13,7 @@ import numpy as np
 import xarray as xr
 
 from brc_tools.nwp import NWPSource
-from brc_tools.nwp.derived import temp_K_to_C
+from brc_tools.nwp.derived import rotate_winds_to_earth, temp_K_to_C
 from brc_tools.nwp.source import load_lookups
 
 LOG = logging.getLogger(__name__)
@@ -90,12 +90,15 @@ def fetch_surface_dataset(
 ) -> xr.Dataset:
     """Fetch the HRRR surface fields needed by the BasinWX export."""
     src = source or NWPSource("hrrr")
-    return src.fetch(
+    ds = src.fetch(
         init_time=init_time,
         forecast_hours=list(forecast_hours),
         variables=SURFACE_EXPORT_VARIABLES,
         region=region,
     )
+    # HRRR u/v are grid-relative (about 8 deg off north over the Basin); the website
+    # draws arrows from these components as east/north.
+    return rotate_winds_to_earth(ds, "wind_u_10m", "wind_v_10m")
 
 
 def prepare_surface_dataset(ds: xr.Dataset) -> xr.Dataset:
