@@ -4,7 +4,7 @@
 download a model run, pull obs, score, and emit figures for a single weather
 event. It's how a forecast question becomes a folder of PNGs.
 
-**Needs:** `SYNOPTIC_TOKEN` (most cases use obs) · conda env `brc-tools`
+**Needs:** `SYNOPTIC_TOKEN` (most cases use obs) · conda env `brc-tools-2026`
 
 ## Run an existing example
 

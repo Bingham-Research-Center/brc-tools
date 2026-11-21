@@ -1,4 +1,4 @@
-# Forecast funnel (NAM synoptic montage)
+# Forecast funnel (NAM / GFS synoptic montage)
 
 A **forecast funnel** is the classic top-down forecasting workflow — read the synoptic
 scale first (the jet, the long waves), zoom to the regional flow and moisture, then finish

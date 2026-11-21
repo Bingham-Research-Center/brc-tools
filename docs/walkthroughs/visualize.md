@@ -4,7 +4,7 @@
 evolution over forecast hours, or stacked station time series. You'd run this to
 eyeball a forecast or build case-study figures.
 
-**Needs:** matplotlib + cartopy (in the `brc-tools` env) · conda env `brc-tools`
+**Needs:** matplotlib + cartopy (in the `brc-tools-2026` env) · conda env `brc-tools-2026`
 
 ## A map (plan view)
 

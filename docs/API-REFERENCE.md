@@ -289,7 +289,7 @@ One-line map of the WRF-era modules; each row's owning doc carries the detail.
 | `nwp.wrf_tslist` | `.TS` traces + level profiles | WRF-CONVECTIVE.md |
 | `nwp.wrf_engine` | shared TOML/time plumbing + FigureLedger for the engines | WRF-WINDS.md |
 | `nwp.wrf_output` / `nwp.wrf_figures` | publication figure engine (pelican2013 — frozen) | WRF-FIGURE-ENGINE.md |
-| `nwp.forecast_funnel` | NAM synoptic-montage data | FORECAST-FUNNEL.md |
+| `nwp.forecast_funnel` | synoptic-montage data (NAM; GFS 0.25° after 2026-11-03) | FORECAST-FUNNEL.md |
 | `visualize.grid` | field/section plots — **brc-wrf import seam** | WRF-FIGURE-ENGINE.md |
 | `visualize.wrf_curtain` | native-eta curtains (ASL or terrain-flattened) | WRF-WINDS.md |
 | `visualize.tracer_origin` | tracer curtains/spectra/origin maps | WRF-WINDS.md |

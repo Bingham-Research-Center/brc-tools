@@ -3,7 +3,7 @@
 **What / why:** Look up flights and airport arrivals/departures via FlightAware.
 Used for aviation-weather work around Basin airports (e.g. KVEL).
 
-**Needs:** `FLIGHTAWARE_API_KEY` (or `~/.config/flightaware/api_key`) · conda env `brc-tools`
+**Needs:** `FLIGHTAWARE_API_KEY` (or `~/.config/flightaware/api_key`) · conda env `brc-tools-2026`
 
 ## Look up airport arrivals
 
