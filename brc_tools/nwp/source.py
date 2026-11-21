@@ -3,6 +3,7 @@
 import datetime
 import logging
 import os
+import time
 import tomllib
 from pathlib import Path
 
@@ -121,6 +122,13 @@ class NWPSource:
             left as the GRIB has them (grid-relative for HRRR/RRFS); the
             grid the messages declare is copied to ``ds.attrs`` (``grid_*``)
             so ``derived.rotate_winds_to_earth(ds, u, v)`` can turn them.
+
+            A message that still fails after ``download_retries`` attempts is
+            logged and left out, whatever ``max_workers`` is: that variable is
+            NaN at that hour, a variable that failed at every hour is absent,
+            and an hour where nothing arrived is missing from ``time`` -- so
+            read the hours back from ``time``, not from ``forecast_hours``.
+            ``RuntimeError`` only when nothing arrived at all.
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -175,12 +183,21 @@ class NWPSource:
         raw_results: dict[tuple[int, str], xr.Dataset] = {}
         fxx_set: set[int] = set()
 
+        def _record(item, run):
+            # One rule for serial and parallel: a message that still fails after its
+            # retries is logged and left out; it does not take the whole fetch down.
+            try:
+                fxx, out_name, ds = run()
+            except Exception as exc:
+                logger.warning("Fetch failed f%03d %s: %s", item[0], item[3], exc)
+                return
+            if ds is not None:
+                raw_results[(fxx, out_name)] = ds
+                fxx_set.add(fxx)
+
         if max_workers <= 1 or len(work_items) <= 1:
             for item in work_items:
-                fxx, out_name, ds = _do_fetch(item)
-                if ds is not None:
-                    raw_results[(fxx, out_name)] = ds
-                    fxx_set.add(fxx)
+                _record(item, lambda item=item: _do_fetch(item))
         else:
             workers = min(max_workers, len(work_items))
             logger.info(
@@ -193,14 +210,7 @@ class NWPSource:
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {pool.submit(_do_fetch, item): item for item in work_items}
                 for future in as_completed(futures):
-                    try:
-                        fxx, out_name, ds = future.result()
-                        if ds is not None:
-                            raw_results[(fxx, out_name)] = ds
-                            fxx_set.add(fxx)
-                    except Exception as exc:
-                        item = futures[future]
-                        logger.warning("Fetch failed f%03d %s: %s", item[0], item[3], exc)
+                    _record(futures[future], future.result)
 
         # Group by fxx, merge, normalize, crop
         results: dict[int, xr.Dataset] = {}
@@ -258,7 +268,8 @@ class NWPSource:
             for t_idx in range(pt.sizes.get("time", 1)):
                 row = {"waypoint": wp_name}
                 if "time" in pt.dims:
-                    row["valid_time"] = pt.time.values[t_idx].item()
+                    # .item() on datetime64[ns] is an int, not a datetime: pin to us.
+                    row["valid_time"] = pt.time.values[t_idx].astype("datetime64[us]").item()
                     pt_t = pt.isel(time=t_idx)
                 else:
                     pt_t = pt
@@ -290,34 +301,6 @@ class NWPSource:
         match being retried and logged as a failure.
         """
         return fxx == 0 and self._model_key in alias_cfg.get("absent_at_f00", ())
-
-    def _fetch_hour_variables(self, init_dt, fxx, var_list, aliases, product, levels):
-        """Fetch all requested variables for a single forecast hour."""
-        retries = self._defaults.get("download_retries", 2)
-        results = {}
-        for alias_name, search_str, output_var in var_list:
-            alias_cfg = aliases[alias_name]
-            # Handle derived variables
-            if "derived_from" in alias_cfg:
-                continue  # will be computed after all native vars are fetched
-            if self._absent_at(alias_cfg, fxx):
-                continue
-
-            actual_searches = self._expand_search(search_str, levels, alias_cfg)
-            for search, level_label in actual_searches:
-                ds = self._herbie_fetch(init_dt, fxx, search, product, retries)
-                if ds is not None:
-                    out_name = output_var if level_label is None else f"{output_var}_{level_label}"
-                    data_vars = list(ds.data_vars)
-                    if data_vars:
-                        ds = ds.rename({data_vars[0]: out_name})
-                    # Strip transient coords NOW so merge doesn't conflict
-                    keep = {"time", "latitude", "longitude", "y", "x"}
-                    drop = [n for n in ds.coords if n not in keep and n not in ds.dims]
-                    if drop:
-                        ds = ds.drop_vars(drop, errors="ignore")
-                    results[out_name] = ds
-        return results
 
     def _herbie_fetch(self, init_dt, fxx, search_str, product, retries):
         """Single Herbie fetch with cache validation, file-level locking, and retry.
@@ -371,6 +354,7 @@ class NWPSource:
                             purge_cached_files(H)
                         except Exception:
                             pass
+                    time.sleep(self._defaults.get("download_backoff_secs", 0) * (attempt + 1))
                     continue
                 if self._defaults.get("return_nans_on_failure", False):
                     return None

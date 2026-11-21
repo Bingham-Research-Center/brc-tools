@@ -10,6 +10,9 @@ from brc_tools.nwp.source import load_lookups
 
 logger = logging.getLogger(__name__)
 
+# Which wind component each speed + direction alias is (see _add_wind_components).
+_WIND_COMPONENT = {"wind_u_10m": "u", "wind_v_10m": "v"}
+
 
 class ObsSource:
     """Fetch station observations via SynopticPy with canonical alias names.
@@ -89,6 +92,9 @@ class ObsSource:
             df = raw
         else:
             df = pl.from_pandas(raw.reset_index() if hasattr(raw, "reset_index") else raw)
+
+        # Aliases Synoptic serves only as speed + direction (u/v), from the raw columns
+        df = self._add_wind_components(df, variables)
 
         # Rename Synoptic column names → canonical aliases
         rename_map = self._build_rename_map(variables, df.columns)
@@ -183,6 +189,33 @@ class ObsSource:
                 for sn in alias["synoptic_derived_from"]:
                     synoptic_vars.add(sn)
         return sorted(synoptic_vars)
+
+    def _add_wind_components(self, df, variables):
+        """Earth-relative u/v for aliases declared ``synoptic_derived_from`` speed + direction.
+
+        Synoptic reports the direction the wind blows *from*, so u = -speed * sin(dir)
+        and v = -speed * cos(dir). Compare these with NWP winds only after
+        ``derived.rotate_winds_to_earth``: HRRR/RRFS u/v are grid-relative.
+        """
+        aliases = self._lu["aliases"]
+        exprs = []
+        for var_name in variables:
+            alias = aliases.get(var_name, {})
+            sources = alias.get("synoptic_derived_from")
+            if not sources:
+                continue
+            component = _WIND_COMPONENT.get(var_name)
+            speed, direction = sources
+            if component is None:
+                logger.warning("No rule derives %r from %s; skipping", var_name, sources)
+                continue
+            if speed not in df.columns or direction not in df.columns:
+                logger.warning("%r needs %s; Synoptic returned neither or one", var_name, sources)
+                continue
+            rad = pl.col(direction).radians()
+            trig = rad.sin() if component == "u" else rad.cos()
+            exprs.append((-pl.col(speed) * trig).alias(alias.get("output_var", var_name)))
+        return df.with_columns(exprs) if exprs else df
 
     def _build_rename_map(self, variables, existing_columns):
         """Build a column rename mapping from Synoptic names → canonical aliases."""
