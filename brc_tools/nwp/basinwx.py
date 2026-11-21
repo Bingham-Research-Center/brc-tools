@@ -33,7 +33,6 @@ SURFACE_EXPORT_VARIABLES = [
     "precip_1hr",
     "snowfall_1hr",
     "categorical_rain",
-    "categorical_snow",
 ]
 
 FIELD_SPECS = {
@@ -57,8 +56,10 @@ FIELD_SPECS = {
         "units": "Millimeters",
         "precision": 1,
     },
+    # Named "1h" for the website contract, but it is HRRR ASNOW: snowfall (depth, not
+    # liquid) accumulated since the run began. HRRR has no hourly ASNOW message.
     "snowfall_1h_mm": {
-        "label": "Snowfall",
+        "label": "Snowfall since run start (depth)",
         "units": "Millimeters",
         "precision": 1,
     },
@@ -102,12 +103,14 @@ def prepare_surface_dataset(ds: xr.Dataset) -> xr.Dataset:
     template = ds["temp_2m"]
 
     rain_flag = _maybe_field(ds, "categorical_rain", template, 0.0)
-    snow_flag = _maybe_field(ds, "categorical_snow", template, 0.0)
     precip = _maybe_field(ds, "precip_1hr", template, 0.0).clip(min=0.0)
     snowfall = _maybe_field(ds, "snowfall_1hr", template, 0.0).clip(min=0.0)
 
     rainfall_mm = precip.where(rain_flag >= 0.5, 0.0)
-    snowfall_mm = (snowfall * 1000.0).where(snow_flag >= 0.5, 0.0)
+    # ASNOW is a run total, so it is not masked by the hour's categorical snow flag:
+    # masking zeroed the total in any hour the flag was off (1,615 grid-hours in one run
+    # on 2026-11-19) and it reappeared the next hour.
+    snowfall_mm = snowfall * 1000.0
 
     prepared = xr.Dataset(coords=ds.coords)
     prepared["temperature_2m_c"] = temp_K_to_C(template).astype(float)
