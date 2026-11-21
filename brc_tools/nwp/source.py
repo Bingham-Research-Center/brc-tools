@@ -14,7 +14,7 @@ from herbie import Herbie
 
 from brc_tools.nwp._cache import purge_cached_files, validate_cached_grib
 from brc_tools.nwp._crop import crop_to_bbox, nearest_point_value
-from brc_tools.nwp._normalise import normalize_coords
+from brc_tools.nwp._normalise import normalize_coords, steps_to_time
 from brc_tools.nwp.derived import WindGrid
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,9 @@ class NWPSource:
         xr.Dataset
             Gridded dataset with dims ``(time, y, x)`` and variables
             renamed to their canonical ``output_var`` names.  The ``time``
-            coordinate holds valid times (init + fxx).  Wind components are
+            coordinate holds valid times: init + fxx, or for a ``subhourly``
+            product (``subh``) each message's own valid time, so f00-f02 come
+            back as 0, 15, 30, ..., 120 min.  Wind components are
             left as the GRIB has them (grid-relative for HRRR/RRFS); the
             grid the messages declare is copied to ``ds.attrs`` (``grid_*``)
             so ``derived.rotate_winds_to_earth(ds, u, v)`` can turn them.
@@ -157,6 +159,7 @@ class NWPSource:
                     alias_cfg = aliases[alias_name]
                     if "derived_from" in alias_cfg or self._absent_at(alias_cfg, fxx):
                         continue
+                    search_str = self._search_for(alias_cfg, actual_product, search_str)
                     for search, level_label in self._expand_search(
                         search_str, levels, alias_cfg
                     ):
@@ -174,6 +177,16 @@ class NWPSource:
         def _do_fetch(item):
             fxx, search, prod, out_name, ret = item
             ds = self._herbie_fetch(init_dt, fxx, search, prod, ret)
+            if isinstance(ds, list):
+                # cfgrib could not stack the matches into one array (e.g. instantaneous
+                # and averaged twins of one field): the search is too loose.
+                raise ValueError(
+                    f"{search!r} matched {len(ds)} groups of messages in {prod} that "
+                    f"cannot be stacked; pin it to one message per valid time "
+                    f"(search_by_product in lookups.toml)"
+                )
+            if ds is not None and self._is_subhourly(prod):
+                ds = steps_to_time(ds)
             if ds is not None:
                 data_vars = list(ds.data_vars)
                 if data_vars:
@@ -320,6 +333,17 @@ class NWPSource:
         return candidate.replace(hour=hour, minute=0, second=0, microsecond=0)
 
     # ── internal helpers ────────────────────────────────────────────────
+
+    def _search_for(self, alias_cfg: dict, product: str, default: str) -> str:
+        """The alias's search for this product: ``search_by_product.<model>.<product>``
+        when the registry gives one (a product whose messages need a tighter pattern),
+        else the model's ``search``."""
+        by_product = alias_cfg.get("search_by_product", {}).get(self._model_key, {})
+        return by_product.get(product, default)
+
+    def _is_subhourly(self, product: str) -> bool:
+        """True for a product whose files hold several valid times each (``subh``)."""
+        return bool(self._cfg.get("products", {}).get(product, {}).get("subhourly", False))
 
     def _absent_at(self, alias_cfg: dict, fxx: int) -> bool:
         """True when this model's GRIB has no message for the alias at ``fxx``.

@@ -1,9 +1,8 @@
 """Airport-relative HRRR wind payloads for the BasinWX aviation page.
 
-Fetches HRRR surface winds via Herbie directly so the native sub-hourly
-(15-min) time axis of the ``subh`` product is preserved.  NWPSource's
-normalize_coords replaces the GRIB time coord with a single init+fxx
-stamp, which collapses subh output to hourly — this module bypasses that.
+Fetches HRRR 10 m wind and gust through ``NWPSource``, which keeps the native 15-min
+time axis of the ``subh`` product (GH #82) and pins the instantaneous 10 m wind there
+(``subh`` also ships 5-min averages of it).
 """
 
 from __future__ import annotations
@@ -14,22 +13,23 @@ from typing import Iterable
 
 import numpy as np
 import xarray as xr
-from herbie import Herbie
 
 from brc_tools.nwp._crop import nearest_point_value
 from brc_tools.nwp.derived import (
-    HRRR_GRID, crosswind_kt, headwind_kt, rotate_winds_to_earth, wind_direction, wind_speed,
     KT_PER_MS,
+    crosswind_kt,
+    headwind_kt,
+    rotate_winds_to_earth,
+    wind_direction,
+    wind_speed,
 )
-from brc_tools.nwp.source import load_lookups
+from brc_tools.nwp.source import NWPSource, load_lookups
 
 LOG = logging.getLogger(__name__)
 
 DEFAULT_PRODUCT = "subh"
 DEFAULT_MAX_FXX = 6
-SEARCH_U10 = "UGRD:10 m above ground"
-SEARCH_V10 = "VGRD:10 m above ground"
-SEARCH_GUST = "GUST:surface"
+AIRPORT_VARIABLES = ("wind_u_10m", "wind_v_10m", "wind_gust_10m")
 
 
 def fetch_airport_winds(
@@ -40,38 +40,17 @@ def fetch_airport_winds(
 ) -> xr.Dataset:
     """Fetch HRRR 10 m U/V plus surface gust across a list of forecast hours.
 
-    Uses Herbie directly so the native time axis (4 × 15-min per hour for
-    ``subh``; one hourly step for ``sfc``) is preserved across the concat.
+    ``subh`` comes back on its native axis (f00 analysis, then 4 x 15 min per hour);
+    ``sfc`` one step per hour. Winds are rotated to earth-relative by the grid the
+    GRIB declares (runway math and "deg_true" need east/north).
     """
-    slices: list[xr.Dataset] = []
-    for fxx in forecast_hours:
-        H = Herbie(init_time, model="hrrr", product=product, fxx=int(fxx))
-        pieces: list[xr.Dataset] = []
-        for search in (SEARCH_U10, SEARCH_V10, SEARCH_GUST):
-            try:
-                piece = H.xarray(search, remove_grib=False)
-            except Exception as exc:
-                LOG.warning("Herbie fetch failed f%03d %r: %s", int(fxx), search, exc)
-                continue
-            if isinstance(piece, list):
-                piece = xr.merge(piece, compat="override", combine_attrs="drop")
-            pieces.append(_clean_dataset(piece))
-        if not pieces:
-            continue
-        slices.append(xr.merge(pieces, compat="override", combine_attrs="drop"))
-
-    if not slices:
-        raise RuntimeError(
-            f"No HRRR {product} data fetched for init={init_time} "
-            f"fxx={list(forecast_hours)}"
-        )
-
-    merged = xr.concat(slices, dim="time", combine_attrs="drop")
-    # HRRR u/v are grid-relative; the runway math and "deg_true" need east/north.
-    # HRRR_GRID is named outright because this function fetches model="hrrr" itself.
-    for u_name, v_name in (("u10", "v10"), ("UGRD", "VGRD")):
-        merged = rotate_winds_to_earth(merged, u_name, v_name, grid=HRRR_GRID)
-    return merged.sortby("time")
+    ds = NWPSource("hrrr").fetch(
+        init_time=init_time,
+        forecast_hours=list(forecast_hours),
+        variables=list(AIRPORT_VARIABLES),
+        product=product,
+    )
+    return rotate_winds_to_earth(ds, "wind_u_10m", "wind_v_10m").sortby("time")
 
 
 def build_airport_crosswind_payload(
@@ -89,8 +68,8 @@ def build_airport_crosswind_payload(
 
     pt = nearest_point_value(ds, lat, lon, method="kdtree_2d")
 
-    u = np.asarray(pt["u10"].values if "u10" in pt.data_vars else pt["UGRD"].values)
-    v = np.asarray(pt["v10"].values if "v10" in pt.data_vars else pt["VGRD"].values)
+    u = np.asarray(_first_var(pt, ("wind_u_10m", "u10", "UGRD")).values)
+    v = np.asarray(_first_var(pt, ("wind_v_10m", "v10", "VGRD")).values)
     gust_ms = _get_gust_ms(pt)
 
     speed_kt = wind_speed(u, v) * KT_PER_MS
@@ -154,33 +133,16 @@ def _airport_config(airport: str) -> dict[str, object]:
     return airports[airport]
 
 
-def _clean_dataset(ds: xr.Dataset) -> xr.Dataset:
-    keep = {"time", "valid_time", "step", "latitude", "longitude", "y", "x"}
-    drop = [n for n in ds.coords if n not in keep and n not in ds.dims]
-    if drop:
-        ds = ds.drop_vars(drop, errors="ignore")
-    if "step" in ds.coords and "valid_time" in ds.coords:
-        ds = ds.drop_vars("step", errors="ignore")
-    if "valid_time" in ds.coords and "time" in ds.coords:
-        ds = ds.drop_vars("time", errors="ignore").rename({"valid_time": "time"})
-    elif "valid_time" in ds.coords:
-        ds = ds.rename({"valid_time": "time"})
-    if "time" in ds.coords and "time" not in ds.dims:
-        if ds["time"].ndim == 1:
-            # subh: the array dimension is `step` (4 x 15-min per hour) and the
-            # renamed `time` is a 1-D coord varying along it, so the axis needs
-            # swapping onto time, not a new length-1 axis bolted on. expand_dims
-            # here raised "time already exists as coordinate or variable name"
-            # and no crosswind file has ever been produced.
-            ds = ds.swap_dims({ds["time"].dims[0]: "time"})
-        else:
-            # sfc: scalar valid_time, so promote it to a real length-1 axis.
-            ds = ds.expand_dims("time")
-    return ds
+def _first_var(pt: xr.Dataset, names: tuple[str, ...]) -> xr.DataArray:
+    """The first of ``names`` present: canonical (NWPSource) first, cfgrib names after."""
+    for name in names:
+        if name in pt.data_vars:
+            return pt[name]
+    raise KeyError(f"none of {names} in dataset (have {list(pt.data_vars)})")
 
 
 def _get_gust_ms(pt: xr.Dataset) -> np.ndarray | None:
-    for name in ("gust", "GUST", "i10fg", "fg10"):
+    for name in ("wind_gust_10m", "gust", "GUST", "i10fg", "fg10"):
         if name in pt.data_vars:
             return np.asarray(pt[name].values)
     return None

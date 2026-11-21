@@ -96,17 +96,53 @@ def field_value(base: float, fxx: int, lat, lon_180):
     return base + 0.5 * fxx + 2.0 * (np.asarray(lat) - 40.0) + 0.3 * (np.asarray(lon_180) + 110.0)
 
 
-def _idx_lines(messages: dict, fxx: int) -> list[tuple[str, str, str, float]]:
-    """(search line, message key, short name, base) like Herbie's ``search_this`` column."""
+#: Added to an averaged twin's value so a test can tell which message was read.
+AVERAGE_DECOY = 1000.0
+_WIND_10M = ("UGRD:10 m above ground", "VGRD:10 m above ground")
+
+
+@dataclass(frozen=True)
+class Msg:
+    line: str  # Herbie's search_this text
+    key: str
+    short: str
+    base: float
+    minutes: int  # lead time of the message's valid time
+    kind: str = "inst"  # "inst" or "ave": cfgrib stacks each kind separately
+
+
+def _idx_lines(messages: dict, fxx: int, style: str | None = None) -> list[Msg]:
+    """Index lines for one file. ``style`` None is an hourly file; ``"hrrr"`` / ``"rrfs"``
+    a sub-hourly one as the live feeds write it (2026-11-20 13Z):
+
+    * HRRR ``wrfsubh``: f00 is ``anl``; later hours step 15/30/45/60 min, labelled in
+      minutes all the way ("75 min fcst"), and 10 m wind has a 5-min-average twin
+      ("70-75 min ave fcst"; "0-0 day ave fcst" at f00).
+    * RRFS ``subh``: no f000 file; whole hours read "1 hour fcst", not "60 min".
+    """
     lines = []
     for key, (short, base) in messages.items():
         if key.startswith("APCP"):
-            if fxx == 0:
-                continue  # HRRR f00 has no accumulation window
-            line = f":{key}:{fxx - 1}-{fxx} hour acc fcst:"
-        else:
-            line = f":{key}:{'anl' if fxx == 0 else f'{fxx} hour fcst'}:"
-        lines.append((line, key, short, base))
+            if fxx == 0 or style is not None:
+                continue  # no window at f00; sub-hourly buckets are not modelled here
+            lines.append(Msg(f":{key}:{fxx - 1}-{fxx} hour acc fcst:", key, short, base, 60 * fxx))
+            continue
+        if style is None:
+            label = "anl" if fxx == 0 else f"{fxx} hour fcst"
+            lines.append(Msg(f":{key}:{label}:", key, short, base, 60 * fxx))
+            continue
+        if fxx == 0:
+            lines.append(Msg(f":{key}:anl:", key, short, base, 0))
+            if style == "hrrr" and key in _WIND_10M:
+                lines.append(Msg(f":{key}:0-0 day ave fcst:", key, short, base + AVERAGE_DECOY, 0, "ave"))
+            continue
+        for k in range(1, 5):
+            m = 60 * (fxx - 1) + 15 * k
+            label = f"{m // 60} hour fcst" if style == "rrfs" and m % 60 == 0 else f"{m} min fcst"
+            lines.append(Msg(f":{key}:{label}:", key, short, base, m))
+            if style == "hrrr" and key in _WIND_10M:
+                lines.append(Msg(f":{key}:{m - 5}-{m} min ave fcst:", key, short,
+                                 base + AVERAGE_DECOY, m, "ave"))
     return lines
 
 
@@ -114,18 +150,19 @@ def _idx_lines(messages: dict, fxx: int) -> list[tuple[str, str, str, float]]:
 
 
 def make_fake_herbie(grid: Grid, *, products: dict[str, dict] | None = None,
-                     grids: dict[str, Grid] | None = None):
+                     grids: dict[str, Grid] | None = None, subh_style: str = "hrrr"):
     """Return a fresh ``FakeHerbie`` class bound to one grid (class state is per test).
 
     ``products`` maps Herbie product -> message table; default: ``sfc``/``2dfld``/
-    ``atmos.25`` serve the surface table, ``prs``/``prslev`` the pressure one, and
-    ``atmos.5`` (GEFS pgrb2a) both. ``grids`` gives a product its own grid (GEFS
-    ``atmos.5`` is 0.5 deg where ``atmos.25`` is 0.25 deg); others use ``grid``.
+    ``atmos.25`` serve the surface table, ``prs``/``prslev`` the pressure one,
+    ``atmos.5`` (GEFS pgrb2a) both, and ``subh`` the surface table written the
+    ``subh_style`` way (``"hrrr"`` or ``"rrfs"``, see ``_idx_lines``). ``grids`` gives a
+    product its own grid (GEFS ``atmos.5`` is 0.5 deg where ``atmos.25`` is 0.25 deg).
     """
     tables = products or {
         "sfc": SFC_MESSAGES, "2dfld": SFC_MESSAGES, "atmos.25": SFC_MESSAGES,
         "atmos.5": {**SFC_MESSAGES, **PRS_MESSAGES},
-        "prs": PRS_MESSAGES, "prslev": PRS_MESSAGES,
+        "prs": PRS_MESSAGES, "prslev": PRS_MESSAGES, "subh": SFC_MESSAGES,
     }
     grid_for = dict(grids or {})
     default_grid = grid
@@ -159,36 +196,45 @@ def make_fake_herbie(grid: Grid, *, products: dict[str, dict] | None = None,
             table = tables.get(self.product)
             if table is None:
                 raise ValueError(f"FakeHerbie: no {self.product!r} file")
-            hits = [h for h in _idx_lines(table, self.fxx) if re.search(search, h[0])]
+            style = subh_style if self.product == "subh" else None
+            if style == "rrfs" and self.fxx == 0:
+                raise ValueError("FakeHerbie: RRFS publishes no subh f000 file")
+            hits = [h for h in _idx_lines(table, self.fxx, style) if re.search(search, h.line)]
             if not hits:
                 raise ValueError(f"No GRIB messages found. There might be something wrong with {search=}")
-            if len(hits) > 1:
+            if style is None and len(hits) > 1:
                 raise AssertionError(f"FakeHerbie: {search!r} matched {len(hits)} messages")
-            _, key, short, base = hits[0]
-            return self._dataset(key, short, base)
+            # cfgrib stacks same-kind messages of one field along `step`; instantaneous
+            # and averaged ones land in separate hypercubes, and Herbie returns a list.
+            kinds: dict[str, list[Msg]] = {}
+            for hit in hits:
+                kinds.setdefault(hit.kind, []).append(hit)
+            cubes = [self._dataset(group) for group in kinds.values()]
+            return cubes[0] if len(cubes) == 1 else cubes
 
-        def _dataset(self, key, short, base):
+        def _dataset(self, msgs: list[Msg]):
             grid = grid_for.get(self.product, default_grid)
             lat2d, lon180 = grid.lonlat_2d()
-            values = field_value(base, self.fxx, lat2d, lon180)
+            first = msgs[0]
             init = np.datetime64(self.date, "ns")
-            step = np.timedelta64(self.fxx, "h")
-            level_name, level = _level_coord(key)
-            coords = {
-                "time": init,
-                "step": step,
-                level_name: level,
-                "valid_time": init + step,
-                "gribfile_projection": 0,
-            }
+            steps = np.array([np.timedelta64(m.minutes, "m") for m in msgs], dtype="timedelta64[ns]")
+            values = np.stack([field_value(m.base, m.minutes / 60.0, lat2d, lon180) for m in msgs])
+            level_name, level = _level_coord(first.key)
+            coords = {"time": init, level_name: level, "gribfile_projection": 0}
             if grid.regular:
-                dims = ("latitude", "longitude")
+                space = ("latitude", "longitude")
                 coords.update(latitude=("latitude", grid.lat), longitude=("longitude", grid.lon))
             else:
-                dims = ("y", "x")
-                coords.update(latitude=(dims, grid.lat), longitude=(dims, grid.lon))
-            attrs = dict(grid.attrs, GRIB_shortName=short)
-            return xr.Dataset({short: (dims, values, attrs)}, coords=coords)
+                space = ("y", "x")
+                coords.update(latitude=(space, grid.lat), longitude=(space, grid.lon))
+            if len(msgs) == 1:  # a lone message: scalar step and valid_time
+                coords.update(step=steps[0], valid_time=init + steps[0])
+                dims, values = space, values[0]
+            else:
+                coords.update(step=("step", steps), valid_time=("step", init + steps))
+                dims = ("step", *space)
+            attrs = dict(grid.attrs, GRIB_shortName=first.short)
+            return xr.Dataset({first.short: (dims, values, attrs)}, coords=coords)
 
     return FakeHerbie
 

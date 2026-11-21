@@ -31,6 +31,11 @@ failed at every hour, and an hour where nothing arrived is missing from `time`. 
 from `ds.time`, never from the `forecast_hours` you asked for. `RuntimeError` only when nothing
 arrived at all.
 
+**Sub-hourly:** a product flagged `subhourly` in `lookups.toml` (`subh`, HRRR and RRFS) keeps
+each message's own valid time, so `product="subh"` over f00–f02 gives 0, 15, …, 120 min. A
+product whose messages need a tighter pattern than the model's search takes
+`search_by_product.<model>.<product>` (HRRR `subh` 10 m wind: the instant, not its 5-min average).
+
 **One grid per fetch:** GEFS `_pl` aliases read the 0.5° `atmos.5` file, surface aliases the
 0.25° `atmos.25`, and GEFS hours above f240 switch to `atmos.5`. A fetch that mixes grids raises
 `ValueError` naming the products (it used to outer-join them, leaving the coarse field NaN on
