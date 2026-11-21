@@ -24,13 +24,11 @@ Not blocking:
 
 ## Priority 1: Reliability
 
-The NWP/obs pipeline is functional but undertested. One regression in
-alias resolution or coordinate handling could silently produce wrong data
-in every case study.
+`NWPSource`, `ObsSource` and the fetch → extract → align → score chain are covered by
+mocked-Herbie/SynopticPy integration tests (`tests/test_nwp_source_integration.py`,
+`test_obs_source_integration.py`, `test_verification_pipeline.py`; fakes in
+`tests/_nwp_fakes.py`). Still open:
 
-- [ ] **NWPSource integration tests (mocked Herbie)** — mock `Herbie.xarray()` to return synthetic datasets; test alias resolution, product grouping, coordinate normalization, spatial cropping, waypoint extraction, and failure handling. This is the single highest-leverage task.
-- [ ] **ObsSource integration tests (mocked SynopticPy)** — mock `TimeSeries` to return synthetic DataFrames; test alias renaming, waypoint column injection, timezone stripping.
-- [ ] **End-to-end pipeline test** — fetch → extract_at_waypoints → align_obs_to_nwp → paired_scores with synthetic data. Validates the full verification workflow.
 - [ ] **GEFS aliases point at a file that cannot serve them.** `NWPSource("gefs")` defaults to `atmos.25`, the *sparse* `pgrb2s.0p25` file (26 messages at f000, 38 at f006; live index 2026-11-20 00Z). It has **no `mb` levels**, so all six `*_pl` aliases (product `atmos.25`) match nothing; `cloud_cover_low` (`LCDC`) is absent too; `cloud_cover_total` is absent at f000 only (a candidate for `absent_at_f00`). Pressure levels live in the `pgrb2a`/`pgrb2b` files. Decide the `_pl` product, then pin a GEFS index fixture test like `tests/test_rrfs_aliases.py`. No known caller fetches these through `NWPSource`, which is how it went unnoticed. (GEFS `precip_1hr` was dropped in #85: GEFS has no hourly bucket.)
 - [ ] Make the tree ruff-clean: ruff is installed in both envs, but `ruff check` still reports pre-existing findings (import order, `datetime.UTC` alias), so it cannot gate a PR yet.
 
