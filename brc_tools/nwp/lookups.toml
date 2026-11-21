@@ -2052,7 +2052,7 @@ gefs = "RH:2 m above ground"
 rrfs = ":RH:2 m above ground"   # leading colon: RRFS also ships MAXRH/MINRH at 2 m
 
 [aliases.wind_u_10m]
-description   = "Eastward wind at 10 m (geographic)"
+description   = "u wind at 10 m: earth-relative from obs; NWP fetch is grid-relative until rotate_winds_to_earth"
 units         = "m s-1"
 output_var    = "wind_u_10m"
 synoptic_derived_from = ["wind_speed", "wind_direction"]
@@ -2062,7 +2062,7 @@ gefs = "UGRD:10 m above ground"
 rrfs = "UGRD:10 m above ground"
 
 [aliases.wind_v_10m]
-description   = "Northward wind at 10 m (geographic)"
+description   = "v wind at 10 m: earth-relative from obs; NWP fetch is grid-relative until rotate_winds_to_earth"
 units         = "m s-1"
 output_var    = "wind_v_10m"
 synoptic_derived_from = ["wind_speed", "wind_direction"]

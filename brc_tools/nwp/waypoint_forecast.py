@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Iterable
 
 import numpy as np
@@ -11,6 +12,8 @@ import xarray as xr
 from brc_tools.nwp.derived import add_wind_fields, pa_to_hpa, rotate_winds_to_earth, temp_K_to_C
 from brc_tools.nwp.point_extract import extract_point_series, valid_times_iso
 from brc_tools.nwp.source import NWPSource, load_lookups
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_REGION = "uinta_basin"
 DEFAULT_FORECAST_HOURS = tuple(range(0, 19))
@@ -116,7 +119,13 @@ def build_waypoint_payload(
 
     specs = field_specs or FIELD_SPECS
     init_utc = _ensure_utc(init_time)
-    hours = [int(h) for h in forecast_hours]
+    # Hours come from the dataset, like build_surface_payload: NWPSource.fetch drops an
+    # hour that never arrived, and a requested-hours list would then sit one step out
+    # of line with valid_times and every forecast series.
+    hours = _dataset_forecast_hours(ds, init_utc)
+    missing = sorted({int(h) for h in forecast_hours} - set(hours))
+    if missing:
+        logger.warning("Waypoint payload %s: hours %s missing from the dataset", group, missing)
 
     stations_out: list[dict[str, object]] = []
     for wp_name in group_cfg:
@@ -191,6 +200,17 @@ def _convert_series(
                 converted.append(round(float(value), precision))
         out[output_name] = converted
     return out
+
+
+def _dataset_forecast_hours(ds: xr.Dataset, init_utc: dt.datetime) -> list[int]:
+    """Lead hours of the dataset's own ``time`` axis, relative to ``init_utc``."""
+    if "time" not in ds.coords:
+        return []
+    init_np = np.datetime64(init_utc.replace(tzinfo=None), "s")
+    return [
+        int((value - init_np) / np.timedelta64(1, "h"))
+        for value in np.atleast_1d(ds["time"].values)
+    ]
 
 
 def _ensure_utc(value: dt.datetime) -> dt.datetime:

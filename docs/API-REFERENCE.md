@@ -25,6 +25,12 @@ Returns `xr.Dataset` with dims `(time, y, x)` and canonical variable names.
 
 **Note:** Derived aliases like `wind_speed_10m` are not fetched — call `add_wind_fields(ds)` after.
 
+**Failures:** a message that still fails after `download_retries` (with `download_backoff_secs`
+between tries) is logged and left out, serial or parallel alike: NaN at that hour, absent if it
+failed at every hour, and an hour where nothing arrived is missing from `time`. Read hours back
+from `ds.time`, never from the `forecast_hours` you asked for. `RuntimeError` only when nothing
+arrived at all.
+
 #### .extract_at_waypoints(ds, *, group=, waypoints=) → pl.DataFrame
 
 Extract nearest-point time series at named waypoints.
@@ -79,7 +85,11 @@ from brc_tools.nwp.alignment import harmonize_units, align_obs_to_nwp
 
 #### harmonize_units(nwp_df, obs_df, variables, *, target="obs") → (DataFrame, DataFrame)
 
-Convert NWP and obs DataFrames to matching unit systems using the conversion table in `lookups.toml`.
+Convert NWP and obs DataFrames to matching unit systems. Each alias's `units` (NWP) and
+`synoptic_units` (obs) come from `lookups.toml`; the converters live in `alignment.py`. Two
+spellings of one quantity (`kg m-2`/`mm` of water, `W m-2`/`W/m**2`) pass through unchanged; a
+pair with no converter logs a warning rather than pairing values in different units
+(`tests/test_verification_pipeline.py` fails if a registry pair has neither).
 
 #### align_obs_to_nwp(obs_df, nwp_df, *, variables=, tolerance_minutes=30, strategy="nearest", harmonize=True) → DataFrame
 
@@ -108,6 +118,9 @@ df = obs.timeseries(
 Fetch station time series via SynopticPy. Provide one of `stids`, `waypoint_group`, or `waypoints`.
 
 Returns DataFrame with columns: `stid`, `valid_time` (tz-naive UTC), plus one per alias. `waypoint` column added when using waypoint_group/waypoints.
+Only sensor 1 of each variable is read (SynopticPy's `pivot` default). `wind_u_10m`/`wind_v_10m`
+are built from Synoptic's speed and direction (earth-relative); compare them with NWP winds
+only after `rotate_winds_to_earth`.
 
 ---
 

@@ -1,12 +1,17 @@
 """Spatial cropping and nearest-point extraction."""
 
+import hashlib
 import logging
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# KD-trees keyed by what the grid *is* (shape + lat/lon bytes), never by object
+# identity: ``id()`` of a temporary is reused once it is freed, which handed every
+# later grid the first grid's tree and silently returned the wrong point.
 _kdtree_cache: dict = {}
+_KDTREE_CACHE_MAX = 8
 
 
 def crop_to_bbox(ds, sw, ne, crop_method="lonlat_after_aux"):
@@ -70,17 +75,31 @@ def nearest_point_value(ds, lat, lon, method="kdtree_2d"):
         return ds.sel(latitude=lat, longitude=lon, method="nearest")
 
     query_lon = _match_lon_convention_2d(lon, lon2d)
-    cache_key = id(lat2d.values.data)
-    if cache_key not in _kdtree_cache:
-        from scipy.spatial import cKDTree
-        pts = np.column_stack([lat2d.values.ravel(), lon2d.values.ravel()])
-        _kdtree_cache[cache_key] = (cKDTree(pts), lat2d.shape)
-    tree, shape = _kdtree_cache[cache_key]
+    tree, shape = _kdtree_for(lat2d.values, lon2d.values)
     _, idx = tree.query([lat, query_lon])
     yi, xi = np.unravel_index(idx, shape)
     y_dim = [d for d in lat2d.dims if "y" in d.lower() or d == lat2d.dims[0]][0]
     x_dim = [d for d in lat2d.dims if "x" in d.lower() or d == lat2d.dims[-1]][0]
     return ds.isel({y_dim: int(yi), x_dim: int(xi)})
+
+
+def _kdtree_for(lat2d: np.ndarray, lon2d: np.ndarray):
+    """Return ``(tree, shape)`` for this lat/lon grid, building it on first use."""
+    lat2d = np.ascontiguousarray(lat2d)
+    lon2d = np.ascontiguousarray(lon2d)
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(lat2d.tobytes())
+    digest.update(lon2d.tobytes())
+    key = (lat2d.shape, lat2d.dtype.str, lon2d.dtype.str, digest.hexdigest())
+    hit = _kdtree_cache.get(key)
+    if hit is None:
+        from scipy.spatial import cKDTree
+        pts = np.column_stack([lat2d.ravel(), lon2d.ravel()])
+        hit = (cKDTree(pts), lat2d.shape)
+        if len(_kdtree_cache) >= _KDTREE_CACHE_MAX:
+            _kdtree_cache.pop(next(iter(_kdtree_cache)))
+        _kdtree_cache[key] = hit
+    return hit
 
 
 def _get_2d_coord(ds, name):

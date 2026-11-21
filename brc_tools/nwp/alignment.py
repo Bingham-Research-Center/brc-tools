@@ -24,6 +24,15 @@ _UNIT_CONVERTERS: dict[tuple[str, str], callable] = {
     ("hPa", "Pa"): lambda x: x * 100.0,
     ("mm", "m"): lambda x: x / 1000.0,
     ("m", "mm"): lambda x: x * 1000.0,
+    # Volumetric soil moisture: the model's fraction, Synoptic's percent.
+    ("m3 m-3", "%"): lambda x: x * 100.0,
+    ("%", "m3 m-3"): lambda x: x / 100.0,
+}
+
+# One quantity, two spellings: nothing to convert (1 kg m-2 of water is 1 mm).
+_SAME_UNITS: set[frozenset[str]] = {
+    frozenset({"kg m-2", "mm"}),
+    frozenset({"W m-2", "W/m**2"}),
 }
 
 
@@ -72,6 +81,15 @@ def harmonize_units(
         obs_unit = alias.get("synoptic_units")
 
         if nwp_unit is None or obs_unit is None or nwp_unit == obs_unit:
+            continue
+        if frozenset({nwp_unit, obs_unit}) in _SAME_UNITS:
+            continue
+        pair = (nwp_unit, obs_unit) if target == "obs" else (obs_unit, nwp_unit)
+        if pair not in _UNIT_CONVERTERS:
+            logger.warning(
+                "No %s -> %s conversion for %s; its NWP and obs columns stay in "
+                "different units", pair[0], pair[1], var,
+            )
             continue
 
         if target == "obs":
