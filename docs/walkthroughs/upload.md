@@ -5,7 +5,7 @@ just displays whatever we upload, so this is the last step of an operational job
 Uploads **fan out** to every configured server (production + dev).
 
 **Needs:** `DATA_UPLOAD_API_KEY` (32-char hex) · `BASINWX_API_URLS` (comma list;
-first = primary) · conda env `brc-tools`. The full data contract is in
+first = primary) · conda env `brc-tools-2026`. The full data contract is in
 [WEBSITE-INTEGRATION.md](../WEBSITE-INTEGRATION.md).
 
 ## Run an operational producer (easiest)

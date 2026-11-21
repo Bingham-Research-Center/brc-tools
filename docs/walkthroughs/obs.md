@@ -4,7 +4,7 @@
 pressure…) for the Uinta Basin. You'd run this to see what *actually happened*,
 or to find past events worth studying.
 
-**Needs:** `SYNOPTIC_TOKEN` (or `~/.config/SynopticPy/config.toml`) · conda env `brc-tools`
+**Needs:** `SYNOPTIC_TOKEN` (or `~/.config/SynopticPy/config.toml`) · conda env `brc-tools-2026`
 
 ## Get a station time series
 

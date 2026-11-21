@@ -37,7 +37,8 @@ on notch392 (2026-05-13): group6 OK; group4 and group5 broken.
 source ~/software/pkg/miniforge3/etc/profile.d/conda.sh
 
 conda activate clyfar-nov2025    # Clyfar forecasting; has SynopticPy, polars, herbie
-conda activate brc-tools         # General brc-tools work
+conda activate brc-tools-2026    # General brc-tools work (crons, manuscript pin)
+conda activate brc-tools-2026-11 # Herbie 2026.10 (RRFS); the surface-cron pilot
 ```
 
 ## Environment exports

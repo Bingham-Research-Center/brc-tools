@@ -2,15 +2,16 @@
 
 Completed items are removed once merged; git history is the record.
 
-## Forecast funnel (NAM synoptic montage) — follow-ups
+## Forecast funnel (NAM / GFS synoptic montage) — follow-ups
 
 Shipped: `/basin-forecast-funnel` skill + `scripts/forecast_funnel.py` (+ `.dtn.slurm`)
 rendering a 250/500/600 hPa + surface-analysis montage from a NAM analysis
 (`brc_tools/nwp/forecast_funnel.py` + `brc_tools/visualize/funnel.py`; city labels added to
 `visualize/basemap.py`). Reference: **`docs/FORECAST-FUNNEL.md`**.
 
-- **NAM was retired on 2026-11-03** — the funnel has no source for later inits (GH #81).
-  A successor (RRFS North America 13 km or GFS) is the one item here that blocks new cases.
+- [x] **NAM was retired on 2026-11-03.** GFS 0.25° is the successor for later inits (#95,
+  closes #81), checked live on the 2026-11-21 00Z analysis. **RRFS North America 13 km**
+  would be finer, but it needs a rotated-lat-lon wind rotation first.
 
 Not blocking:
 

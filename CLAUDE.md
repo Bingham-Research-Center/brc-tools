@@ -18,7 +18,7 @@ contract) goes to **brc-data-ops** (`docs/OPS-BACKLOG.md` there), not here.
 
 ## Current focus
 - **pelican2013 manuscript support**: the study (`latex-jrl-mjd-mdpiair-2026`) pins an exact brc-tools SHA — treat `wrf_figures.py`/`wrf_output.py`/`visualize/*` as frozen unless the study repo asks.
-- HRRR/RRFS → BasinWX ingest: four HRRR crons live (wrappers in `brc-data-ops`), **nothing RRFS is exported**; RRFS v1 is fetchable (`NWPSource("rrfs")`). Website asks still open: P26 (wind frame + `producer` keys, after their manifest MINOR), P11 (hourly surface layers), P28 (Clyfar schemas). The live list is ubair-website `docs/CHPC-INGEST-REPLY-nov21.md`. Status: `docs/nwp/ROADMAP.md`.
+- HRRR/RRFS → BasinWX ingest: four HRRR crons live (wrappers in `brc-data-ops`), **nothing RRFS is exported**; RRFS v1 is fetchable (`NWPSource("rrfs")`). Open website asks (P26, P11, P28): ubair-website `docs/CHPC-INGEST-REPLY-nov21.md`. Status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures): `docs/CASE-STUDY-GUIDE.md`.
 - **WRF-input staging**: GRIB → scratch manifests/contracts for `brc-wrf`. Status, division of labour, cold-start SSOT: `docs/WRF-STAGING-STATE-PLAYBOOK.md`.
 - Next up: P26 once the website declares its keys; `subh` accumulations (no alias yet). Backlog: `WISHLIST-TASKS.md`; ops work goes to brc-data-ops.
@@ -39,7 +39,7 @@ brc_tools/        installable package
   terrain/        D8 catchments, basin floors, perpendicular gate lines on USGS 3DEP; sills, throats, model-grid terrain (optional extra `terrain`, env terrain-2026) — docs/TERRAIN-D8.md, docs/TERRAIN-THROATS.md
   drainage/       idealised cold-air drainage theory on that geometry (cooling, slope flow, throat hydraulics, basin cascade; numpy only) — docs/DRAINAGE-THEORY.md
   flow/           idealised stratified flow over that geometry (linear mountain waves on a DEM, layered lee waves, layer hydraulics, pool seiches and soft-boundary response) — docs/FLOW-THEORY.md
-scripts/          operational scripts + case studies
+scripts/          export entry points (run by the brc-data-ops crons) + case studies
 docs/             canonical project docs (see Doc map below)
   walkthroughs/   plain-language per-tool guides + glossary
 tests/            pytest suite
@@ -51,8 +51,8 @@ figures/          generated output (gitignored)
 - `docs/README.md` — index of `docs/` (mirrors this map)
 - `docs/API-REFERENCE.md` / `docs/API-CLIENTS.md` — module reference / external API-client helpers
 - `docs/CASE-STUDY-GUIDE.md` — how to write a case-study script
-- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, cron (incl. HRRR upload), Synoptic-token rotation surface
-- `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out)
+- `docs/CHPC-REFERENCE.md` — CHPC account, partitions, salloc, a copy of the cron lines (the crontab itself is brc-data-ops'), Synoptic-token rotation surface
+- `docs/WEBSITE-INTEGRATION.md` — BasinWX upload contract (endpoint, auth, dataTypes, schemas, fan-out, retries and receipts)
 - `docs/ENVIRONMENT-SETUP.md` — conda/venv setup · `docs/CROSS-REPO-SYNC.md` — sibling-repo sync protocol
 - `docs/MODIS-CONTEXT-RENDERER.md` — portable NASA CMR/GIBS MODIS timing, rendering, cache, and provenance workflow
 - `docs/nwp/ROADMAP.md` — HRRR/RRFS strategy · `docs/nwp/NWP-SOURCE-MATRIX.md` — per-source download matrix, Herbie versions, what each upgrade bought
@@ -68,7 +68,7 @@ figures/          generated output (gitignored)
 - `docs/EVENT-DIAGNOSTICS.md` — `obs.profiles`, `satellite.goes`, `utils.solar`: a past night from stations, GOES LST and the sun
 - `docs/WRF-TRAJECTORIES.md` — `nwp.wrf_trajectories`: offline back/forward trajectories in model-index space
 - `docs/DEFICIT-REFERENCE.md` — the sunset-profile datum for heat-deficit budgets (`nwp.wrf_deficit_reference`), the two-datum error bar and the `theta_ref_*.json` sidecar consumed by brc-voxel-viz
-- `docs/FORECAST-FUNNEL.md` — NAM "forecast funnel" synoptic montage (`scripts/forecast_funnel.py`; `/basin-forecast-funnel` skill); NAM source auto-picks by init date
+- `docs/FORECAST-FUNNEL.md` — "forecast funnel" synoptic montage (`scripts/forecast_funnel.py`; `/basin-forecast-funnel` skill); the source auto-picks by init date: NAM to 2026-11-03, GFS 0.25° after
 - `docs/VISUAL-SUITE-SOP.md` — **how to produce a suite of WRF visuals, and the ways it goes wrong**; engine-agnostic procedure + known failure modes. Read before a first sweep on a new case.
 - `WISHLIST-TASKS.md` — prioritised backlog
 
@@ -81,8 +81,10 @@ with headers `x-api-key` (32–128-char hex from `DATA_UPLOAD_API_KEY`) and
 `x-client-hostname` (must end `.chpc.utah.edu`). Server URL resolves
 `BASINWX_API_URLS` (env, comma-sep for fan-out) → `~/.config/ubair-website/website_urls`
 → `website_url` (legacy). Health: `/api/health`.
+Transient failures are retried (`docs/WEBSITE-INTEGRATION.md`, "Retries and receipts").
 **`clyfar` imports this function** — do not change its signature without
-a cross-repo PR. Operational deployment lives in `docs/CHPC-REFERENCE.md`.
+a cross-repo PR. Deployment: `brc-data-ops` (crontab, wrappers); its wrappers run
+`scripts/export_hrrr_*.py` and `-m brc_tools.download.get_road_forecast`, a seam too.
 
 A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 `plot_vertical_section`, `terrain_contour_levels`) is imported by `brc-wrf`'s
@@ -101,6 +103,7 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 - **API calls**: wrap in try/except; log and continue; retry with backoff at boundaries only.
 - **NWP code** lives in `brc_tools/nwp/`, not `brc_tools/download/`.
 - **Heavy jobs run on SLURM, not login nodes.** On notchpeak1 every cron and your own session share one **8 GiB / 8-core cgroup** and `/tmp` is RAM: a full `pytest` there got a cron run killed (2026-11-21), so run suites under `salloc`. Ship a `scripts/*.slurm` wrapper (see `stage_inputs.dtn.slurm`; account `lawson-np`) and call the env python directly — the login env doesn't carry. Details + study-repo wrappers: `docs/CHPC-REFERENCE.md`.
+- **Herbie sets no request timeouts**: call `brc_tools.nwp._http.ensure_request_timeouts()` before new direct Herbie use. NWPSource, `hrrr_access` and the funnel do; a dead S3 socket once hung four crons for days.
 - **Don't reinvent NWP downloads — check Herbie first.** Record each source's Herbie-native-vs-direct decision in `docs/nwp/NWP-SOURCE-MATRIX.md` (enforced by `tests/test_source_matrix.py`); a hand-rolled GET is the exception and must justify why Herbie doesn't fit.
 - **NWP winds are grid-relative until rotated.** `NWPSource.fetch` returns HRRR/RRFS u/v along the grid axes (~8° off north here) and records the GRIB's grid on `ds.attrs`; `derived.rotate_winds_to_earth` reads it, and raises when there is none. Never hard-code a model's projection.
 - **Check a model feed against its live `.idx`, not memory.** NOAA renames products and splits files (RRFS, 2026); an alias search must match exactly one message — `tests/test_rrfs_aliases.py` pins that to real index files; do the same for a new source.
@@ -122,6 +125,7 @@ A second cross-repo seam: `brc_tools.visualize.grid` (`plot_grid_field`,
 | `FLIGHTAWARE_API_KEY` | FlightAware AeroAPI (`api/` clients) | aviation only |
 | `PERPLEXITY_API_KEY` | Perplexity client + `.mcp.json` MCP server | optional |
 | `MISTRAL_API_KEY` | Mistral client + `.mcp.json` MCP server | optional |
+| `BASINWX_UPLOAD_ATTEMPTS`, `BASINWX_RECEIPTS_LOG`, `BASINWX_VERIFY_UPLOADS` | upload attempts (default 3), receipts file, post-upload check; `docs/WEBSITE-INTEGRATION.md` | optional |
 | `BRC_HYDRO_CACHE` | USGS/NRCS raw pages + parquet (`brc_tools.hydro`); default `~/.cache/brc-tools/hydro`. Synoptic archive and ledger roots are caller-supplied (`obs.research`, `obs.budget`) | optional |
 | `BRC_TOOLS_{HERBIE,HRRR,MODIS,AQS,GOES,TERRAIN}_CACHE`, `BRC_TOOLS_BASEMAP_DIR`, `BRC_TOOLS_LOCK_DIR`, `BRC_TOOLS_HTTP_IPV4_ONLY` | cache/lock-dir overrides + CHPC IPv4 workaround; defaults live in each module (basemap staged once via `scripts/fetch_basemap.dtn.slurm`) | optional |
 
@@ -130,7 +134,7 @@ today; `FR24_API_KEY` is reserved for the skeleton FlightRadar24 client.
 
 ## Testing
 ```
-pytest tests/
+python -m pytest -q tests/        # on notchpeak1, wrap in: srun -A lawson-np -p lawson-np -n 4 --mem=16G -t 0:25:00 bash -c '…'
 cd /tmp && python -c "import brc_tools, brc_tools.visualize.grid"   # editable install present?
 ```
 Use the dedicated **`brc-tools-2026`** env (crons + manuscript pin run on it; never upgrade
@@ -141,8 +145,9 @@ it in place). RRFS needs Herbie ≥ 2026.10.0: use the side-by-side **`brc-tools
 with no editable install; the failure only surfaces later in `brc-wrf`/`clyfar`.
 
 ## Agent mechanics on CHPC
-- **Worktrees**: `~/gits/brc-tools-wt/<name>` (`git worktree add … -b <branch> --no-track origin/main`). A sandboxed shell cannot write there: use Edit/Write, or run unsandboxed.
-- **`gh issue view N`** dies on a Projects-classic error: add `--json title,body,comments`. `gh pr merge` needs `--admin` — the owner's call, not an agent's.
+- **Worktrees**: `~/gits/brc-tools-wt/<name>` (`git worktree add … -b <branch> --no-track origin/main`). A sandboxed shell cannot write there: use Edit/Write, or run unsandboxed. The editable install points at `~/gits/brc-tools`, so in a worktree a bare `pytest` or `python scripts/x.py` runs the *cron tree's* code: use `python -m pytest`, `PYTHONPATH=$PWD`.
+- **Pulling the cron tree**: a pull touching `.claude/skills` stops part-way in the sandbox; pull outside it, with the owner's OK, not at :45–:59.
+- **`gh issue view N`** and `gh pr edit` die on a Projects-classic error: add `--json title,body,comments`, or `gh api -X PATCH …/pulls/N -F body=@file`. `gh pr merge` needs `--admin` — the owner's call. "Close #N" in a PR body closes #N on merge; write it only when meant.
 - **`crontab -l`** (notchpeak1) and SLURM need the sandbox off. The crontab is the truth; `brc-data-ops/crontab/notchpeak1.crontab` copies it. It runs in **Mountain time** (no `CRON_TZ`): `45 0` is 07:45 UTC in winter.
 - **NOAA buckets list over HTTPS** (`https://<bucket>.s3.amazonaws.com/?list-type=2&prefix=…`): read one `.idx`, byte-range one message, never a whole file.
 

@@ -24,7 +24,7 @@ Project documentation. Topical files only — agent context lives in
 - **VISUAL-SUITE-SOP.md** — the operating procedure for producing a suite of WRF
   visuals across all three engines, plus the method errors already found and the
   gaps still open. Read before a first sweep on a new case.
-- **FORECAST-FUNNEL.md** — NAM "forecast funnel" synoptic montage (250/500/600 hPa + surface analysis) + `/basin-forecast-funnel` skill and `scripts/forecast_funnel.py` CLI.
+- **FORECAST-FUNNEL.md** — "forecast funnel" synoptic montage (250/500/600 hPa + surface analysis) from NAM, or GFS 0.25° after NAM's retirement (2026-11-03) + `/basin-forecast-funnel` skill and `scripts/forecast_funnel.py` CLI.
 - **TERRAIN-D8.md** — D8 catchments, basin floors and perpendicular gate lines on USGS 3DEP
   (`brc_tools.terrain`, optional extra `terrain`, env `terrain-2026`): method, caveats, knobs.
 - **TERRAIN-THROATS.md** — sills, throats and model grids: closed depressions, the lowest pass between two

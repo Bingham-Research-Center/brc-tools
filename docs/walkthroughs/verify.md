@@ -4,7 +4,7 @@
 variable (bias, MAE, RMSE, correlation). You'd run this to compare model runs or
 track skill over a case.
 
-**Needs:** nothing (works on DataFrames you already have) · conda env `brc-tools`
+**Needs:** nothing (works on DataFrames you already have) · conda env `brc-tools-2026`
 
 ## One call: pair and score
 

@@ -68,9 +68,10 @@ question you are asking:
 
 Plus one non-WRF renderer:
 
-- [`/basin-forecast-funnel`](.claude/skills/basin-forecast-funnel/SKILL.md) — NAM synoptic
+- [`/basin-forecast-funnel`](.claude/skills/basin-forecast-funnel/SKILL.md) — synoptic
   montage (250 hPa jet → 500 hPa flow → 600 hPa moisture/LLJ → surface analysis) for an
-  analysis time. Doc: [`docs/FORECAST-FUNNEL.md`](docs/FORECAST-FUNNEL.md).
+  analysis time: NAM up to 2026-11-03, GFS 0.25° after NAM's retirement. Doc:
+  [`docs/FORECAST-FUNNEL.md`](docs/FORECAST-FUNNEL.md).
 
 ### How to use these skills — example prompts
 
@@ -151,7 +152,7 @@ advances is safe and cheap.
 /wrf-full-figures — publication set for <study case>, difference maps included.
 ```
 ```
-/basin-forecast-funnel — NAM synoptic funnel for the 12Z analysis on <date>.
+/basin-forecast-funnel — synoptic funnel for the 12Z analysis on <date> (GFS after 3 Nov 2026).
 ```
 
 **One trap worth knowing before you pick.** `/wrf-full-figures` reads only the
@@ -199,13 +200,18 @@ Per-case configuration lives in the repo that owns the case, never here — e.g.
 
 *Operations reference — a junior dev can skip this on day one and come back when you actually deploy.*
 
-This package is deployed on CHPC to push weather data to BasinWX.
+On CHPC, this checkout (`~/gits/brc-tools`) is the code the BasinWX crons run, so keep it
+on `main` and clean. **The crontab and the cron wrappers live in the private
+[`brc-data-ops`](https://github.com/Bingham-Research-Center/brc-data-ops) repo** (since
+2026-11-21). They `cd` here and run the export entry points in `scripts/`, so those
+command lines are a cross-repo seam.
 
 **Canonical reference:** [`docs/CHPC-REFERENCE.md`](docs/CHPC-REFERENCE.md)
 
-- **Production script:** `brc_tools/download/get_map_obs.py`
-- **Upload module:** `brc_tools/download/push_data.py`
-- **Required env vars:** `DATA_UPLOAD_API_KEY`, `SYNOPTIC_TOKEN`
+- **Observation job:** `brc_tools/download/get_map_obs.py` (still a direct crontab line, every 5 min)
+- **Upload module:** `brc_tools/download/push_data.py` (fan-out, retries, receipts)
+- **Secrets:** `DATA_UPLOAD_API_KEY` in the environment. The Synoptic token lives in
+  `~/.config/SynopticPy/config.toml` on CHPC (`SYNOPTIC_TOKEN` elsewhere).
 
 **Cross-repo data contract:** see [`docs/CROSS-REPO-SYNC.md`](docs/CROSS-REPO-SYNC.md).
 
@@ -233,6 +239,10 @@ order used by `load_config_urls()` in `brc_tools/download/push_data.py`:
 2. `~/.config/ubair-website/website_urls` — same format, file fallback.
 3. `~/.config/ubair-website/website_url` — legacy single-URL file, preserved
    for back-compat.
+
+A failed DNS lookup, a refused or timed-out connection, or a `502`/`503`/`504` is tried
+again (`BASINWX_UPLOAD_ATTEMPTS`, default 3). Every attempt adds one line to
+`~/logs/basinwx/push_receipts.jsonl`.
 
 Full endpoint/auth/schema contract: [`docs/WEBSITE-INTEGRATION.md`](docs/WEBSITE-INTEGRATION.md).
 
@@ -264,7 +274,13 @@ is the intended design (Herbie is excellent and we lean on it heavily):
   `…/access/historical/…`; Herbie's `nam` is operational-only).
 
 These are pinned to one version and may already differ upstream (latest is 2026.10.0, checked 2026-11-20) —
-worth re-checking after each upgrade. Full per-source rationale:
+worth re-checking after each upgrade.
+
+On **Herbie 2026.3.0 and 2026.10.0** the index download (`requests.get(self.idx)`) and the
+file checks (`requests.head(url)`) pass no timeout. One silent S3 connection can then
+block a job indefinitely: four cron runs sat for 2–3 days on 18–19 Nov 2026. brc-tools
+gives those calls a timeout with `brc_tools.nwp._http.ensure_request_timeouts()`, and new
+code that calls Herbie directly should call it too. Full per-source rationale:
 [`docs/nwp/NWP-SOURCE-MATRIX.md`](docs/nwp/NWP-SOURCE-MATRIX.md).
 
 ## Authors
