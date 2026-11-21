@@ -48,6 +48,30 @@ export BASINWX_API_URLS="https://www.basinwx.com,https://www.basinwx.dev"
 ```
 Use one shared uploader across producers so every product fans out the same way.
 
+## Retries and receipts
+
+`push_data` tries a file again when the failure is transient: a DNS lookup that
+fails, a refused or timed-out connection, or a `502`/`503`/`504`. It makes up to
+`BASINWX_UPLOAD_ATTEMPTS` attempts per file and host (default 3; `1` turns retrying
+off), waiting 5 s and then 20 s. Any other status is final, because the server would
+refuse the same bytes again. A host that uses up every attempt gets one attempt per
+file for the rest of that process, so an outage costs one round of retries per run
+(clyfar sends ~165 files a run through the same code).
+
+Every attempt appends one line to `~/logs/basinwx/push_receipts.jsonl`
+(`BASINWX_RECEIPTS_LOG`; empty disables it), with `attempt`, `stage` (`health` or
+`upload`), `status`, `error` and `elapsed_ms`.
+
+**Why retries exist:** in the week to 2026-11-21, each of the seven files the website
+found on one host only had failed a single DNS lookup (`Name or service not known`) at
+the other host's health check, and nothing tried it again. Since receipts began
+(2026-09-28), DNS failures are 421 of the 822 failed attempts; the other 401 are
+`.com`'s "API key not configured" outage (26–27 Oct, 393) and eight timeouts. Files
+missing from *both* hosts were never made: on 18 and 19 Nov the HRRR fetch from AWS
+hung on read timeouts until the process was killed, so nothing reached the upload
+step. Re-sending a run that a whole cycle missed is an ops decision
+(`BRC-DATA-OPS-HANDOFF.md`), not something the uploader does.
+
 ## Schemas (compact)
 
 **`road-forecast`** — `POST /api/upload/road-forecast`, filename
