@@ -43,6 +43,22 @@ def test_funnel_source_for_gap_raises():
         funnel_source_for(dt.datetime(2018, 6, 1, 0))
 
 
+def test_funnel_source_for_after_nam_retirement_raises():
+    """GH #81: NAM ends at nam.20261103; later inits must say so, not 404 in Herbie."""
+    assert funnel_source_for(dt.datetime(2026, 11, 3, 18)) == "herbie"
+    with pytest.raises(ValueError, match="NAM was retired"):
+        funnel_source_for(dt.datetime(2026, 11, 4, 0))
+
+
+def test_explicit_herbie_source_after_retirement_raises_before_any_download(monkeypatch):
+    def _no_download(*args, **kwargs):
+        pytest.fail("fetched NAM for an init after its retirement")
+
+    monkeypatch.setattr(ff, "_herbie_fetch_full", _no_download)
+    with pytest.raises(ValueError, match="NAM was retired.*GH #81"):
+        fetch_funnel_fields("2026-11-20 00Z", source="herbie")
+
+
 # ── humidity helper ─────────────────────────────────────────────────────────
 def test_specific_humidity_direct():
     q = specific_humidity_g_per_kg(np.array([0.006, 0.003]))
