@@ -12,6 +12,8 @@ import numpy as np
 import xarray as xr
 from herbie import Herbie
 
+from brc_tools.nwp._http import ensure_request_timeouts
+
 LOG = logging.getLogger(__name__)
 
 _GRIB_MAGIC = b"GRIB"
@@ -38,6 +40,8 @@ def setup_herbie(
     cache_dir: str | os.PathLike[str] | None = None,
 ) -> Herbie:
     """Create a Herbie instance for one HRRR cycle and lead time."""
+    # Herbie's index GETs and HEADs pass no timeout (see brc_tools.nwp._http).
+    ensure_request_timeouts()
     return Herbie(
         init_time,
         model="hrrr",
