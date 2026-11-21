@@ -25,10 +25,7 @@ FILE_FOR_PRODUCT = {"atmos.5": "pgrb2a.0p50", "atmos.25": "pgrb2s.0p25"}
 #: Time-invariant fields: GEFS writes them at f000 only, so only f000 is checked.
 STATIC = {"terrain_height"}
 #: Known gaps, each with the reason; a strict xfail flips to a failure once fixed.
-OPEN = {
-    "omega_pl": "VVEL 850 mb is in atmos.5 only, 700/500/300 in atmos.5b only "
-                "(WISHLIST-TASKS.md: choose a product)",
-}
+OPEN: dict[str, str] = {}
 
 
 def _search_lines(product: str, fxx: int) -> list[str]:
@@ -73,3 +70,21 @@ def test_every_gefs_product_an_alias_names_has_a_fixture():
         if "gefs" in alias.get("search", {}):
             product = alias.get("products", {}).get("gefs", GEFS["default_product"])
             assert product in FILE_FOR_PRODUCT, f"{name}: add a {product} index fixture"
+
+
+def test_gefs_omega_is_skipped_not_fetched_from_a_file_without_it(monkeypatch, tmp_path):
+    """No GEFS file holds 850-300 mb VVEL, so GEFS has no omega_pl entry (2026-11-21)."""
+    import datetime as dt
+
+    from _nwp_fakes import make_fake_herbie, regular_grid
+    from brc_tools.nwp import source
+    from brc_tools.nwp.source import NWPSource
+
+    assert "gefs" not in LOOKUPS["aliases"]["omega_pl"]["search"]
+    monkeypatch.setenv("BRC_TOOLS_LOCK_DIR", str(tmp_path))
+    monkeypatch.delenv("BRC_TOOLS_HERBIE_CACHE", raising=False)
+    fake = make_fake_herbie(regular_grid())
+    monkeypatch.setattr(source, "Herbie", fake)
+    ds = NWPSource("gefs").fetch(dt.datetime(2026, 11, 21, 0), [6], ["temp_2m", "omega_pl"])
+    assert set(ds.data_vars) == {"temp_2m"}
+    assert not [s for _, _, s in fake.searches if "VVEL" in s]
