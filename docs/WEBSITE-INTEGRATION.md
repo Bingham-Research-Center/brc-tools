@@ -110,6 +110,14 @@ pinned** at website `DATA_MANIFEST.json:487`; `product_type` enum is
 | `forecast_hrrr_waypoints_*` | `scripts/export_hrrr_waypoint_forecast.py` | `run_hrrr_waypoint_push.sh` | `forecasts` |
 | observations + metadata | `brc_tools/download/get_map_obs.py` | *(direct crontab entry)* | `observations`, `metadata` |
 
+**RRFS draft (dev-only, hand-run, no cron).** `export_hrrr_surface_layers.py --model rrfs`
+writes the same schema with `"model": "rrfs"` to `forecast_rrfs_surface_layers_<init>.json`
+and `forecast_rrfs_surface_layers_index.json`. One run (init 2026-11-21 00Z, f00–f18) was
+uploaded by hand to `https://www.basinwx.dev` on 2026-11-21; nothing on the site reads those
+names, and they are not in `DATA_MANIFEST.json`. It needs env `brc-tools-2026-11`. Do not
+schedule it or send it to `.com` before the manifest lists it:
+`docs/BRC-DATA-OPS-HANDOFF.md`.
+
 `run_hrrr_waypoint_push.sh` is **not** the road-forecast job — it emits a
 different product into `forecasts`. Easy to conflate; don't.
 

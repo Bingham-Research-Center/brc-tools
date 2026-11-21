@@ -1,4 +1,4 @@
-"""Export reduced HRRR surface layers for BasinWX."""
+"""Export reduced HRRR (or RRFS) surface layers for BasinWX."""
 
 from __future__ import annotations
 
@@ -18,6 +18,10 @@ from brc_tools.nwp.source import load_lookups
 
 LOG = logging.getLogger(__name__)
 
+DEFAULT_MODEL = "hrrr"
+#: Models whose surface fields this export has been checked against. RRFS's CONUS 3 km
+#: grid is HRRR's grid, and every SURFACE_EXPORT_VARIABLES alias resolves for it.
+SURFACE_EXPORT_MODELS = ("hrrr", "rrfs")
 DEFAULT_REGION = "uinta_basin"
 DEFAULT_MAX_FXX = 18
 DEFAULT_RUN_COUNT = 3
@@ -66,7 +70,7 @@ FIELD_SPECS = {
 }
 
 GRID_PRECISION = 2
-INDEX_FILENAME = "forecast_hrrr_surface_layers_index.json"
+INDEX_FILENAME = "forecast_hrrr_surface_layers_index.json"  # the HRRR name; see _index_filename
 
 
 def latest_init_times(
@@ -75,10 +79,15 @@ def latest_init_times(
     now: dt.datetime | None = None,
     source: NWPSource | None = None,
 ) -> list[dt.datetime]:
-    """Return the latest ``count`` HRRR init times, newest first."""
-    src = source or NWPSource("hrrr")
+    """Return the latest ``count`` init times of ``source`` (default HRRR), newest first.
+
+    Steps by the model's own cycle spacing: 1 h for HRRR, 3 h for RRFS, whose hourly
+    files exist only for the 00/03/.../21Z runs.
+    """
+    src = source or NWPSource(DEFAULT_MODEL)
     latest = src.latest_init(now=now)
-    return [latest - dt.timedelta(hours=offset) for offset in range(count)]
+    step = src.init_cadence_hours
+    return [latest - dt.timedelta(hours=offset * step) for offset in range(count)]
 
 
 def fetch_surface_dataset(
@@ -88,8 +97,8 @@ def fetch_surface_dataset(
     region: str = DEFAULT_REGION,
     source: NWPSource | None = None,
 ) -> xr.Dataset:
-    """Fetch the HRRR surface fields needed by the BasinWX export."""
-    src = source or NWPSource("hrrr")
+    """Fetch the surface fields needed by the BasinWX export (HRRR unless ``source`` says)."""
+    src = source or NWPSource(DEFAULT_MODEL)
     ds = src.fetch(
         init_time=init_time,
         forecast_hours=list(forecast_hours),
@@ -102,8 +111,14 @@ def fetch_surface_dataset(
     return rotate_winds_to_earth(ds, "wind_u_10m", "wind_v_10m")
 
 
-def prepare_surface_dataset(ds: xr.Dataset) -> xr.Dataset:
-    """Convert raw HRRR variables into website-facing surface layers."""
+def prepare_surface_dataset(
+    ds: xr.Dataset, *, init_time: dt.datetime | None = None
+) -> xr.Dataset:
+    """Convert raw model variables into website-facing surface layers.
+
+    With ``init_time``, a snowfall total missing at the analysis hour is set to zero:
+    RRFS ships no ASNOW message at f000, where HRRR ships one that is all zeros.
+    """
     template = ds["temp_2m"]
 
     rain_flag = _maybe_field(ds, "categorical_rain", template, 0.0)
@@ -115,6 +130,9 @@ def prepare_surface_dataset(ds: xr.Dataset) -> xr.Dataset:
     # masking zeroed the total in any hour the flag was off (1,615 grid-hours in one run
     # on 2026-11-19) and it reappeared the next hour.
     snowfall_mm = snowfall * 1000.0
+    if init_time is not None:
+        at_init = ds.time == np.datetime64(_ensure_utc(init_time).replace(tzinfo=None))
+        snowfall_mm = snowfall_mm.where(~(at_init & snowfall_mm.isnull()), 0.0)
 
     prepared = xr.Dataset(coords=ds.coords)
     prepared["temperature_2m_c"] = temp_K_to_C(template).astype(float)
@@ -147,8 +165,9 @@ def build_surface_payload(
     init_time: dt.datetime,
     region: str = DEFAULT_REGION,
     stride: int = DEFAULT_STRIDE,
+    model: str = DEFAULT_MODEL,
 ) -> dict[str, object]:
-    """Serialize a reduced HRRR surface dataset into the BasinWX JSON contract."""
+    """Serialize a reduced surface dataset into the BasinWX JSON contract."""
     lat_grid, lon_grid = _extract_grid(ds)
     valid_times = [_isoformat_utc(_to_datetime(value)) for value in ds.time.values]
     init_utc = _ensure_utc(init_time)
@@ -161,7 +180,7 @@ def build_surface_payload(
     field_shape = [int(ds.sizes["time"]), int(lat_grid.shape[0]), int(lat_grid.shape[1])]
 
     payload = {
-        "model": "hrrr",
+        "model": model,
         "product": "surface_layers",
         "region": region,
         "init_time": _isoformat_utc(init_utc),
@@ -189,10 +208,12 @@ def build_surface_payload(
     return payload
 
 
-def build_surface_index(entries: list[dict[str, object]]) -> dict[str, object]:
+def build_surface_index(
+    entries: list[dict[str, object]], *, model: str = DEFAULT_MODEL
+) -> dict[str, object]:
     """Build the run index file consumed by BasinWX."""
     return {
-        "model": "hrrr",
+        "model": model,
         "product": "surface_layers_index",
         "generated_at": _isoformat_utc(dt.datetime.now(dt.timezone.utc)),
         "runs": entries,
@@ -209,34 +230,43 @@ def export_latest_surface_layers(
     upload: bool = False,
     upload_bucket: str = DEFAULT_UPLOAD_BUCKET,
     server_url: str | None = None,
+    model: str = DEFAULT_MODEL,
 ) -> list[Path]:
-    """Export the latest HRRR surface layers and a run index file."""
+    """Export the latest surface layers of ``model`` and a run index file.
+
+    Files are named ``forecast_<model>_surface_layers_*``, so each model keeps its own
+    run files and its own index on the receiving side.
+    """
+    if model not in SURFACE_EXPORT_MODELS:
+        raise ValueError(f"model must be one of {SURFACE_EXPORT_MODELS}, got {model!r}")
     output_root = Path(output_dir).expanduser()
     output_root.mkdir(parents=True, exist_ok=True)
 
-    src = NWPSource("hrrr")
+    src = NWPSource(model)
     forecast_hours = range(0, max_fxx + 1)
     written_paths: list[Path] = []
     index_entries: list[dict[str, object]] = []
 
     for init_time in latest_init_times(run_count, source=src):
-        LOG.info("Fetching HRRR surface layers for %s", init_time.strftime("%Y-%m-%d %HZ"))
+        LOG.info("Fetching %s surface layers for %s", model.upper(),
+                 init_time.strftime("%Y-%m-%d %HZ"))
         raw = fetch_surface_dataset(
             init_time,
             forecast_hours=forecast_hours,
             region=region,
             source=src,
         )
-        prepared = prepare_surface_dataset(raw)
+        prepared = prepare_surface_dataset(raw, init_time=init_time)
         reduced = downsample_surface_dataset(prepared, stride=stride)
         payload = build_surface_payload(
             reduced,
             init_time=init_time,
             region=region,
             stride=stride,
+            model=model,
         )
 
-        output_path = output_root / _surface_filename(init_time)
+        output_path = output_root / _surface_filename(init_time, model)
         _write_json(payload, output_path)
         written_paths.append(output_path)
         index_entries.append(
@@ -249,8 +279,8 @@ def export_latest_surface_layers(
         )
 
     index_entries.sort(key=lambda entry: entry["init_time"], reverse=True)
-    index_path = output_root / INDEX_FILENAME
-    _write_json(build_surface_index(index_entries), index_path)
+    index_path = output_root / _index_filename(model)
+    _write_json(build_surface_index(index_entries, model=model), index_path)
     written_paths.append(index_path)
 
     if upload:
@@ -271,7 +301,17 @@ def export_latest_surface_layers(
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for the export script."""
     parser = argparse.ArgumentParser(
-        description="Export reduced HRRR surface layers for BasinWX",
+        description="Export reduced HRRR (or RRFS) surface layers for BasinWX",
+    )
+    parser.add_argument(
+        "--model",
+        choices=SURFACE_EXPORT_MODELS,
+        default=DEFAULT_MODEL,
+        help=(
+            f"Model to export (default: {DEFAULT_MODEL}). rrfs needs Herbie >= 2026.10.0 "
+            "(env brc-tools-2026-11) and writes forecast_rrfs_surface_layers_* files, "
+            "which no BasinWX page reads yet"
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -320,7 +360,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    """CLI entrypoint for the HRRR surface export."""
+    """CLI entrypoint for the surface export."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -338,9 +378,10 @@ def main() -> int:
             upload=args.upload,
             upload_bucket=args.upload_bucket,
             server_url=args.server_url,
+            model=args.model,
         )
     except Exception as exc:
-        LOG.error("HRRR surface export failed: %s", exc)
+        LOG.error("%s surface export failed: %s", args.model.upper(), exc)
         return 1
 
     for path in paths:
@@ -405,9 +446,13 @@ def _spatial_dims(ds: xr.Dataset) -> tuple[str, str]:
     raise ValueError(f"Could not determine spatial dimensions from {list(ds.dims)}")
 
 
-def _surface_filename(init_time: dt.datetime) -> str:
+def _surface_filename(init_time: dt.datetime, model: str = DEFAULT_MODEL) -> str:
     init_utc = _ensure_utc(init_time)
-    return f"forecast_hrrr_surface_layers_{init_utc:%Y%m%d_%H%M}Z.json"
+    return f"forecast_{model}_surface_layers_{init_utc:%Y%m%d_%H%M}Z.json"
+
+
+def _index_filename(model: str = DEFAULT_MODEL) -> str:
+    return f"forecast_{model}_surface_layers_index.json"
 
 
 def _write_json(payload: dict[str, object], path: Path) -> None:
