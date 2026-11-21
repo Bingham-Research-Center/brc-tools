@@ -18,10 +18,10 @@ contract) goes to **brc-data-ops** (`docs/OPS-BACKLOG.md` there), not here.
 
 ## Current focus
 - **pelican2013 manuscript support**: the study (`latex-jrl-mjd-mdpiair-2026`) pins an exact brc-tools SHA — treat `wrf_figures.py`/`wrf_output.py`/`visualize/*` as frozen unless the study repo asks.
-- HRRR/RRFS → BasinWX ingest (GH #10): four HRRR crons live, **nothing RRFS is exported**; RRFS v1 is fetchable (`NWPSource("rrfs")`). Follow-ups: #81 (NAM retired → forecast funnel), #82 (sub-hourly axis). Status: `docs/nwp/ROADMAP.md`.
+- HRRR/RRFS → BasinWX ingest: four HRRR crons live (wrappers in `brc-data-ops`), **nothing RRFS is exported**; RRFS v1 is fetchable (`NWPSource("rrfs")`). Website asks still open: P26 (wind frame + `producer` keys, after their manifest MINOR), P11 (hourly surface layers), P28 (Clyfar schemas). The live list is ubair-website `docs/CHPC-INGEST-REPLY-nov21.md`. Status: `docs/nwp/ROADMAP.md`.
 - Case-study pipeline (natural language → script → figures): `docs/CASE-STUDY-GUIDE.md`.
 - **WRF-input staging**: GRIB → scratch manifests/contracts for `brc-wrf`. Status, division of labour, cold-start SSOT: `docs/WRF-STAGING-STATE-PLAYBOOK.md`.
-- Next up: open decisions — the GEFS `omega_pl` product, and a forecast-funnel successor to NAM (#81). Backlog: `WISHLIST-TASKS.md`.
+- Next up: P26 once the website declares its keys; `subh` accumulations (no alias yet). Backlog: `WISHLIST-TASKS.md`; ops work goes to brc-data-ops.
 
 ## Repo map
 ```
