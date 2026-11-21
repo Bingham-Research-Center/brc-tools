@@ -113,7 +113,9 @@ Each item is yours to decide; none is started.
    one cron line can be moved at a time. **Started 2026-11-21:** the surface-layers line
    now carries `CONDA_ENV=brc-tools-2026-11` (crontab backup in
    `~/.cache/brc-tools/crontab-backups/`); its payload matched the old env's for the same
-   run. The other three HRRR jobs are unchanged. The obs cron is separate again
+   run. The surface wrapper now logs `env=… herbie=…` on every run, so the pilot can be
+   confirmed from `hrrr_surface.log`; the other wrappers do not yet. The other three
+   HRRR jobs are unchanged. The obs cron is separate again
    (`clyfar-nov2025`, numpy < 2).
 2. **Which RRFS file feeds which product.** Surface layers (4× daily) map cleanly onto
    the 00/06/12/18Z `2dfld` runs. The hourly waypoint product does not: either update it

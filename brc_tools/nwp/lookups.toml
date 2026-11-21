@@ -2154,7 +2154,10 @@ synoptic_name = "precip_accum_one_hour"
 # Models whose f00 has no message for this alias: NWPSource skips the fetch there
 # instead of retrying a search that cannot match (the variable is NaN at f00).
 # Read off the live .idx 2026-11-21; tests/test_absent_at_f00.py pins it to fixtures.
-absent_at_f00 = ["hrrr", "rrfs", "gefs"]
+absent_at_f00 = ["hrrr", "rrfs"]
+# No GEFS search: GEFS has no hourly bucket. Its one APCP message per lead resets every
+# 6 h ("0-3", "0-6", "6-9", "6-12" hour acc; none at f000), so neither this alias nor
+# precip_total fits it. The old "0-1 hour acc" string matched no GEFS lead at all.
 # HRRR sfc carries TWO APCP messages from f02 on -- the run total ("0-N hour acc")
 # and the hourly bucket ("N-1-N hour acc") -- so a bare "APCP:surface" matches both
 # and Herbie returns a LIST of datasets. Anchor on the hourly bucket: at f01 that is
@@ -2163,7 +2166,6 @@ absent_at_f00 = ["hrrr", "rrfs", "gefs"]
 # every lead, fetch `precip_total` and difference it along time instead.
 [aliases.precip_1hr.search]
 hrrr = 'APCP:surface:0-1 hour acc|APCP:surface:(?!0-)\d+-\d+ hour acc'
-gefs = "APCP:surface:0-1 hour acc"
 rrfs = 'APCP:surface:0-1 hour acc|APCP:surface:(?!0-)\d+-\d+ hour acc'   # same two-bucket layout as HRRR
 
 [aliases.precip_total]
