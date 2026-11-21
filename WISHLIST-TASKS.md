@@ -7,7 +7,12 @@ Completed items are removed once merged; git history is the record.
 Shipped: `/basin-forecast-funnel` skill + `scripts/forecast_funnel.py` (+ `.dtn.slurm`)
 rendering a 250/500/600 hPa + surface-analysis montage from a NAM analysis
 (`brc_tools/nwp/forecast_funnel.py` + `brc_tools/visualize/funnel.py`; city labels added to
-`visualize/basemap.py`). Reference: **`docs/FORECAST-FUNNEL.md`**. Not blocking:
+`visualize/basemap.py`). Reference: **`docs/FORECAST-FUNNEL.md`**.
+
+- **NAM was retired on 2026-11-03** — the funnel has no source for later inits (GH #81).
+  A successor (RRFS North America 13 km or GFS) is the one item here that blocks new cases.
+
+Not blocking:
 
 - **Post-2017 NCEI grib2 NAM template** to close the 2017-04 → 2020-03 auto-pick gap
   (`nam_218_<date>_<hhmm>_000.grb2`; a new `[models.*]` block in `lookups.toml`).
@@ -26,24 +31,24 @@ in every case study.
 - [ ] **NWPSource integration tests (mocked Herbie)** — mock `Herbie.xarray()` to return synthetic datasets; test alias resolution, product grouping, coordinate normalization, spatial cropping, waypoint extraction, and failure handling. This is the single highest-leverage task.
 - [ ] **ObsSource integration tests (mocked SynopticPy)** — mock `TimeSeries` to return synthetic DataFrames; test alias renaming, waypoint column injection, timezone stripping.
 - [ ] **End-to-end pipeline test** — fetch → extract_at_waypoints → align_obs_to_nwp → paired_scores with synthetic data. Validates the full verification workflow.
-- [ ] Install and configure ruff in the brc-tools conda env (referenced in docs but not installed).
+- [ ] Make the tree ruff-clean: ruff is installed in both envs, but `ruff check` still reports pre-existing findings (import order, `datetime.UTC` alias), so it cannot gate a PR yet.
 
-## Priority 2: Operational delivery (issue #10)
+## Priority 2: Operational delivery
 
-The case study pipeline proves the NWP library works. Closing #10 means
-the website receives fresh HRRR forecasts automatically.
+Issue #10 is closed: four HRRR jobs upload on cron and RRFS is fetchable. What an RRFS
+product on BasinWX would take is ops work, parked in `docs/BRC-DATA-OPS-HANDOFF.md` for the
+planned `brc-data-ops` repo. Left here:
 
-- [ ] **Define BasinWX JSON contract for HRRR waypoint forecasts** — document the expected JSON shape, variable names (`PM_25_concentration` vs `pm25_concentration`), and upload endpoint. Generic upload contract now documented in `docs/WEBSITE-INTEGRATION.md`; this item remains for the HRRR-waypoint-specific variable naming.
-- [ ] Test data export format matches the JSON contract above.
+- [ ] **NWPSource sub-hourly time axis** (GH #82) — needed before any product can update from every RRFS cycle.
 - [ ] Add structured logging to the operational script (replace print statements for scheduled/unattended runs).
 - [ ] **`.dev` deploy pull** — the `.dev` Linode still needs a deploy pull to close the `filelist.json` fossil; `.com` + `.dev` fan-out itself is live (2026-04-24).
 ## Priority 3: Analysis capability
 
 Extend the case study toolkit for deeper diagnostics.
 
-- [ ] HRRR sub-hourly (15-min) support — product "subh" is defined in lookups.toml but untested.
+- [ ] HRRR/RRFS sub-hourly (15-min) through NWPSource — the KVEL cron reads HRRR `subh` hourly via Herbie directly; NWPSource still collapses it (GH #82).
 - [ ] GEFS ensemble workflows — spread, probability, lagged ensemble. Config exists; no analysis code yet.
-- [ ] **Synoptic USGS-HYDRO access** — the token lacks network `mnet_id=203`, so `stream_flow`/`gage_height` queries return zero. Email `support@synopticdata.com` to add it; interim workaround = USGS NWIS direct (`dataretrieval`). Fact + evidence folded into `docs/CHPC-REFERENCE.md`. `scripts/inventory_streamflow_vernal.py` lights up once granted.
+- [ ] **Synoptic USGS-HYDRO access** — the token lacks network `mnet_id=203`, so `stream_flow`/`gage_height` queries return zero. Email `support@synopticdata.com` to add it; the workaround is built: `brc_tools.hydro` (NWIS + AWDB clients, PR #75). Fact + evidence folded into `docs/CHPC-REFERENCE.md`. `scripts/inventory_streamflow_vernal.py` lights up once granted.
 
 ## Priority 4: Developer experience
 
@@ -61,25 +66,20 @@ here so the next cold-start agent knows to tackle it.
 - [ ] **Roadmap brainstorm** — prepare a small doc (`docs/ROADMAP.md` or
   similar) that captures the next 6–12 months of work in outcome terms, not
   task lists. Input to the CLAUDE.md overhaul.
-- [ ] **Update "Key data-flow anchor" in CLAUDE.md** post-fan-out to mention
-  `send_json_to_all` + `BASINWX_API_URLS` (small; bundle with the overhaul
-  above unless a cold-start agent wants a quick win first).
 
 ## Priority 6: Seasonal ops (pause/resume)
 
-- [ ] **Clyfar/FFION/GEFS-plot pipelines paused end-March 2026** for the
-  season; resume ~October 2026. When resuming, verify they still use the new
-  fan-out path (`send_json_to_all`) — check clyfar's import site first since
-  it still uses the legacy `send_json_to_server`.
-- [ ] **HRRR surface-layer cron** needs installing on the CHPC cron host
-  once fan-out is shipped. Template in `CLAUDE.md` under "HRRR surface layer
-  export" (adjust cadence and `--server-url` as needed once `BASINWX_API_URLS`
-  is set).
+- [ ] **Clyfar's winter job is live again** (crontab, since 2026-11-20) and fans out
+  through `send_json_to_all`. Comment it out again around the end of March 2027.
+- [ ] **Cron runs in Mountain time, not UTC** (no `CRON_TZ`), so every model-tied job
+  shifts an hour against its cycle at each DST change. Decide in `brc-data-ops`.
+- [ ] **UDOT camera scraper** (GH #53) — its branch was deleted 2026-11-21; the commit is
+  kept as tag `archive/michael-image-gathering`.
 
 ## Priority 7: CHPC infra hygiene (from 2026-05-13 sanity check)
 
 Triggered by the live audit on notch392; details in
-`brc-knowledge/scholarium/reference-base/resources/chpc-team-resource-inventory.md`
+`brc-knowledge/scholarium/reference-base/chpc/chpc-team-resource-inventory.md`
 (§4 Live mount status, §6 real-world note). Cross-repo items kept here so
 the brc-tools cold-start agent surfaces them.
 

@@ -112,7 +112,9 @@ Synoptic token until the 2026-08-26 rotation.
 15 3,9,15,21 * * * /bin/bash -c 'source ~/.bashrc_basinwx && export PATH=$PATH:/uufs/notchpeak.peaks/sys/installdir/slurm/std/bin && cd ~/gits/clyfar && sbatch scripts/submit_clyfar.sh >> ~/logs/clyfar_submit.log 2>&1'
 ```
 
-This block matches `crontab -l` on notchpeak1 as read 2026-11-21 (six jobs; the
+**Times are notchpeak1 local time (America/Denver): the crontab sets no `CRON_TZ`.** The
+surface job's `45 0,6,12,18` is 07:45/13:45/19:45/01:45 UTC under MST and an hour earlier
+under MDT. This block matches `crontab -l` on notchpeak1 as read 2026-11-21 (six jobs; the
 crontab is the truth, this is a copy; dated backups of it are in
 `~/.cache/brc-tools/crontab-backups/`). Every model job is HRRR: nothing fetches or
 uploads RRFS. The wrappers default to `CONDA_ENV=brc-tools-2026`, whose Herbie

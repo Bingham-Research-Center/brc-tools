@@ -143,7 +143,7 @@ with no editable install; the failure only surfaces later in `brc-wrf`/`clyfar`.
 ## Agent mechanics on CHPC
 - **Worktrees**: `~/gits/brc-tools-wt/<name>` (`git worktree add … -b <branch> --no-track origin/main`). A sandboxed shell cannot write there: use Edit/Write, or run unsandboxed.
 - **`gh issue view N`** dies on a Projects-classic error: add `--json title,body,comments`. `gh pr merge` needs `--admin` — the owner's call, not an agent's.
-- **`crontab -l`** (notchpeak1) and SLURM need the sandbox off. The crontab is the truth; `docs/CHPC-REFERENCE.md` copies it.
+- **`crontab -l`** (notchpeak1) and SLURM need the sandbox off. The crontab is the truth; `docs/CHPC-REFERENCE.md` copies it. It runs in **Mountain time** (no `CRON_TZ`): `45 0` is 07:45 UTC in winter.
 - **NOAA buckets list over HTTPS** (`https://<bucket>.s3.amazonaws.com/?list-type=2&prefix=…`): read one `.idx`, byte-range one message, never a whole file.
 
 ## Related repos

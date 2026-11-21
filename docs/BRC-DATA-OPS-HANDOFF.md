@@ -14,7 +14,7 @@ before acting on it.
 **Nothing from RRFS.** No script, cron wrapper or website dataType mentions it. The
 live crontab has six jobs; the four model jobs are all HRRR.
 
-| Cron (UTC) | Wrapper / command | Source | Sent to BasinWX |
+| Cron (notchpeak1 local time) | Wrapper / command | Source | Sent to BasinWX |
 |---|---|---|---|
 | `*/5 * * * *` | `brc_tools/download/get_map_obs.py` (env `clyfar-nov2025`) | Synoptic | map observations + metadata |
 | `20 * * * *` | `scripts/cron/run_road_forecast_push.sh` | HRRR `sfc` | road forecast (`road-forecast`) |
@@ -22,6 +22,12 @@ live crontab has six jobs; the four model jobs are all HRRR.
 | `50 * * * *` | `scripts/cron/run_hrrr_waypoint_push.sh` | HRRR `sfc`, f00–f18 | `forecast_hrrr_waypoints_*`: temperature, dewpoint, wind speed/direction, RH, MSLP, rain at named waypoints |
 | `55 * * * *` | `scripts/cron/run_hrrr_kvel_crosswind_push.sh` | HRRR `subh` (15-min) | `forecast_hrrr_kvel_crosswind_*`: runway cross/headwind and gust at KVEL |
 | `15 3,9,15,21 * * *` | `sbatch clyfar/scripts/submit_clyfar.sh` | GEFS (in `clyfar`) | Clyfar ozone forecasts (seasonal) |
+
+**The crontab has no `CRON_TZ`, so these fire in Mountain time, not UTC.** `45 0,6,12,18`
+is 07:45, 13:45, 19:45 and 01:45 UTC in winter (MST) and one hour earlier in UTC terms in
+summer (MDT). Every job tied to a model cycle therefore moves by an hour against that cycle
+twice a year: Clyfar's `15 3,9,15,21` is 4 h 15 min after a GEFS cycle in MST and 3 h 15 min
+in MDT. Decide in `brc-data-ops` whether to set `CRON_TZ=UTC`.
 
 The waypoint and KVEL jobs were live while `docs/CHPC-REFERENCE.md` still listed them
 as "deliberately absent"; that doc now matches the crontab.
@@ -113,7 +119,8 @@ Each item is yours to decide; none is started.
    the 00/06/12/18Z `2dfld` runs. The hourly waypoint product does not: either update it
    every 3 h from `2dfld`, or build it hourly from `subh` (no RH there, so derive it
    from temperature and dewpoint). KVEL crosswind maps onto `subh` on every cycle.
-3. **Cron minutes.** With the lags in section 2: an f000–f018 pull is safe from about
+3. **Cron minutes.** Times here are after the UTC init; the crontab runs in local time
+   (section 1), so convert. With the lags in section 2: an f000–f018 pull is safe from about
    HH+2:30 at 00/06/12/18Z and HH+2:00 at 03/09/15/21Z; an f084 pull from about
    HH+3:45; a `subh` pull from about HH+2:20. The road-forecast receiver rejects
    `init_time` older than 3 h, which RRFS would hit on most hours; that limit is

@@ -1,13 +1,13 @@
 # Download model forecast data — walk-through
 
-**What / why:** Pull gridded weather-model output (HRRR, GEFS, NAM) for a region,
+**What / why:** Pull gridded weather-model output (HRRR, GEFS, RRFS) for a region,
 then read forecast values at named locations. You'd run this to make maps, build
 time series, or compare a forecast against what was observed.
 
 > Downloading **for WRF** is different — that keeps raw GRIB on disk and lives in
 > [wrf-staging.md](wrf-staging.md). This page is for analysis (data → xarray).
 
-**Needs:** nothing required · `BRC_TOOLS_HERBIE_CACHE` optional (cache dir) · conda env `brc-tools`
+**Needs:** nothing required · `BRC_TOOLS_HERBIE_CACHE` optional (cache dir) · conda env `brc-tools-2026`, or `brc-tools-2026-11` for RRFS (activate it; don't call its python bare)
 
 ## Fetch a region, then extract at waypoints
 
@@ -15,7 +15,7 @@ time series, or compare a forecast against what was observed.
 from brc_tools.nwp import NWPSource
 from brc_tools.nwp.derived import add_wind_fields
 
-src = NWPSource("hrrr")                    # also "gefs", "rrfs"
+src = NWPSource("hrrr")                    # also "gefs", "rrfs" (rrfs: 00/03/.../21Z inits only)
 ds = src.fetch(
     init_time="2025-02-22 12Z",
     forecast_hours=range(0, 13),           # fxx 0..12
