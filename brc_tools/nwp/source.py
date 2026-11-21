@@ -262,7 +262,8 @@ class NWPSource:
         """Find the most recent init time likely to have data available."""
         now = now or datetime.datetime.now(datetime.timezone.utc)
         cadence = self._cfg["init_cadence_hours"]
-        lag_hours = 2  # conservative availability lag
+        # hours after init before the default-length run is on the server
+        lag_hours = self._cfg.get("availability_lag_hours", 2)
         candidate = now - datetime.timedelta(hours=lag_hours)
         # Round down to nearest cadence
         hour = (candidate.hour // cadence) * cadence
