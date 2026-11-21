@@ -2256,6 +2256,9 @@ synoptic_units = "W/m**2"
 description = "Total cloud cover"
 units       = "%"
 output_var  = "cloud_cover_total"
+# GEFS has no TCDC at f000, and later leads carry a window average ("0-6 hour ave"),
+# not an instantaneous value. Pinned by tests/test_gefs_aliases.py.
+absent_at_f00 = ["gefs"]
 [aliases.cloud_cover_total.search]
 hrrr = "TCDC:entire atmosphere"
 gefs = "TCDC:entire atmosphere"
@@ -2265,9 +2268,10 @@ rrfs = 'TCDC:entire atmosphere[^:]*:(?:anl|\d+ hour fcst)'   # instantaneous; RR
 description = "Low cloud cover"
 units       = "%"
 output_var  = "cloud_cover_low"
+# No GEFS search: no GEFS atmos file (pgrb2a/2b 0.5 deg, pgrb2s 0.25 deg) carries LCDC
+# (live index, 2026-11-20 00Z).
 [aliases.cloud_cover_low.search]
 hrrr = "LCDC:low cloud layer"
-gefs = "LCDC:low cloud layer"
 rrfs = "LCDC:low cloud layer"
 
 [aliases.visibility]
@@ -2574,7 +2578,7 @@ gefs = "TMP:{level} mb"
 rrfs = "TMP:{level} mb"
 [aliases.temp_pl.products]
 hrrr = "prs"
-gefs = "atmos.25"
+gefs = "atmos.5"    # pgrb2a 0.5 deg: GEFS's 0.25 deg file has no pressure levels
 rrfs = "prslev"
 
 [aliases.wind_u_pl]
@@ -2589,7 +2593,7 @@ gefs = "UGRD:{level} mb"
 rrfs = "UGRD:{level} mb"
 [aliases.wind_u_pl.products]
 hrrr = "prs"
-gefs = "atmos.25"
+gefs = "atmos.5"    # pgrb2a 0.5 deg: GEFS's 0.25 deg file has no pressure levels
 rrfs = "prslev"
 
 [aliases.wind_v_pl]
@@ -2604,7 +2608,7 @@ gefs = "VGRD:{level} mb"
 rrfs = "VGRD:{level} mb"
 [aliases.wind_v_pl.products]
 hrrr = "prs"
-gefs = "atmos.25"
+gefs = "atmos.5"    # pgrb2a 0.5 deg: GEFS's 0.25 deg file has no pressure levels
 rrfs = "prslev"
 
 [aliases.height_pl]
@@ -2619,7 +2623,7 @@ gefs = "HGT:{level} mb"
 rrfs = "HGT:{level} mb"
 [aliases.height_pl.products]
 hrrr = "prs"
-gefs = "atmos.25"
+gefs = "atmos.5"    # pgrb2a 0.5 deg: GEFS's 0.25 deg file has no pressure levels
 rrfs = "prslev"
 
 [aliases.rh_pl]
@@ -2634,7 +2638,7 @@ gefs = "RH:{level} mb"
 rrfs = "RH:{level} mb"
 [aliases.rh_pl.products]
 hrrr = "prs"
-gefs = "atmos.25"
+gefs = "atmos.5"    # pgrb2a 0.5 deg: GEFS's 0.25 deg file has no pressure levels
 rrfs = "prslev"
 
 [aliases.dewpoint_pl]
@@ -2662,6 +2666,9 @@ hrrr = "VVEL:{level} mb"
 gefs = "VVEL:{level} mb"
 [aliases.omega_pl.products]
 hrrr = "prs"
+# OPEN (WISHLIST-TASKS.md): no one GEFS file holds these levels. pgrb2a (atmos.5) has VVEL
+# at 850 mb only; pgrb2b (atmos.5b) has 700/500/300 and the rest of the column but not
+# 850; atmos.25 has none. A GEFS omega fetch fails until a product is chosen.
 gefs = "atmos.25"
 
 # ── Aliases: native model levels (HRRR only; operational RRFS publishes none) ─
