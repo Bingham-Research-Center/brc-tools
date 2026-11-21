@@ -326,16 +326,71 @@ class NWPSource:
                 rows.append(row)
         return pl.DataFrame(rows)
 
-    def latest_init(self, now: datetime.datetime | None = None) -> datetime.datetime:
-        """Find the most recent init time likely to have data available."""
+    def latest_init(
+        self,
+        now: datetime.datetime | None = None,
+        *,
+        max_fxx: int | None = None,
+        product: str | None = None,
+    ) -> datetime.datetime:
+        """Find the most recent init time likely to have data available.
+
+        Without ``max_fxx`` this is a fixed rule that needs no network:
+        ``now - availability_lag_hours`` (2 h unless ``lookups.toml`` says otherwise),
+        floored to the model's cycle.
+
+        With ``max_fxx``, ask the archive instead. Walk back from the newest cycle and
+        return the first init whose ``max_fxx`` file (in ``product``, default the
+        model's) is published, stopping at the fixed rule's answer, which comes back
+        unprobed when nothing newer is up. HRRR ``wrfsfcf18`` and ``wrfsubhf18``
+        reach S3 84-87 min after init (73 at 00/06/12/18Z, 117 at worst over
+        20-21 Nov 2026), so at :50 this finds the run that began 1 h 50 min earlier
+        where the fixed rule gives 2 h 50 min.
+        """
         now = now or datetime.datetime.now(datetime.timezone.utc)
         cadence = self._cfg["init_cadence_hours"]
         # hours after init before the default-length run is on the server
         lag_hours = self._cfg.get("availability_lag_hours", 2)
-        candidate = now - datetime.timedelta(hours=lag_hours)
-        # Round down to nearest cadence
-        hour = (candidate.hour // cadence) * cadence
-        return candidate.replace(hour=hour, minute=0, second=0, microsecond=0)
+        fixed = _floor_to_cycle(now - datetime.timedelta(hours=lag_hours), cadence)
+        if max_fxx is None:
+            return fixed
+        step = datetime.timedelta(hours=cadence)
+        candidate = _floor_to_cycle(now, cadence)
+        while candidate > fixed:
+            if self._is_published(candidate, int(max_fxx), product):
+                return candidate
+            candidate -= step
+        return fixed
+
+    def _is_published(self, init: datetime.datetime, fxx: int,
+                      product: str | None = None) -> bool:
+        """True when the ``fxx`` file of this init is on AWS (``probe_priority``).
+
+        A HEAD or two, nothing downloaded. AWS only, on purpose: NOMADS often has a
+        run first, and a "yes" from NOMADS would send the fetch's hundred-odd
+        byte-range requests there, where heavy users get throttled. When AWS lacks
+        the newer run, latest_init falls back to the fixed rule, whose run is on AWS.
+        Herbie wants a tz-naive UTC time.
+        """
+        ensure_request_timeouts()
+        kwargs = dict(
+            model=self._cfg["herbie_model"],
+            product=self._resolve_product_for_fxx(product or self._default_product, fxx),
+            fxx=fxx,
+            priority=self._defaults.get("probe_priority", ["aws"]),
+            verbose=False,
+        )
+        if self._member is not None:
+            kwargs["member"] = self._member
+        naive = init.astimezone(datetime.timezone.utc).replace(tzinfo=None) \
+            if init.tzinfo else init
+        try:
+            H = Herbie(naive, **kwargs)
+        except Exception as exc:  # Herbie raises on some missing-file paths
+            logger.info("%s %s f%03d not published: %s", self._model_key,
+                        naive.strftime("%Y-%m-%d %HZ"), fxx, exc)
+            return False
+        return bool(getattr(H, "grib", None))
 
     # ── internal helpers ────────────────────────────────────────────────
 
@@ -486,6 +541,12 @@ class NWPSource:
         import os
         env_var = self._defaults.get("cache_dir_env_var", "BRC_TOOLS_HERBIE_CACHE")
         return os.environ.get(env_var) or None
+
+
+def _floor_to_cycle(t: datetime.datetime, cadence_hours: int) -> datetime.datetime:
+    """``t`` rounded down to the model's last cycle of the day at or before it."""
+    hour = (t.hour // cadence_hours) * cadence_hours
+    return t.replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
 def _parse_init_time(init_time) -> datetime.datetime:

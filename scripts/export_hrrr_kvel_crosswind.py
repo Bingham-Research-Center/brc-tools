@@ -77,16 +77,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_init_time(arg: str | None) -> dt.datetime:
+def _resolve_init_time(arg: str | None, max_fxx: int, product: str) -> dt.datetime:
     if arg:
         return dt.datetime.strptime(arg, "%Y-%m-%d %H")
+    # The newest run whose last step is published, not a fixed 2 h back (website P14).
     # NWPSource.latest_init() is tz-aware, but Herbie compares init times against
     # tz-naive pandas Timestamps and dies with "Cannot compare tz-naive and
     # tz-aware timestamps" before fetching anything. Hand it naive UTC, matching
     # what get_latest_hrrr_init() returns on the working road-forecast path.
     return (
         NWPSource("hrrr")
-        .latest_init()
+        .latest_init(max_fxx=max_fxx, product=product)
         .astimezone(dt.timezone.utc)
         .replace(tzinfo=None)
     )
@@ -109,7 +110,7 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        init_time = _resolve_init_time(args.init_time)
+        init_time = _resolve_init_time(args.init_time, args.max_fxx, args.product)
         forecast_hours = list(range(0, args.max_fxx + 1))
         LOG.info(
             "Fetching HRRR %s %s init=%s fxx=0..%d",
