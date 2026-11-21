@@ -14,6 +14,7 @@ from herbie import Herbie
 
 from brc_tools.nwp._cache import purge_cached_files, validate_cached_grib
 from brc_tools.nwp._crop import crop_to_bbox, nearest_point_value
+from brc_tools.nwp._http import ensure_request_timeouts
 from brc_tools.nwp._normalise import normalize_coords, steps_to_time
 from brc_tools.nwp.derived import WindGrid
 
@@ -139,6 +140,10 @@ class NWPSource:
             them in separate calls (or pass ``product=``).
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Herbie's index GETs and HEADs pass no timeout; one dead S3 socket used to
+        # hang a run for days (see _http).
+        ensure_request_timeouts()
 
         init_dt = _parse_init_time(init_time)
         aliases = self._lu["aliases"]

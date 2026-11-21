@@ -359,6 +359,9 @@ def _herbie_fetch_full(init_dt: dt.datetime, levels, cache_dir):
     """Fetch the funnel fields from Herbie's operational NAM (analysis, fxx=0)."""
     from herbie import Herbie
 
+    from brc_tools.nwp._http import ensure_request_timeouts
+
+    ensure_request_timeouts()
     kwargs = dict(model=_NAM_HERBIE_MODEL, product=_NAM_HERBIE_PRODUCT, fxx=0)
     if cache_dir:
         kwargs["save_dir"] = str(cache_dir)
