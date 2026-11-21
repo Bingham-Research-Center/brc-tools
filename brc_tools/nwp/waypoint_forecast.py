@@ -94,6 +94,7 @@ def fetch_waypoint_dataset(
         region=region,
     )
     # HRRR u/v are grid-relative; wind_dir_10m_deg is published as "deg_true".
+    # Rotated by the grid the fetched GRIB declares (see rotate_winds_to_earth).
     return add_wind_fields(rotate_winds_to_earth(ds, "wind_u_10m", "wind_v_10m"))
 
 

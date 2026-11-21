@@ -14,6 +14,7 @@ from herbie import Herbie
 from brc_tools.nwp._cache import purge_cached_files, validate_cached_grib
 from brc_tools.nwp._crop import crop_to_bbox, nearest_point_value
 from brc_tools.nwp._normalise import normalize_coords
+from brc_tools.nwp.derived import WindGrid
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,10 @@ class NWPSource:
         xr.Dataset
             Gridded dataset with dims ``(time, y, x)`` and variables
             renamed to their canonical ``output_var`` names.  The ``time``
-            coordinate holds valid times (init + fxx).
+            coordinate holds valid times (init + fxx).  Wind components are
+            left as the GRIB has them (grid-relative for HRRR/RRFS); the
+            grid the messages declare is copied to ``ds.attrs`` (``grid_*``)
+            so ``derived.rotate_winds_to_earth(ds, u, v)`` can turn them.
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -140,12 +144,16 @@ class NWPSource:
                             (fxx, search, actual_product, out_name, retries)
                         )
 
+        # Grid definitions seen across the messages (the merges below drop attrs).
+        grids: set[WindGrid | None] = set()
+
         def _do_fetch(item):
             fxx, search, prod, out_name, ret = item
             ds = self._herbie_fetch(init_dt, fxx, search, prod, ret)
             if ds is not None:
                 data_vars = list(ds.data_vars)
                 if data_vars:
+                    grids.add(WindGrid.from_grib_attrs(ds[data_vars[0]].attrs))
                     ds = ds.rename({data_vars[0]: out_name})
                 keep = {"time", "latitude", "longitude", "y", "x"}
                 drop = [n for n in ds.coords if n not in keep and n not in ds.dims]
@@ -204,7 +212,18 @@ class NWPSource:
                 f"No data returned for {self._model_key} init={init_dt} "
                 f"hours={list(forecast_hours)} vars={variables}"
             )
-        return xr.concat(hour_slices, dim="time", combine_attrs="drop")
+        out = xr.concat(hour_slices, dim="time", combine_attrs="drop")
+        # One grid for the whole fetch, or none: a fetch that mixed grids, or whose
+        # messages did not say, leaves the attrs off so a later rotation refuses.
+        if len(grids) == 1 and None not in grids:
+            out.attrs.update(next(iter(grids)).to_attrs())
+        elif grids:
+            logger.warning(
+                "%s fetch did not yield one grid definition (%s); winds cannot be "
+                "rotated to earth-relative without an explicit grid",
+                self._model_key, grids,
+            )
+        return out
 
     def extract_at_waypoints(
         self,

@@ -97,7 +97,8 @@ def fetch_surface_dataset(
         region=region,
     )
     # HRRR u/v are grid-relative (about 8 deg off north over the Basin); the website
-    # draws arrows from these components as east/north.
+    # draws arrows from these components as east/north. The rotation uses the grid the
+    # fetched GRIB declares, so another source gets its own grid's angle or an error.
     return rotate_winds_to_earth(ds, "wind_u_10m", "wind_v_10m")
 
 
