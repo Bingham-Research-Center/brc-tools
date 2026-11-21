@@ -2,6 +2,16 @@
 
 Wrap the existing libraries' requests transport, including import-time token checks.
 Never use this process-global context in a multithreaded service.
+
+Tiers name the caps a human authorised; the ledger records every request, so a
+rolling cap can be computed from it without a schema change:
+
+* ``pilot`` (default): at most 8 requests per batch, no rolling cap -- the
+  pseudoprofile pilot contract of 2026-11-10.
+* ``historical``: at most 60 requests per batch and 300 per rolling 24 h -- the
+  basin-soil-snowmelt contract of 2026-11-12.
+
+Both keep one request in flight, 30 s after each completion, no retries.
 """
 
 from __future__ import annotations
@@ -16,6 +26,13 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlparse
 
+TIERS = {
+    "pilot": dict(max_requests=8, rolling_cap=None, rolling_hours=None),
+    "historical": dict(max_requests=60, rolling_cap=300, rolling_hours=24),
+}
+
+_REJECTION_WORDS = ("quota", "billing", "too many", "unauthorized")
+
 
 class AcquisitionStopped(RuntimeError):
     pass
@@ -29,17 +46,37 @@ class Budget:
         batch,
         *,
         allowed=False,
-        max_requests=8,
+        tier="pilot",
+        max_requests=None,
         interval=30.0,
         clock=time.time,
         sleep=time.sleep,
     ):
-        if not 1 <= max_requests <= 8 or interval < 30:
-            raise ValueError("pilot permits 1..8 requests and spacing >=30 seconds")
+        if tier not in TIERS:
+            raise ValueError(f"unknown budget tier {tier!r}; known: {sorted(TIERS)}")
+        spec = TIERS[tier]
+        if max_requests is None:
+            max_requests = spec["max_requests"]
+        if not 1 <= max_requests <= spec["max_requests"] or interval < 30:
+            raise ValueError(
+                f"tier {tier!r} permits 1..{spec['max_requests']} requests per batch "
+                "and spacing >=30 seconds"
+            )
         self.root, self.provider, self.batch = Path(root), provider, batch
         self.allowed, self.maximum, self.interval = allowed, max_requests, interval
+        self.tier = tier
+        self.rolling_cap, self.rolling_hours = spec["rolling_cap"], spec["rolling_hours"]
         self.clock, self.sleep = clock, sleep
         self.state_path = self.root / f"{provider}.json"
+
+    # -- ledger -----------------------------------------------------------------
+
+    def _read(self):
+        return (
+            json.loads(self.state_path.read_text())
+            if self.state_path.exists()
+            else {"batches": {}, "last": 0}
+        )
 
     def _write(self, state):
         fd, name = tempfile.mkstemp(dir=self.root, prefix=".ledger-")
@@ -53,6 +90,45 @@ class Budget:
             if os.path.exists(name):
                 os.unlink(name)
 
+    def _recent(self, state):
+        """Every recorded request, any batch, inside the rolling window."""
+        if not self.rolling_cap:
+            return []
+        cutoff = self.clock() - 3600.0 * self.rolling_hours
+        return [
+            e
+            for entries in state["batches"].values()
+            for e in entries
+            if e.get("utc_epoch", 0) >= cutoff
+        ]
+
+    def headroom(self, want=1):
+        """(left in this batch, left in the rolling window, seconds until the window
+        has room for ``want`` more requests). Read-only; takes no lock; the window
+        figures are None / 0.0 where no rolling cap applies."""
+        state = self._read()
+        in_batch = len(state["batches"].get(self.batch, []))
+        left_batch = max(self.maximum - in_batch, 0)
+        if not self.rolling_cap:
+            return left_batch, None, 0.0
+        recent = sorted(e["utc_epoch"] for e in self._recent(state))
+        left_window = max(self.rolling_cap - len(recent), 0)
+        if left_window >= want:
+            return left_batch, left_window, 0.0
+        # The k-th oldest request inside the window must expire first, k = the shortfall.
+        shortfall = want - left_window
+        k = min(shortfall, len(recent))
+        wait = recent[k - 1] + 3600.0 * self.rolling_hours - self.clock()
+        return left_batch, left_window, max(wait, 0.0)
+
+    # -- operator reviews ---------------------------------------------------------
+
+    def _last_entry(self, state):
+        entries = [e for batch in state["batches"].values() for e in batch]
+        if not entries:
+            raise AcquisitionStopped("ledger has no requests to review")
+        return max(entries, key=lambda e: e["utc_epoch"])
+
     def acknowledge_redirect(self, reason):
         """Explicit operator review only; never clear quota/auth/timeout failures."""
         if not reason.strip():
@@ -60,8 +136,7 @@ class Budget:
         with (self.root / f"{self.provider}.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             state = json.loads(self.state_path.read_text())
-            entries = [e for batch in state["batches"].values() for e in batch]
-            last = max(entries, key=lambda e: e["utc_epoch"])
+            last = self._last_entry(state)
             if last.get("status") not in (301, 302, 307, 308):
                 raise AcquisitionStopped(
                     "only a reviewed redirect can be acknowledged here"
@@ -71,6 +146,33 @@ class Budget:
             )
             state["stopped"] = None
             self._write(state)
+
+    def acknowledge_empty_probe(self, reason):
+        """Clear a stop caused by a *no data* answer (HTTP 200, RESPONSE_CODE 2 and no
+        quota/auth wording). A probe into history the token does not cover is such an
+        answer. Anything else stays stopped."""
+        if not reason.strip():
+            raise ValueError("review reason required")
+        with (self.root / f"{self.provider}.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            state = json.loads(self.state_path.read_text())
+            last = self._last_entry(state)
+            msg = str(last.get("response_message", "")).lower()
+            if (
+                last.get("status") != 200
+                or last.get("response_code") != 2
+                or any(w in msg for w in _REJECTION_WORDS)
+            ):
+                raise AcquisitionStopped(
+                    "only a 200 / RESPONSE_CODE 2 'no data' answer can be acknowledged here"
+                )
+            state.setdefault("reviews", []).append(
+                {"reason": reason, "utc_epoch": self.clock(), "kind": "empty_probe"}
+            )
+            state["stopped"] = None
+            self._write(state)
+
+    # -- transport ----------------------------------------------------------------
 
     @contextlib.contextmanager
     def transport(self):
@@ -88,11 +190,7 @@ class Budget:
                 raise AcquisitionStopped(
                     "another acquisition worker holds the provider lock"
                 ) from None
-            state = (
-                json.loads(self.state_path.read_text())
-                if self.state_path.exists()
-                else {"batches": {}, "last": 0}
-            )
+            state = self._read()
             if state.get("stopped"):
                 raise AcquisitionStopped(
                     "provider is stopped; review its ledger before a new run"
@@ -108,6 +206,10 @@ class Budget:
                 }
                 if request.method != "GET" or host not in allowed_hosts[self.provider]:
                     raise AcquisitionStopped("unplanned transport host or method")
+                if self.rolling_cap and len(self._recent(state)) >= self.rolling_cap:
+                    raise AcquisitionStopped(
+                        f"rolling {self.rolling_hours} h request cap reached"
+                    )
                 if len(entries) >= self.maximum:
                     raise AcquisitionStopped("request budget exhausted")
                 wait = self.interval - (self.clock() - state["last"])
@@ -118,6 +220,7 @@ class Budget:
                     "utc_epoch": self.clock(),
                     "path": urlparse(request.url).path,
                     "outcome": "in_flight",
+                    "tier": self.tier,
                 }
                 entries.append(entry)
                 state.update(last=self.clock(), stopped="incomplete request")
@@ -141,9 +244,10 @@ class Budget:
                         summary = response.json().get("SUMMARY", {})
                         entry["response_code"] = summary.get("RESPONSE_CODE")
                         msg = str(summary.get("RESPONSE_MESSAGE", "")).lower()
+                        # A sanitized fragment only: the message never carries the URL.
+                        entry["response_message"] = msg[:120]
                         if summary.get("RESPONSE_CODE") != 1 or any(
-                            w in msg
-                            for w in ("quota", "billing", "too many", "unauthorized")
+                            w in msg for w in _REJECTION_WORDS
                         ):
                             raise AcquisitionStopped(
                                 "API payload indicates rejection; batch stopped"

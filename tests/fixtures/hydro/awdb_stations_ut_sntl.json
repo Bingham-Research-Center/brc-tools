@@ -1,0 +1,158 @@
+[
+{
+"stationTriplet": "559:UT:SNTL",
+"stationId": "559",
+"stateCode": "UT",
+"networkCode": "SNTL",
+"name": "Kings Cabin",
+"dcoCode": "UT",
+"countyName": "Uintah",
+"huc": "140600100303",
+"elevation": 8740.0,
+"latitude": 40.71632,
+"longitude": -109.54401,
+"dataTimeZone": -8.0,
+"shefId": "KGCU1",
+"operator": "NRCS",
+"beginDate": "1978-10-01 00:00",
+"endDate": "2100-01-01 00:00",
+"stationElements": [
+{
+"elementCode": "BATT",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 2,
+"storedUnitCode": "volt",
+"originalUnitCode": "volt",
+"beginDate": "1978-10-01 00:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+{
+"elementCode": "PREC",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "in",
+"originalUnitCode": "in",
+"beginDate": "1978-10-01 00:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+{
+"elementCode": "SMS",
+"ordinal": 1,
+"heightDepth": -20,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "pct",
+"originalUnitCode": "pct",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+{
+"elementCode": "SMS",
+"ordinal": 1,
+"heightDepth": -8,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "pct",
+"originalUnitCode": "pct",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+{
+"elementCode": "SMS",
+"ordinal": 1,
+"heightDepth": -2,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "pct",
+"originalUnitCode": "pct",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+{
+"elementCode": "SNWD",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "in",
+"originalUnitCode": "in",
+"beginDate": "1998-06-17 13:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+{
+"elementCode": "STO",
+"ordinal": 1,
+"heightDepth": -20,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+{
+"elementCode": "STO",
+"ordinal": 1,
+"heightDepth": -8,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+{
+"elementCode": "STO",
+"ordinal": 1,
+"heightDepth": -2,
+"durationName": "DAILY",
+"dataPrecision": 0,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2002-08-19 12:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": true
+},
+{
+"elementCode": "TOBS",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "degF",
+"originalUnitCode": "degF",
+"beginDate": "2005-06-22 19:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+},
+{
+"elementCode": "WTEQ",
+"ordinal": 1,
+"durationName": "DAILY",
+"dataPrecision": 1,
+"storedUnitCode": "in",
+"originalUnitCode": "in",
+"beginDate": "1978-10-01 00:00",
+"endDate": "2100-01-01 00:00",
+"derivedData": false
+}
+],
+"associatedHucs": [
+"140401060803",
+"140600100201",
+"140600100202",
+"140600100203",
+"140600100204",
+"140600100301",
+"140600100302"
+]
+}
+]

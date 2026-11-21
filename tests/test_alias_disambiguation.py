@@ -79,3 +79,17 @@ def test_no_search_string_is_a_bare_variable_name():
         if not re.search(r"\S:\S", search)
     ]
     assert not offenders, "search string(s) with no level qualifier: " + "; ".join(offenders)
+
+
+def test_observation_only_aliases_declare_synoptic_names_and_units():
+    """Soil, SWE, accumulated precipitation and solar aliases exist for the station
+    archive; each names its Synoptic variable and the unit Synoptic reports."""
+    aliases = _aliases()
+    for name in ("soil_temp", "soil_moisture", "snow_water_equiv", "precip_accum", "solar_radiation"):
+        spec = aliases.get(name)
+        assert spec, f"[aliases.{name}] missing"
+        assert spec.get("synoptic_name") == name
+        assert spec.get("synoptic_units"), f"[aliases.{name}] has no synoptic_units"
+    # observation-only aliases must not imply a GRIB message
+    for name in ("soil_temp", "soil_moisture", "precip_accum", "solar_radiation"):
+        assert "search" not in aliases[name], f"[aliases.{name}] should not carry a .search table"

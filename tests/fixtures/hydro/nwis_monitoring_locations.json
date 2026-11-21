@@ -1,0 +1,207 @@
+{
+"type": "FeatureCollection",
+"features": [
+{
+"type": "Feature",
+"properties": {
+"id": "USGS-09261700",
+"agency_code": "USGS",
+"agency_name": "U.S. Geological Survey",
+"monitoring_location_number": "09261700",
+"monitoring_location_name": "BIG BRUSH CRK ABV RED FLEET RES, NR VERNAL, UT",
+"district_code": "49",
+"country_code": "US",
+"country_name": "United States of America",
+"state_code": "49",
+"state_name": "Utah",
+"county_code": "047",
+"county_name": "Uintah County",
+"minor_civil_division_code": "93655",
+"site_type_code": "ST",
+"site_type": "Stream",
+"hydrologic_unit_code": "140600100205",
+"basin_code": "09",
+"altitude": 5627.26,
+"altitude_accuracy": 0.1,
+"altitude_method_code": "X",
+"altitude_method_name": "GNSS2 - Level 2 Quality Survey Grade Global Navigation Satellite System",
+"vertical_datum": "NAVD88",
+"vertical_datum_name": "North American Vertical Datum of 1988",
+"horizontal_positional_accuracy_code": "F",
+"horizontal_positional_accuracy": "Accurate to + or - 5 sec.",
+"horizontal_position_method_code": "M",
+"horizontal_position_method_name": "Interpolated from map",
+"original_horizontal_datum": "NAD27",
+"original_horizontal_datum_name": "North American Datum of 1927",
+"drainage_area": 77.2,
+"contributing_drainage_area": null,
+"time_zone_abbreviation": "MST",
+"uses_daylight_savings": "Y",
+"construction_date": null,
+"aquifer_code": null,
+"national_aquifer_code": null,
+"aquifer_type_code": null,
+"well_constructed_depth": null,
+"hole_constructed_depth": null,
+"depth_source_code": null,
+"revision_note": null,
+"revision_created": null,
+"revision_modified": null
+},
+"id": "USGS-09261700",
+"geometry": {
+"type": "Point",
+"coordinates": [
+-109.46543718815042,
+40.58883233955242
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"id": "USGS-09262000",
+"agency_code": "USGS",
+"agency_name": "U.S. Geological Survey",
+"monitoring_location_number": "09262000",
+"monitoring_location_name": "BIG BRUSH CREEK NEAR VERNAL,UTAH",
+"district_code": "49",
+"country_code": "US",
+"country_name": "United States of America",
+"state_code": "49",
+"state_name": "Utah",
+"county_code": "047",
+"county_name": "Uintah County",
+"minor_civil_division_code": null,
+"site_type_code": "ST",
+"site_type": "Stream",
+"hydrologic_unit_code": "14060002",
+"basin_code": "09",
+"altitude": 5530.0,
+"altitude_accuracy": 20.0,
+"altitude_method_code": "M",
+"altitude_method_name": "Interpolated from topographic map.",
+"vertical_datum": "NGVD29",
+"vertical_datum_name": "National Geodetic Vertical Datum of 1929",
+"horizontal_positional_accuracy_code": "F",
+"horizontal_positional_accuracy": "Accurate to + or - 5 sec.",
+"horizontal_position_method_code": "M",
+"horizontal_position_method_name": "Interpolated from map",
+"original_horizontal_datum": "NAD27",
+"original_horizontal_datum_name": "North American Datum of 1927",
+"drainage_area": 79.6,
+"contributing_drainage_area": null,
+"time_zone_abbreviation": "MST",
+"uses_daylight_savings": "Y",
+"construction_date": null,
+"aquifer_code": null,
+"national_aquifer_code": null,
+"aquifer_type_code": null,
+"well_constructed_depth": null,
+"hole_constructed_depth": null,
+"depth_source_code": null,
+"revision_note": null,
+"revision_created": null,
+"revision_modified": null
+},
+"id": "USGS-09262000",
+"geometry": {
+"type": "Point",
+"coordinates": [
+-109.434857199091,
+40.5816264788512
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"id": "USGS-09265500",
+"agency_code": "USGS",
+"agency_name": "U.S. Geological Survey",
+"monitoring_location_number": "09265500",
+"monitoring_location_name": "ASHLEY CR ABV SP NR VERNAL UT",
+"district_code": "49",
+"country_code": "US",
+"country_name": "United States of America",
+"state_code": "49",
+"state_name": "Utah",
+"county_code": "047",
+"county_name": "Uintah County",
+"minor_civil_division_code": "93655",
+"site_type_code": "ST",
+"site_type": "Stream",
+"hydrologic_unit_code": "140600100805",
+"basin_code": "09",
+"altitude": 6300.0,
+"altitude_accuracy": 20.0,
+"altitude_method_code": "M",
+"altitude_method_name": "Interpolated from topographic map.",
+"vertical_datum": "NGVD29",
+"vertical_datum_name": "National Geodetic Vertical Datum of 1929",
+"horizontal_positional_accuracy_code": "F",
+"horizontal_positional_accuracy": "Accurate to + or - 5 sec.",
+"horizontal_position_method_code": "M",
+"horizontal_position_method_name": "Interpolated from map",
+"original_horizontal_datum": "NAD27",
+"original_horizontal_datum_name": "North American Datum of 1927",
+"drainage_area": 100.0,
+"contributing_drainage_area": null,
+"time_zone_abbreviation": "MST",
+"uses_daylight_savings": "Y",
+"construction_date": null,
+"aquifer_code": null,
+"national_aquifer_code": null,
+"aquifer_type_code": null,
+"well_constructed_depth": null,
+"hole_constructed_depth": null,
+"depth_source_code": null,
+"revision_note": null,
+"revision_created": null,
+"revision_modified": null
+},
+"id": "USGS-09265500",
+"geometry": {
+"type": "Point",
+"coordinates": [
+-109.622222,
+40.588889
+]
+}
+}
+],
+"numberReturned": 3,
+"links": [
+{
+"type": "application/geo+json",
+"rel": "self",
+"title": "This document as GeoJSON",
+"href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=json&bbox=-110.0,40.3,-109.4,40.6&site_type_code=ST&limit=3"
+},
+{
+"rel": "alternate",
+"type": "application/ld+json",
+"title": "This document as RDF (JSON-LD)",
+"href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=jsonld&bbox=-110.0,40.3,-109.4,40.6&site_type_code=ST&limit=3"
+},
+{
+"type": "text/html",
+"rel": "alternate",
+"title": "This document as HTML",
+"href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=html&bbox=-110.0,40.3,-109.4,40.6&site_type_code=ST&limit=3"
+},
+{
+"type": "text/csv; charset=utf-8",
+"rel": "alternate",
+"title": "This document as CSV",
+"href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?f=csv&bbox=-110.0,40.3,-109.4,40.6&site_type_code=ST&limit=3"
+},
+{
+"type": "application/json",
+"title": "Monitoring locations",
+"rel": "collection",
+"href": "https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations"
+}
+],
+"timeStamp": "2026-11-12T00:46:35.107498Z"
+}
