@@ -15,7 +15,11 @@ ROAD_FORECAST_QUERY_MAP = {
     "_vgrd": "VGRD:10 m",
     "wind_gust": "GUST:surface",
     "visibility": "VIS:surface",
-    "precip_1hr": "APCP:surface",
+    # HRRR sfc carries two APCP messages from f02 on, the run total ("0-N hour acc") and
+    # the hourly bucket ("N-1-N hour acc"). A bare "APCP:surface" got the run total, so
+    # precip_1hr only ever rose through a run. Same anchor as lookups.toml
+    # [aliases.precip_1hr.search] (tests/test_road_forecast_logic.py keeps them equal).
+    "precip_1hr": r"APCP:surface:0-1 hour acc|APCP:surface:(?!0-)\d+-\d+ hour acc",
     "_crain": "CRAIN:surface",
     "_csnow": "CSNOW:surface",
     "_cfrzr": "CFRZR:surface",
