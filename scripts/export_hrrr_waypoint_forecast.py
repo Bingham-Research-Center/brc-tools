@@ -76,10 +76,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_init_time(arg: str | None, source: NWPSource) -> dt.datetime:
+def _resolve_init_time(arg: str | None, source: NWPSource, max_fxx: int) -> dt.datetime:
     if arg:
         return dt.datetime.strptime(arg, "%Y-%m-%d %H")
-    return source.latest_init()
+    # The newest run whose last hour is published, not a fixed 2 h back (website P14).
+    return source.latest_init(max_fxx=max_fxx)
 
 
 def _output_path(output_dir: Path, init_time: dt.datetime, group: str) -> Path:
@@ -100,7 +101,7 @@ def main() -> int:
 
     try:
         src = NWPSource("hrrr")
-        init_time = _resolve_init_time(args.init_time, src)
+        init_time = _resolve_init_time(args.init_time, src, args.max_fxx)
         forecast_hours = list(range(0, args.max_fxx + 1))
 
         LOG.info(

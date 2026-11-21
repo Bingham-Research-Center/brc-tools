@@ -78,14 +78,16 @@ def latest_init_times(
     *,
     now: dt.datetime | None = None,
     source: NWPSource | None = None,
+    max_fxx: int | None = None,
 ) -> list[dt.datetime]:
     """Return the latest ``count`` init times of ``source`` (default HRRR), newest first.
 
     Steps by the model's own cycle spacing: 1 h for HRRR, 3 h for RRFS, whose hourly
-    files exist only for the 00/03/.../21Z runs.
+    files exist only for the 00/03/.../21Z runs. With ``max_fxx``, the newest is the
+    newest run whose ``max_fxx`` file is published (``NWPSource.latest_init``).
     """
     src = source or NWPSource(DEFAULT_MODEL)
-    latest = src.latest_init(now=now)
+    latest = src.latest_init(now=now, max_fxx=max_fxx)
     step = src.init_cadence_hours
     return [latest - dt.timedelta(hours=offset * step) for offset in range(count)]
 
@@ -247,7 +249,7 @@ def export_latest_surface_layers(
     written_paths: list[Path] = []
     index_entries: list[dict[str, object]] = []
 
-    for init_time in latest_init_times(run_count, source=src):
+    for init_time in latest_init_times(run_count, source=src, max_fxx=max_fxx):
         LOG.info("Fetching %s surface layers for %s", model.upper(),
                  init_time.strftime("%Y-%m-%d %HZ"))
         raw = fetch_surface_dataset(

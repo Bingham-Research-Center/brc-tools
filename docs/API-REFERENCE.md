@@ -48,9 +48,16 @@ Extract nearest-point time series at named waypoints.
 - **group**: waypoint group name (e.g. `"foehn_path"`)
 - Returns DataFrame with columns: `waypoint`, `valid_time`, plus data variables
 
-#### .latest_init(now=) → datetime.datetime
+#### .latest_init(now=, *, max_fxx=None, product=None) → datetime.datetime
 
 Most recent init time likely to have data available.
+- Without `max_fxx`: a fixed rule with no network, `now − availability_lag_hours` (2 h unless
+  `lookups.toml` sets it) floored to the model's cycle.
+- With `max_fxx`: the newest init whose `max_fxx` file (in `product`) is on **AWS**, walking
+  back from the newest cycle and stopping at the fixed rule's answer. It checks AWS only, so
+  a NOMADS-first run never steers a fetch to NOMADS. HRRR f18 reaches S3 about 85 min after
+  init, so at :50 this is the run one hour newer than the fixed rule. The three HRRR BasinWX
+  exporters use it (website ask P14).
 
 ### load_lookups() → dict
 
