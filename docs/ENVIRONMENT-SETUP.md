@@ -78,8 +78,8 @@ same as `brc-tools-2026`, so the suite holds on polars 2. A live Synoptic pull t
 `brc-tools-2026`'s for the same HRRR run apart from the timestamp. **Activate it** (`conda activate`), do not call its `bin/python` bare:
 conda-forge's pyproj finds its database through `PROJ_DATA`, which only activation sets,
 and 25 tests fail with `proj_create: no database context specified` without it. The cron
-wrappers activate already. Moving a cron onto it is an ops decision:
-`docs/BRC-DATA-OPS-HANDOFF.md`.
+wrappers activate already. Moving a cron onto it is an ops decision, tracked in
+brc-data-ops (`docs/OPS-BACKLOG.md`, O1).
 
 Prefer a fresh, dedicated env over reusing a shared/accreted one. The canonical list of
 dependencies is **`pyproject.toml`** (`[project.dependencies]`); `environment.yml` is the

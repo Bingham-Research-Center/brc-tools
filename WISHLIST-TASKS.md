@@ -35,8 +35,8 @@ mocked-Herbie/SynopticPy integration tests (`tests/test_nwp_source_integration.p
 ## Priority 2: Operational delivery
 
 Issue #10 is closed: four HRRR jobs upload on cron and RRFS is fetchable. What an RRFS
-product on BasinWX would take is ops work, parked in `docs/BRC-DATA-OPS-HANDOFF.md` for the
-planned `brc-data-ops` repo. Left here:
+product on BasinWX would take is ops work, now in the `brc-data-ops` repo (created
+2026-11-21; `docs/OPS-BACKLOG.md` there). Left here:
 
 - [ ] **Sub-hourly accumulations** — `NWPSource` keeps the `subh` 15-min axis (GH #82), but
   only for instantaneous fields: HRRR `subh` precip is 15-min buckets, RRFS's runs from the
@@ -72,7 +72,7 @@ here so the next cold-start agent knows to tackle it.
 - [ ] **Clyfar's winter job is live again** (crontab, since 2026-11-20) and fans out
   through `send_json_to_all`. Comment it out again around the end of March 2027.
 - [ ] **Cron runs in Mountain time, not UTC** (no `CRON_TZ`), so every model-tied job
-  shifts an hour against its cycle at each DST change. Decide in `brc-data-ops`.
+  shifts an hour against its cycle at each DST change. Decide in `brc-data-ops` (O5).
 - [ ] **UDOT camera scraper** (GH #53) — its branch was deleted 2026-11-21; the commit is
   kept as tag `archive/michael-image-gathering`.
 
