@@ -91,3 +91,32 @@ def test_build_road_payload_emits_flat_points_for_website():
     assert step_zero["valid_time"] == "2026-03-17T13:00:00Z"
     assert step_zero["temp_2m"] == -1.0
     assert step_zero["wind_speed_10m"] == 3.0
+
+
+def test_road_precip_query_is_the_hourly_bucket():
+    """precip_1hr must anchor on the hourly APCP message, never the run total.
+
+    A bare "APCP:surface" matches both messages from f02 on and Herbie returned the
+    run total ("0-N hour acc"): on the 2026-11-20 18Z run it gave 6.72 mm at f05 where
+    the hourly bucket held 1.31 mm. Keep the road map and lookups.toml in step.
+    """
+    import re
+    import tomllib
+    from pathlib import Path
+
+    from brc_tools.download.hrrr_config import ROAD_FORECAST_QUERY_MAP
+
+    search = ROAD_FORECAST_QUERY_MAP["precip_1hr"]
+    lookups = Path(__file__).resolve().parents[1] / "brc_tools" / "nwp" / "lookups.toml"
+    alias = tomllib.loads(lookups.read_text())["aliases"]["precip_1hr"]["search"]["hrrr"]
+    assert search == alias
+
+    idx = {
+        "f01": ":APCP:surface:0-1 hour acc fcst:",
+        "f06 total": ":APCP:surface:0-6 hour acc fcst:",
+        "f06 hourly": ":APCP:surface:5-6 hour acc fcst:",
+        "f12 total": ":APCP:surface:0-12 hour acc fcst:",
+        "f12 hourly": ":APCP:surface:11-12 hour acc fcst:",
+    }
+    hits = {name for name, line in idx.items() if re.search(search, line)}
+    assert hits == {"f01", "f06 hourly", "f12 hourly"}

@@ -39,9 +39,10 @@ def _sample_raw_dataset() -> xr.Dataset:
                 [[0.0, 1.2, 2.4], [1.5, 0.3, 0.0]],
                 [[0.5, 2.0, 0.0], [0.0, 0.1, 0.6]],
             ])),
+            # ASNOW, as HRRR sends it: snowfall depth (m) since the run began, never falling.
             "snowfall_1hr": (("time", "y", "x"), np.array([
                 [[0.0, 0.001, 0.002], [0.0005, 0.0, 0.0]],
-                [[0.0015, 0.0, 0.0], [0.0, 0.0, 0.0007]],
+                [[0.0015, 0.001, 0.002], [0.0005, 0.0, 0.0007]],
             ])),
             "categorical_rain": (("time", "y", "x"), np.array([
                 [[0, 1, 1], [0, 1, 0]],
@@ -64,7 +65,13 @@ def test_prepare_surface_dataset_converts_units_and_partitions_precip():
     assert prepared["rainfall_1h_mm"].isel(time=0, y=1, x=0).item() == 0.0
     assert prepared["rainfall_1h_mm"].isel(time=0, y=0, x=1).item() == 1.2
     assert prepared["snowfall_1h_mm"].isel(time=0, y=0, x=1).item() == 1.0
-    assert prepared["snowfall_1h_mm"].isel(time=1, y=0, x=1).item() == 0.0
+    # A run total is not masked by the hour's snow flag (it is 0 at this point at t=1):
+    # masking made the total drop to zero and come back the next hour.
+    assert prepared["snowfall_1h_mm"].isel(time=1, y=0, x=1).item() == 1.0
+    assert prepared["snowfall_1h_mm"].isel(time=1, y=1, x=0).item() == 0.5
+    totals = prepared["snowfall_1h_mm"].values
+    assert (np.diff(totals, axis=0) >= 0).all(), "a run total never falls"
+    assert "since run start" in prepared["snowfall_1h_mm"].attrs["long_name"]
 
 
 def test_downsample_surface_dataset_reduces_grid_shape():

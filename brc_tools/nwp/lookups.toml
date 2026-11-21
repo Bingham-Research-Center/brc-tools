@@ -2146,7 +2146,10 @@ hrrr = 'APCP:surface:0-\d+ (hour|day) acc'
 rrfs = 'APCP:surface:0-\d+ (hour|day) acc'
 
 [aliases.snowfall_1hr]
-description   = "1-hour accumulated snowfall"
+# Despite the alias name, HRRR's only ASNOW message is the run total ("0-N hour acc"):
+# snowfall depth since init, not liquid and not hourly. Difference it along time for an
+# hourly amount; for hourly liquid-equivalent snow use WEASD:surface:N-1-N hour acc.
+description   = "Snowfall depth accumulated since the run began (HRRR ASNOW)"
 units         = "m"
 output_var    = "snowfall_1hr"
 [aliases.snowfall_1hr.search]
