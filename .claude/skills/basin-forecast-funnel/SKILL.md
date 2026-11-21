@@ -1,12 +1,12 @@
 ---
 name: basin-forecast-funnel
-description: Render a NAM "forecast funnel" montage (250 hPa jet -> 500 hPa flow -> 600 hPa moisture/LLJ -> surface synoptic analysis) for a given analysis init time on CHPC. Use when asked to make a forecast funnel / synoptic overview figure from NAM.
+description: Render a "forecast funnel" montage (250 hPa jet -> 500 hPa flow -> 600 hPa moisture/LLJ -> surface synoptic analysis) from a NAM or GFS analysis for a given init time on CHPC. Use when asked to make a forecast funnel / synoptic overview figure.
 ---
 
 # Basin forecast funnel
 
 Drives `scripts/forecast_funnel.py --init-time <when>` (brc-tools) to download a single
-NAM analysis and render the four-panel **forecast funnel** as one publication montage
+analysis (NAM, or GFS after NAM's retirement) and render the four-panel **forecast funnel** as one publication montage
 (shared Helvetica look via `visualize/style.py`; state borders, rivers, lakes, and
 population-ranked city labels via the fail-soft `visualize/basemap.py` overlays):
 
@@ -20,14 +20,15 @@ Details + caveats: `docs/FORECAST-FUNNEL.md`.
 
 ## Steps
 1. **Pick the analysis init time** (ask the user): `'YYYY-MM-DD HHZ'` or `YYYYMMDDHH`,
-   UTC. The NAM source is **auto-picked by date**:
+   UTC. The source is **auto-picked by date**:
+   - **after 2026-11-03 → GFS 0.25°** (Herbie operational `gfs`, `pgrb2.0p25`): NAM was
+     retired, and GFS is its successor here (GH #81). It is coarser (~25 km), so say so if
+     the local panel matters;
    - 2020-03 … 2026-11-03 → Herbie operational NAM (AWS/NOMADS);
    - pre-2017 (<= 2017-04) → NCEI historical grib1 `namanl_218`;
    - the 2017–2020 window is **unwired** and errors out (see `docs/FORECAST-FUNNEL.md` for
-     the post-2017 grib2 follow-up);
-   - **after 2026-11-03 there is no NAM** (retired; no successor wired, GH #81) — it errors
-     out, so tell the user the funnel is a historical-case tool for now.
-   Override with `--source herbie|ncei` if you must.
+     the post-2017 grib2 follow-up).
+   Override with `--source gfs|herbie|ncei` if you must (`gfs` works for older dates too).
 2. **Stage map overlays once (if not already cached):** city labels need the Natural-Earth
    `populated_places` layer alongside the existing ones — `sbatch scripts/fetch_basemap.dtn.slurm`
    into the persistent `$BRC_TOOLS_BASEMAP_DIR`. Overlays are fail-soft: an unstaged layer

@@ -1,19 +1,24 @@
-"""Forecast-funnel data layer: NAM analysis -> per-panel plain-array bundles.
+"""Forecast-funnel data layer: one model analysis -> per-panel plain-array bundles.
 
 A "forecast funnel" is the classic top-down forecasting workflow — start synoptic
 (the jet, the long waves), zoom to the regional flow, then to the local scale, and
-finish at the surface synoptic analysis.  This module fetches a single NAM analysis
-(f00) and reduces it to the handful of cropped, plain-``numpy`` field bundles the
+finish at the surface synoptic analysis.  This module fetches a single analysis
+(f00: NAM, or GFS after NAM's retirement) and reduces it to the handful of cropped,
+plain-``numpy`` field bundles the
 renderer (:mod:`brc_tools.visualize.funnel`) needs — one :class:`Panel` per funnel
 step.  The renderer stays dataset-agnostic (it only ever sees ``numpy`` arrays), so
 this module owns every xarray/GRIB/Herbie concern.
 
-Two download paths, auto-picked by init date (:func:`funnel_source_for`):
+Three download paths, auto-picked by init date (:func:`funnel_source_for`):
 
+* **gfs** — Herbie's operational ``gfs`` model, 0.25° ``pgrb2.0p25``, for inits after
+  NAM's last run (2026-11-03; GH #81, JRL's choice of successor 2026-11-21).  A
+  regular lat-lon grid, so its winds are earth-relative as published; the fetch sorts
+  it to the NAM layout (rows northward, longitude -180..180) so every gradient
+  downstream keeps its sign.
 * **herbie** — Herbie's operational ``nam`` model (AWS/NOMADS), for 2020-03 to
-  2026-11-03.  NAM was retired after that; later inits raise (no successor yet, GH #81).
-  Herbie-native (the repo's preferred route); ``awphys`` ships RH (not SPFH) aloft, so
-  specific humidity is derived from RH + T.
+  2026-11-03.  Herbie-native (the repo's preferred route); ``awphys`` ships RH (not
+  SPFH) aloft, so specific humidity is derived from RH + T.
 * **ncei**  — the auth-free NCEI historical direct GET (:func:`~brc_tools.nwp.
   wrf_staging.stage_nam_analysis`), for pre-2017 grib1 ``namanl_218``.
 
@@ -55,6 +60,10 @@ _NAM_LAST = dt.date(2026, 11, 3)
 # at fxx=0 gives ``nam.tHHz.awphys00.tm00.grib2``.
 _NAM_HERBIE_MODEL = "nam"
 _NAM_HERBIE_PRODUCT = "awphys"
+# Herbie operational GFS: global 0.25° ``gfs.tHHz.pgrb2.0p25.f000`` (AWS noaa-gfs-bdp-pds).
+_GFS_HERBIE_MODEL = "gfs"
+_GFS_HERBIE_PRODUCT = "pgrb2.0p25"
+SOURCES = ("auto", "gfs", "herbie", "ncei")
 
 DEFAULT_LEVELS = (250, 500, 600)
 DEFAULT_WAYPOINT_GROUP = "us40_basin"
@@ -130,14 +139,15 @@ class FunnelData:
 
 # ── source selection ────────────────────────────────────────────────────────
 def funnel_source_for(init_dt: dt.datetime) -> str:
-    """Return ``"herbie"`` or ``"ncei"`` for an init date, or raise where NAM has none.
+    """Return ``"gfs"``, ``"herbie"`` (NAM) or ``"ncei"`` (NAM grib1) for an init date.
 
-    2020-03 .. 2026-11-03 use Herbie's operational NAM; pre-2017 inits use the NCEI
-    historical grib1 GET.  The 2017-04..2020-03 window has no wired template, and
-    after 2026-11-03 there is no NAM at all (retired).
+    After NAM's last run (2026-11-03) the funnel uses GFS 0.25°; 2020-03 .. 2026-11-03
+    use Herbie's operational NAM; pre-2017 inits use the NCEI historical grib1 GET.
+    The 2017-04..2020-03 window has no wired NAM template and raises.
     """
     d = init_dt.date()
-    _require_nam_exists(d)
+    if d > _NAM_LAST:
+        return "gfs"
     if d >= _HERBIE_MIN:
         return "herbie"
     if d <= _NCEI_MAX:
@@ -151,13 +161,12 @@ def funnel_source_for(init_dt: dt.datetime) -> str:
 
 
 def _require_nam_exists(d: dt.date) -> None:
-    """Raise, naming the retirement, for an init after the last NAM run."""
+    """Raise, naming the retirement, for a NAM fetch after the last NAM run."""
     if d > _NAM_LAST:
         raise ValueError(
             f"No NAM for init {d:%Y-%m-%d}: NAM was retired after {_NAM_LAST:%Y-%m-%d} "
-            "(NWS SCN 26-48, replaced by RRFS v1) and the forecast funnel has no "
-            "successor source wired yet (GH #81). Use an init on or before "
-            f"{_NAM_LAST:%Y-%m-%d}."
+            "(NWS SCN 26-48, replaced by RRFS v1). Use source='gfs' (the funnel's "
+            "successor, GH #81) or 'auto', which picks it for these dates."
         )
 
 
@@ -193,6 +202,8 @@ def _pick(ds, logical: str):
 def _lonlat_2d(ds) -> tuple[np.ndarray, np.ndarray]:
     lon = np.asarray(ds["longitude"].values, dtype=float)
     lat = np.asarray(ds["latitude"].values, dtype=float)
+    if lon.ndim == 1 and lat.ndim == 1:      # a regular lat-lon grid (GFS)
+        lon, lat = np.meshgrid(lon, lat)
     # Normalise longitude to -180..180 for plotting over CONUS.
     lon = np.where(lon > 180.0, lon - 360.0, lon)
     return lon, lat
@@ -366,11 +377,47 @@ def _herbie_fetch_full(init_dt: dt.datetime, levels, cache_dir):
     if cache_dir:
         kwargs["save_dir"] = str(cache_dir)
     H = Herbie(init_dt, **kwargs)
+    return _read_funnel_fields(H, levels, slp_search=r":(PRMSL|MSLET):mean sea level:")
 
+
+def _gfs_tidy(ds):
+    """GFS 0.25° laid out like the NAM: longitude -180..180 ascending, rows northward.
+
+    GFS ships latitude 90 -> -90 and longitude 0..359.75. Every gradient downstream
+    (vorticity, temperature advection, the thermal front parameter) differences along
+    the array axes, so a southward row order would flip their signs.
+    """
+    lon = ds["longitude"]
+    ds = ds.assign_coords(longitude=((lon + 180.0) % 360.0) - 180.0)
+    return ds.sortby("longitude").sortby("latitude")
+
+
+def _gfs_fetch_full(init_dt: dt.datetime, levels, cache_dir):
+    """Fetch the funnel fields from Herbie's operational GFS 0.25° (analysis, fxx=0).
+
+    The funnel's source after NAM's retirement (GH #81). Its winds are earth-relative
+    as published (a regular lat-lon grid), and PRMSL is its sea-level pressure.
+    """
+    from herbie import Herbie
+
+    from brc_tools.nwp._http import ensure_request_timeouts
+
+    ensure_request_timeouts()
+    kwargs = dict(model=_GFS_HERBIE_MODEL, product=_GFS_HERBIE_PRODUCT, fxx=0)
+    if cache_dir:
+        kwargs["save_dir"] = str(cache_dir)
+    H = Herbie(init_dt, **kwargs)
+    return _read_funnel_fields(H, levels, slp_search=r":PRMSL:mean sea level:",
+                               tidy=_gfs_tidy)
+
+
+def _read_funnel_fields(H, levels, *, slp_search: str, tidy=None):
+    """Read the funnel's fields from one Herbie analysis into the common Dataset."""
+    tidy = tidy or (lambda ds: ds)
     lv_re = "|".join(str(int(lv)) for lv in levels)
-    iso = _first_ds(H.xarray(rf":(HGT|UGRD|VGRD|TMP):({lv_re}) mb:", remove_grib=False))
-    b850 = _first_ds(H.xarray(r":(TMP|UGRD|VGRD):850 mb:", remove_grib=False))
-    slp = _first_ds(H.xarray(r":(PRMSL|MSLET):mean sea level:", remove_grib=False))
+    iso = tidy(_first_ds(H.xarray(rf":(HGT|UGRD|VGRD|TMP):({lv_re}) mb:", remove_grib=False)))
+    b850 = tidy(_first_ds(H.xarray(r":(TMP|UGRD|VGRD):850 mb:", remove_grib=False)))
+    slp = tidy(_first_ds(H.xarray(slp_search, remove_grib=False)))
 
     lon2d, lat2d = _lonlat_2d(iso)
     gh = {lv: _sel_level(_pick(iso, "gh"), lv) for lv in levels}
@@ -382,10 +429,10 @@ def _herbie_fetch_full(init_dt: dt.datetime, levels, cache_dir):
     # SPFH first for any model that does ship it.  A search matching zero messages makes
     # Herbie write no subset (cfgrib then FileNotFoundError), so fall back on any failure.
     try:
-        q_ds = _first_ds(H.xarray(r":SPFH:600 mb:", remove_grib=False))
+        q_ds = tidy(_first_ds(H.xarray(r":SPFH:600 mb:", remove_grib=False)))
         q600 = specific_humidity_g_per_kg(_sel_level(_pick(q_ds, "q"), 600))
     except Exception:  # noqa: BLE001 - no SPFH message -> RH fallback
-        rh_ds = _first_ds(H.xarray(r":RH:600 mb:", remove_grib=False))
+        rh_ds = tidy(_first_ds(H.xarray(r":RH:600 mb:", remove_grib=False)))
         q600 = specific_humidity_g_per_kg(
             rh_pct=_sel_level(_pick(rh_ds, "r"), 600),
             temp_k=t600, pressure_hpa=600.0)
@@ -512,9 +559,10 @@ def fetch_funnel_fields(
     levels=DEFAULT_LEVELS,
     panels: tuple[PanelSpec, ...] = FUNNEL_PANELS,
 ) -> FunnelData:
-    """Download a NAM analysis and reduce it to per-panel plain-array bundles.
+    """Download one analysis and reduce it to per-panel plain-array bundles.
 
-    ``source`` is ``"auto"`` (pick by init date), ``"herbie"``, or ``"ncei"``.  For
+    ``source`` is ``"auto"`` (pick by init date), ``"gfs"``, ``"herbie"`` (NAM) or
+    ``"ncei"`` (NAM grib1).  For
     an analysis the valid time equals the init time.  GRIB caches under
     ``cache_dir`` (or ``$BRC_TOOLS_HERBIE_CACHE`` for the Herbie path) — never the
     repo checkout.
@@ -523,19 +571,23 @@ def fetch_funnel_fields(
     # Always fetch every level a panel needs, so a trimmed --levels can't starve one.
     needed = {int(lv) for lv in levels} | {int(s.level) for s in panels if s.level}
     levels = tuple(sorted(needed))
-    _require_nam_exists(init_dt.date())  # an explicit --source herbie cannot fetch it either
     chosen = funnel_source_for(init_dt) if source == "auto" else source
+    if chosen in ("herbie", "ncei"):
+        _require_nam_exists(init_dt.date())  # an explicit NAM source cannot fetch it either
     LOG.info("forecast funnel: init %s, source=%s, levels=%s",
              init_dt.isoformat(), chosen, levels)
 
-    if chosen == "herbie":
+    if chosen == "gfs":
+        full = _gfs_fetch_full(init_dt, levels, cache_dir)
+        model_label = "GFS 0.25° analysis (Herbie/operational)"
+    elif chosen == "herbie":
         full = _herbie_fetch_full(init_dt, levels, cache_dir)
         model_label = "NAM 12 km analysis (Herbie/operational)"
     elif chosen == "ncei":
         full = _ncei_fetch_full(init_time, levels, cache_dir)
         model_label = "NAM 12 km analysis (NCEI namanl_218)"
     else:
-        raise ValueError(f"unknown source {source!r} (want auto|herbie|ncei)")
+        raise ValueError(f"unknown source {source!r} (want {'|'.join(SOURCES)})")
 
     lu = load_lookups()
     built = [_build_panel(full, spec, lu) for spec in panels]

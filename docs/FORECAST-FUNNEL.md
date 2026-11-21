@@ -24,9 +24,10 @@ lakes:
 | 1c | Utah + neighbours | 600 hPa | **specific humidity** | geopotential height + **temperature advection** (warm red / cold blue) | barbs; basin waypoints labelled |
 | 1d | Western CONUS | surface | — | smoothed MSLP isobars | H/L centres + TFP frontal zones |
 
-It is a NAM **analysis** (f00), so the valid time equals the init time.
+It is a model **analysis** (f00: NAM, or GFS after NAM's retirement), so the valid time
+equals the init time.
 
-## NAM source (auto-picked by init date)
+## Source (auto-picked by init date)
 
 `funnel_source_for(init_dt)` chooses the download path:
 
@@ -35,9 +36,9 @@ It is a NAM **analysis** (f00), so the valid time equals the init time.
 | 2020-03 … 2026-11-03 | `herbie` | Herbie operational `nam` model (`product="awphys"`, AWS/NOMADS). Herbie-native (the repo's preferred route). `awphys` ships **RH** (not SPFH) on pressure levels, so specific humidity is derived from RH + T. |
 | ≤ 2017-04 | `ncei` | Auth-free NCEI historical grib1 `namanl_218` via `wrf_staging.stage_nam_analysis`. Uses SPFH when present, else derives it from RH + T. |
 | 2017-04 … 2020-03 | — | **Unwired** — raises with a clear message. No post-2017 NCEI grib2 template exists yet (see Follow-ups). Use a recent or pre-2017 init for testing. |
-| after 2026-11-03 | — | **No source: NAM was retired** (NWS SCN 26-48). `noaa-nam-pds` ends at `nam.20261103`. Raises before any download with a message naming the retirement, under `--source herbie` too (GH #81). |
+| after 2026-11-03 | `gfs` | **GFS 0.25°**, Herbie operational `gfs` model (`product="pgrb2.0p25"`), the successor JRL chose on 2026-11-21 (GH #81). NAM was retired after `nam.20261103` (NWS SCN 26-48). GFS is a regular lat-lon grid, so its winds are earth-relative as published; the fetch sorts it to the NAM layout (longitude −180…180, rows northward) so every gradient keeps its sign. Sea-level pressure is PRMSL. The grid is ~25 km, against NAM's 12 km, so the local panel is coarser. `--source herbie` for these dates still raises, naming the retirement. |
 
-Override with `--source herbie|ncei`. Herbie's NAM archive on AWS (`noaa-nam-pds`) runs from
+Override with `--source gfs|herbie|ncei` (`gfs` works for any date Herbie's GFS archive holds). Herbie's NAM archive on AWS (`noaa-nam-pds`) runs from
 roughly 2020-02 to 2026-11-03; the last day's later cycles may be missing, which Herbie then
 reports as file-not-found.
 
@@ -76,8 +77,8 @@ busy or too sparse.
 
 ## Follow-ups (not yet built)
 
-- **A successor source for inits after 2026-11-03** (GH #81): RRFS North America 13 km or
-  GFS 0.25°. Until then the funnel is a historical-case tool.
+- **RRFS North America 13 km** as a finer successor (GH #81 chose GFS 0.25° first). It
+  needs a rotated-lat-lon wind rotation, which `derived.rotate_winds_to_earth` refuses today.
 
 - **Post-2017 NCEI grib2 NAM template** to close the 2017–2020 auto-pick gap
   (`nam_218_<date>_<hhmm>_000.grb2`, a new `[models.*]` block in `lookups.toml`).
