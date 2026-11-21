@@ -8,7 +8,7 @@ from typing import Iterable
 import numpy as np
 import xarray as xr
 
-from brc_tools.nwp.derived import add_wind_fields, pa_to_hpa, temp_K_to_C
+from brc_tools.nwp.derived import add_wind_fields, pa_to_hpa, rotate_winds_to_earth, temp_K_to_C
 from brc_tools.nwp.point_extract import extract_point_series, valid_times_iso
 from brc_tools.nwp.source import NWPSource, load_lookups
 
@@ -93,7 +93,8 @@ def fetch_waypoint_dataset(
         variables=SOURCE_VARIABLES,
         region=region,
     )
-    return add_wind_fields(ds)
+    # HRRR u/v are grid-relative; wind_dir_10m_deg is published as "deg_true".
+    return add_wind_fields(rotate_winds_to_earth(ds, "wind_u_10m", "wind_v_10m"))
 
 
 def build_waypoint_payload(
