@@ -2671,15 +2671,14 @@ output_var     = "omega"
 vertical_kind  = "pressure"
 default_levels = [850, 700, 500, 300]
 # No RRFS entry: its prslev files carry DZDT (w, m s-1), not VVEL (omega, Pa s-1).
+# No GEFS entry (dropped 2026-11-21): no one GEFS file holds these levels. pgrb2a
+# (atmos.5) has VVEL at 850 mb only; pgrb2b (atmos.5b) has 700/500/300 and the rest of
+# the column but not 850; atmos.25 has none. Nothing read GEFS omega, so a GEFS fetch now
+# skips the alias as RRFS does. If one is ever needed, use per-level products.
 [aliases.omega_pl.search]
 hrrr = "VVEL:{level} mb"
-gefs = "VVEL:{level} mb"
 [aliases.omega_pl.products]
 hrrr = "prs"
-# OPEN (WISHLIST-TASKS.md): no one GEFS file holds these levels. pgrb2a (atmos.5) has VVEL
-# at 850 mb only; pgrb2b (atmos.5b) has 700/500/300 and the rest of the column but not
-# 850; atmos.25 has none. A GEFS omega fetch fails until a product is chosen.
-gefs = "atmos.25"
 
 # ── Aliases: native model levels (HRRR only; operational RRFS publishes none) ─
 

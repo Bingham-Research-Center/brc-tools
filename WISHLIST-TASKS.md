@@ -29,7 +29,7 @@ mocked-Herbie/SynopticPy integration tests (`tests/test_nwp_source_integration.p
 `test_obs_source_integration.py`, `test_verification_pipeline.py`; fakes in
 `tests/_nwp_fakes.py`). Still open:
 
-- [ ] **GEFS `omega_pl` needs a product decision.** Its default levels are 850/700/500/300 mb, but VVEL 850 mb is only in `pgrb2a` (`atmos.5`) and 700/500/300 only in `pgrb2b` (`atmos.5b`, which carries the whole 1–1000 mb column except 850); `atmos.25` has none (live index 2026-11-20 00Z). So it still points at `atmos.25` and cannot be fetched; `tests/test_gefs_aliases.py` carries it as a strict xfail. Options: (a) per-level products in `lookups.toml` (a schema change to `NWPSource`); (b) `atmos.5b` with GEFS default levels that skip 850; (c) drop the GEFS search. The other five `_pl` aliases now read `atmos.5`, GEFS LCDC is gone (no GEFS file has it), and TCDC is `absent_at_f00`.
+- [x] **GEFS `omega_pl`: dropped (2026-11-21).** No one GEFS file holds 850/700/500/300 mb VVEL (`atmos.5` has 850 only, `atmos.5b` the rest), and nothing read it (`ub-wx`'s recipes fetch HRRR omega). A GEFS fetch now skips the alias, as RRFS's does. If a consumer appears, add per-level products. The other five `_pl` aliases read `atmos.5`, GEFS LCDC is gone (no GEFS file has it), and TCDC is `absent_at_f00`.
 - [ ] Make the tree ruff-clean: ruff is installed in both envs, but `ruff check` still reports pre-existing findings (import order, `datetime.UTC` alias), so it cannot gate a PR yet.
 
 ## Priority 2: Operational delivery
