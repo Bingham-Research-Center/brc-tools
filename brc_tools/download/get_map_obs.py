@@ -19,8 +19,14 @@ from brc_tools.utils.lookups import obs_map_vrbls, obs_map_stids
 from brc_tools.download.download_funcs import generate_json_fpath
 from brc_tools.download.push_data import (clean_dataframe_for_json, save_json,
                                           send_json_to_all, load_config_urls)
+from brc_tools.download.resend_gate import is_due, record_sent
 from brc_tools.utils.util_funcs import get_current_datetime
 
+
+# Station metadata is near-static: send it when it changes, and otherwise at the first
+# 5-minute run after 5 h 45 min, so a copy lands inside the 6 h the website's manifest
+# declares for `metadata` even when a run or two is late.
+METADATA_MAX_AGE_SECONDS = 6 * 3600 - 15 * 60
 
 if __name__ == "__main__":
     # Runtime output stays out of the repo checkout: the website holds the live
@@ -52,8 +58,13 @@ if __name__ == "__main__":
     meta_fpath = generate_json_fpath(data_root,
                                     prefix="map_obs_meta", t=map_datetime,)
     save_json(df_meta, meta_fpath)
-
-    # TODO - eventually, also send metadata to the website
+    meta_state = os.path.join(data_root, "metadata_last_sent.json")
+    send_meta = is_due(meta_fpath, meta_state,
+                       max_age_seconds=METADATA_MAX_AGE_SECONDS)
+    if not send_meta:
+        # Unchanged and sent recently: do not keep or upload another identical copy.
+        os.remove(meta_fpath)
+        print("Station metadata unchanged since the last send; not uploading it.")
 
 
 
@@ -98,6 +109,25 @@ if __name__ == "__main__":
               f"primary={server_urls[0]}"
               + (f", mirrors={server_urls[1:]}" if len(server_urls) > 1 else ""))
 
-        for f, data_type in (
-                (meta_fpath, "metadata"), (map_fpath, "observations")):
-            send_json_to_all(server_urls, f, data_type, API_KEY)
+        uploads = [(map_fpath, "observations")]
+        if send_meta:
+            # Metadata first, so a new station is described before its first reading.
+            uploads.insert(0, (meta_fpath, "metadata"))
+
+        # One failed upload no longer stops the other: a primary failure on metadata
+        # used to raise here and skip that run's observations too. Every failure is
+        # still printed and still makes the job exit non-zero, as before.
+        failed = []
+        for f, data_type in uploads:
+            try:
+                results = send_json_to_all(server_urls, f, data_type, API_KEY)
+            except RuntimeError as exc:
+                print(f"ERROR {data_type} upload failed: {exc}", file=sys.stderr)
+                failed.append(data_type)
+                continue
+            if data_type == "metadata" and all(results.values()):
+                # Only once every host has it: a mirror that missed it gets it next run.
+                record_sent(f, meta_state)
+
+        if failed:
+            sys.exit(f"Primary upload failed for: {', '.join(failed)}")

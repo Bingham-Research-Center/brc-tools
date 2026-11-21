@@ -68,6 +68,12 @@ old_ubair_map_stids = [
 obs_map_vrbls = [
     "wind_speed",
     "wind_direction",
+    # Gust and visibility (2026-11-20, BasinWX ask P8): no station in the feed carried
+    # either. Synoptic reports a gust only while it is gusting, so the latest gust row
+    # can be hours older than the station's other rows -- readers must check its own
+    # date_time. Visibility comes from the airports and some UDOT sites.
+    "wind_gust",
+    "visibility",
     "air_temp",
     "dew_point_temperature",
     "pressure",
@@ -113,6 +119,10 @@ obs_map_stids = [
     "UCC34", "CHPU1", "UINU1",
     # Dino NM, CO (north "Success" and south town sections)
     "SURC2", "DNOC2",
+    # Reference stations of the us40_dense HRRR waypoints that were missing here
+    # (2026-11-20, BasinWX ask P15): Little Red Fox, Split Mountain, and the UDOT
+    # sensor at SR-121 East Lapoint. All three report hourly.
+    "LRFU1", "SPMU1", "UTELP",
 
 
     # Price windstorm monitoring?
