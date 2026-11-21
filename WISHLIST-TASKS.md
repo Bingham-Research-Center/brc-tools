@@ -42,7 +42,7 @@ product on BasinWX would take is ops work, now in the `brc-data-ops` repo (creat
   only for instantaneous fields: HRRR `subh` precip is 15-min buckets, RRFS's runs from the
   top of the hour, and no alias describes either. Needed only if a `subh` product wants precip.
 - [ ] Add structured logging to the operational script (replace print statements for scheduled/unattended runs).
-- [ ] **`.dev` deploy pull** — the `.dev` Linode still needs a deploy pull to close the `filelist.json` fossil; `.com` + `.dev` fan-out itself is live (2026-04-24).
+- [x] **`.dev` deploy pull** — done: website 1.7.9 on `.dev` (2026-11-21 09:43Z) stopped writing `observations/filelist.json` and removed it; nothing at CHPC reads it. `.com` follows with website 1.8.0.
 ## Priority 3: Analysis capability
 
 Extend the case study toolkit for deeper diagnostics.
